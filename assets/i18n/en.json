@@ -1,0 +1,121 @@
+{
+  "app": {
+    "title": "PocketCOM",
+    "subtitle": "Serial / network debug tool"
+  },
+  "conn": {
+    "type": "Connection",
+    "serial": "Serial",
+    "tcpClient": "TCP Client",
+    "tcpServer": "TCP Server",
+    "udp": "UDP",
+    "wsClient": "WebSocket Client",
+    "open": "Open",
+    "close": "Close",
+    "ackLost": "Ack lost",
+    "port": "Port",
+    "noPorts": "No serial ports",
+    "noPortSelected": "No port selected",
+    "baudRate": "Baud rate",
+    "baudInvalid": "Invalid baud rate",
+    "custom": "Custom…",
+    "dataBits": "Data bits",
+    "parity": "Parity",
+    "stopBits": "Stop bits",
+    "flowControl": "Flow control",
+    "dtr": "DTR",
+    "rts": "RTS",
+    "unsupported": "n/a",
+    "bridgeUnavailable": "com bridge unavailable (run with pocketcom-host)",
+    "status": {
+      "disconnected": "Disconnected",
+      "connecting": "Connecting",
+      "connected": "Connected",
+      "lost": "Lost"
+    },
+    "parityOpt": {
+      "none": "None",
+      "odd": "Odd",
+      "even": "Even",
+      "mark": "Mark",
+      "space": "Space"
+    },
+    "stopBitsOpt": {
+      "1": "1",
+      "15": "1.5",
+      "2": "2"
+    },
+    "flow": {
+      "none": "None",
+      "xonxoff": "XON/XOFF",
+      "rtscts": "RTS/CTS",
+      "dsrdtr": "DSR/DTR"
+    }
+  },
+  "mode": {
+    "transfer": "Transfer",
+    "terminal": "Terminal"
+  },
+  "panel": {
+    "mode": "Mode"
+  },
+  "roadmap": {
+    "m2": "M2",
+    "m3": "M3",
+    "m4": "M4"
+  },
+  "source": {
+    "manual": "Manual TX",
+    "mcp": "MCP TX"
+  },
+  "mcp": {
+    "toggle": "MCP Share",
+    "on": "MCP: on",
+    "off": "MCP: off"
+  },
+  "receive": {
+    "clear": "Clear",
+    "pause": "Pause",
+    "resume": "Resume",
+    "timestamp": "Timestamp",
+    "wrap": "Auto wrap",
+    "escape": "Escapes",
+    "hex": "HEX",
+    "ascii": "ASCII",
+    "empty": "(no data)",
+    "saveLog": "Save log"
+  },
+  "send": {
+    "send": "Send",
+    "ascii": "ASCII",
+    "hex": "HEX",
+    "escape": "Escapes",
+    "crlf": "<CRLF>",
+    "appendNewline": "Append newline",
+    "timedSend": "Timed send",
+    "intervalUnit": "ms",
+    "placeholder": "Type payload to send…",
+    "notConnected": "Not connected, cannot send",
+    "parseFailed": "Failed to parse payload",
+    "failed": "Send failed",
+    "history": "History",
+    "sendFile": "Send file"
+  },
+  "sys": {
+    "openFailed": "Failed to open connection",
+    "closeFailed": "Failed to close connection"
+  },
+  "settings": {
+    "language": "Language",
+    "theme": "Theme",
+    "fontSize": "Font size",
+    "scrollbackLines": "Scrollback lines",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "System",
+    "langName": {
+      "zh-CN": "简体中文",
+      "en": "English"
+    }
+  }
+}

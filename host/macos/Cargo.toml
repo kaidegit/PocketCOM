@@ -1,0 +1,31 @@
+# pocketcom-host — the PocketCOM desktop host: a minimal fork of
+# vendor/pocketjs/hosts/desktop (the stock gpui desktop host) plus the
+# self-developed `com.*` serial bridge (host/macos/src/com.rs, SPEC §4.2).
+#
+# Same lone-bin crate model as upstream: outside any workspace, own
+# Cargo.lock, path-depending on the engine crates. The ONLY upstream-source
+# difference is `mod com;` + one mount call in main.rs (POCKETCOM sections).
+
+[package]
+name = "pocketcom-host"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "PocketCOM desktop host on gpui (PocketJS runtime + com.* serial bridge)"
+
+[dependencies]
+pocketjs-core = { path = "../../vendor/pocketjs/engine/core", features = ["std"] }
+pocket-mod = { path = "../../vendor/pocketjs/engine/crates/pocket-mod" }
+pocket-ui-surface = { path = "../../vendor/pocketjs/engine/crates/pocket-ui-surface" }
+pocket-ui-gpui = { path = "../../vendor/pocketjs/engine/backends/gpui" }
+gpui = "0.2.2"
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+anyhow = "1"
+log = "0.4"
+env_logger = "0.11"
+serialport = "4"
+base64 = "0.22"
+
+[profile.release]
+debug = false

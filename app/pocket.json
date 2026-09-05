@@ -1,0 +1,39 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.kaidegit.pocketcom",
+  "name": "pocketcom",
+  "title": "PocketCOM",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": {
+      "requires": [
+        "text.glyphs.baked",
+        "input.buttons"
+      ],
+      "enhances": [
+        "input.text",
+        "input.pointer",
+        "input.ime",
+        "host.clipboard",
+        "display.viewport.live",
+        "text.glyphs.runtime",
+        "text.layout.native"
+      ]
+    }
+  },
+  "app": {
+    "entry": "app/main.tsx",
+    "output": "pocketcom-main",
+    "framework": "vue-vapor",
+    "companions": [
+      "pocketcom"
+    ],
+    "viewport": {
+      "dynamic": {
+        "default": [960, 640],
+        "min": [720, 480]
+      }
+    }
+  }
+}

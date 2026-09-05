@@ -1,0 +1,12 @@
+# dependencies
+node_modules/
+
+# build outputs
+dist/
+.pocket/
+out/
+
+# logs / local state
+*.log
+.DS_Store
+host/macos/target

@@ -1,0 +1,121 @@
+{
+  "app": {
+    "title": "PocketCOM",
+    "subtitle": "串口 / 网络调试助手"
+  },
+  "conn": {
+    "type": "连接类型",
+    "serial": "串口",
+    "tcpClient": "TCP Client",
+    "tcpServer": "TCP Server",
+    "udp": "UDP",
+    "wsClient": "WebSocket Client",
+    "open": "打开",
+    "close": "关闭",
+    "ackLost": "确认掉线",
+    "port": "端口",
+    "noPorts": "无可用串口",
+    "noPortSelected": "未选择串口",
+    "baudRate": "波特率",
+    "baudInvalid": "波特率非法",
+    "custom": "自定义…",
+    "dataBits": "数据位",
+    "parity": "校验",
+    "stopBits": "停止位",
+    "flowControl": "流控",
+    "dtr": "DTR",
+    "rts": "RTS",
+    "unsupported": "不可用",
+    "bridgeUnavailable": "com 桥接不可用（请使用 pocketcom-host 运行）",
+    "status": {
+      "disconnected": "未连接",
+      "connecting": "连接中",
+      "connected": "已连接",
+      "lost": "已掉线"
+    },
+    "parityOpt": {
+      "none": "无",
+      "odd": "奇",
+      "even": "偶",
+      "mark": "Mark",
+      "space": "Space"
+    },
+    "stopBitsOpt": {
+      "1": "1",
+      "15": "1.5",
+      "2": "2"
+    },
+    "flow": {
+      "none": "无",
+      "xonxoff": "XON/XOFF",
+      "rtscts": "RTS/CTS",
+      "dsrdtr": "DSR/DTR"
+    }
+  },
+  "mode": {
+    "transfer": "收发",
+    "terminal": "终端"
+  },
+  "panel": {
+    "mode": "模式"
+  },
+  "roadmap": {
+    "m2": "M2",
+    "m3": "M3",
+    "m4": "M4"
+  },
+  "source": {
+    "manual": "手动发送",
+    "mcp": "MCP发送"
+  },
+  "mcp": {
+    "toggle": "MCP 共享",
+    "on": "MCP: 开启",
+    "off": "MCP: 关闭"
+  },
+  "receive": {
+    "clear": "清屏",
+    "pause": "暂停",
+    "resume": "继续",
+    "timestamp": "时间戳",
+    "wrap": "自动换行",
+    "escape": "转义",
+    "hex": "HEX",
+    "ascii": "ASCII",
+    "empty": "（暂无数据）",
+    "saveLog": "保存日志"
+  },
+  "send": {
+    "send": "发送",
+    "ascii": "ASCII",
+    "hex": "HEX",
+    "escape": "转义",
+    "crlf": "<CRLF>",
+    "appendNewline": "追加换行",
+    "timedSend": "定时发送",
+    "intervalUnit": "ms",
+    "placeholder": "输入要发送的内容…",
+    "notConnected": "未连接，无法发送",
+    "parseFailed": "发送内容解析失败",
+    "failed": "发送失败",
+    "history": "历史",
+    "sendFile": "发送文件"
+  },
+  "sys": {
+    "openFailed": "打开连接失败",
+    "closeFailed": "关闭连接失败"
+  },
+  "settings": {
+    "language": "语言",
+    "theme": "主题",
+    "fontSize": "字号",
+    "scrollbackLines": "终端回滚行数",
+    "themeLight": "浅色",
+    "themeDark": "深色",
+    "themeSystem": "跟随系统",
+    "langName": {
+      "zh-CN": "简体中文",
+      "en": "English"
+    }
+  }
+}

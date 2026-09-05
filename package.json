@@ -1,0 +1,32 @@
+{
+  "name": "pocketcom",
+  "version": "0.1.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "bun test core/",
+    "typecheck": "tsc --noEmit",
+    "check": "bun vendor/pocketjs/tools/pocket.ts check --target macos-app --manifest app/pocket.json --project-root .",
+    "build": "bun vendor/pocketjs/tools/pocket.ts compile --target macos-app --manifest app/pocket.json --project-root .",
+    "dev": "npm run build && node tools/dev.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kaidegit/PocketCOM.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/kaidegit/PocketCOM/issues"
+  },
+  "homepage": "https://github.com/kaidegit/PocketCOM#readme",
+  "private": "true",
+  "devDependencies": {
+    "@pocketjs/cli": "^0.11.0",
+    "@pocketjs/framework": "^0.11.0",
+    "bun-types": "^1.4.1",
+    "typescript": "^7.0.2"
+  }
+}
