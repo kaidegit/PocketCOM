@@ -17,6 +17,11 @@ export interface FakeNs {
   cfgWrite?(json: string): boolean;
   cfgExport?(json: string): string;
   cfgImport?(): string;
+  mcpStart?(paramsJson: string): string;
+  mcpStop?(): boolean;
+  mcpFeed?(linesJson: string): boolean;
+  mcpCmds?(): string | null;
+  mcpResults?(resultsJson: string): boolean;
 }
 
 export function setHost(ns: FakeNs | undefined): void {

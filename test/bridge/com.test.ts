@@ -56,4 +56,62 @@ describe("connectCom 枢纽", () => {
       { t: "appearance", v: "dark" },
     ]);
   });
+
+  test("mcp ops：未实现 mcp 桥的宿主降级为 null", () => {
+    setHost(makeNs({}));
+    const com = connectCom()!;
+    expect(com.mcpStart({ port: 7960, token: "" })).toBeNull();
+    expect(com.mcpStop()).toBeNull();
+    expect(com.mcpFeed(["x"])).toBeNull();
+    expect(com.mcpCmds()).toBeNull();
+    expect(com.mcpResults("[]")).toBeNull();
+  });
+
+  test("mcp ops：参数封包与结果解析", () => {
+    const seen: { paramsJson?: string; linesJson?: string; resultsJson?: string } = {};
+    setHost(
+      makeNs({
+        mcpStart: (paramsJson) => {
+          seen.paramsJson = paramsJson;
+          const p = JSON.parse(paramsJson) as { port: number };
+          return JSON.stringify({ ok: true, token: "abc", port: p.port });
+        },
+        mcpStop: () => true,
+        mcpFeed: (linesJson) => {
+          seen.linesJson = linesJson;
+          return true;
+        },
+        mcpCmds: () => '{"id":1,"name":"status"}',
+        mcpResults: (resultsJson) => {
+          seen.resultsJson = resultsJson;
+          return true;
+        },
+      }),
+    );
+    const com = connectCom()!;
+    expect(com.mcpStart({ port: 7960, token: "tok" })).toEqual({ ok: true, token: "abc", port: 7960 });
+    expect(JSON.parse(seen.paramsJson!)).toEqual({ port: 7960, token: "tok" });
+    expect(com.mcpStop()).toBe(true);
+    com.mcpFeed(["a", "b"]);
+    expect(JSON.parse(seen.linesJson!)).toEqual({ lines: ["a", "b"] });
+    expect(com.mcpCmds()).toBe('{"id":1,"name":"status"}');
+    com.mcpResults('{"id":1,"ok":true,"text":"x"}');
+    expect(seen.resultsJson).toBe('{"id":1,"ok":true,"text":"x"}');
+  });
+
+  test("mcpStart：失败结果与非法 JSON 归一为 ok:false", () => {
+    setHost(
+      makeNs({
+        mcpStart: (_paramsJson) => JSON.stringify({ error: { code: "io-error", msg: "port in use" } }),
+      }),
+    );
+    expect(connectCom()!.mcpStart({ port: 7960, token: "" })).toEqual({
+      ok: false,
+      code: "io-error",
+      msg: "port in use",
+    });
+    setHost(makeNs({ mcpStart: () => "not-json" }));
+    const r = connectCom()!.mcpStart({ port: 7960, token: "" });
+    expect(r === null || r.ok === false).toBe(true);
+  });
 });

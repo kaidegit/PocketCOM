@@ -63,6 +63,21 @@ class FakeCom implements Com {
   cfgImport() {
     return null;
   }
+  mcpStart(_params: { port: number; token: string }) {
+    return null;
+  }
+  mcpStop() {
+    return null;
+  }
+  mcpFeed(_lines: string[]) {
+    return null;
+  }
+  mcpCmds() {
+    return null;
+  }
+  mcpResults(_resultsJson: string) {
+    return null;
+  }
 }
 
 const PARAMS: SerialOpenParams = { path: "/dev/cu.test", baudRate: 9600 };

@@ -30,14 +30,22 @@ export type ComOpenResult =
   | { ok: false; code: string; msg: string };
 
 /** 宿主 → JS 事件（com.poll() 每 tick 一批，SPEC §4.2）。
- * opened/accepted 为 M2 网络语义；appearance 为 M2 跟随系统主题语义。 */
+ * opened/accepted 为 M2 网络语义；appearance 为 M2 跟随系统主题语义；
+ * mcp 为 M4 MCP 服务状态（开关/客户端数变化时回推，SPEC §6.1）。 */
 export type ComEvent =
   | { t: "data"; h: number; b64: string }
   | { t: "closed"; h: number; reason: string }
   | { t: "error"; h: number; code: string; msg: string }
   | { t: "opened"; h: number; addr: string }
   | { t: "accepted"; h: number; c: number; addr: string }
-  | { t: "appearance"; v: "light" | "dark" };
+  | { t: "appearance"; v: "light" | "dark" }
+  | { t: "mcp"; on: boolean; clients: number };
+
+/** MCP 服务启动结果：ok 时携带 token（宿主在空 token 时随机生成 32 字节，
+ *  SPEC §5.3，guest 需持久化）。 */
+export type McpStartResult =
+  | { ok: true; token: string; port: number }
+  | { ok: false; code: string; msg: string };
 
 export interface Com {
   /** 列出本机串口；宿主枚举失败返回 []。 */
@@ -60,6 +68,17 @@ export interface Com {
   cfgExport(json: string): string | null;
   /** 导入配置（原生打开面板）。返回宿主结果 JSON 原文。 */
   cfgImport(): string | null;
+  /** 启动 MCP server（M4，SPEC §6.1）；未实现 mcp 桥的宿主上为 null。
+   *  token 为空时宿主随机生成并回传（需持久化）。 */
+  mcpStart(params: { port: number; token: string }): McpStartResult | null;
+  /** 停止 MCP server（拒绝新连接、断开现有会话）；未实现 mcp 桥时为 null。 */
+  mcpStop(): boolean | null;
+  /** 追加读缓冲行（MCP 侧视图，宿主有界 256KiB）；未实现 mcp 桥时为 null。 */
+  mcpFeed(lines: string[]): boolean | null;
+  /** 取本 tick 的 MCP 命令批（JSON 行原文）；未实现 mcp 桥时为 null。 */
+  mcpCmds(): string | null;
+  /** 回送命令执行结果批（JSON 行）；未实现 mcp 桥时为 null。 */
+  mcpResults(resultsJson: string): boolean | null;
 }
 
 /** 宿主命名空间的原始形状（globalThis.com）。网络/cfg op 可选：旧宿主
@@ -79,6 +98,11 @@ export interface ComNs {
   cfgWrite?(json: string): boolean;
   cfgExport?(json: string): string;
   cfgImport?(): string;
+  mcpStart?(paramsJson: string): string;
+  mcpStop?(): boolean;
+  mcpFeed?(linesJson: string): boolean;
+  mcpCmds?(): string | null;
+  mcpResults?(resultsJson: string): boolean;
 }
 
 /** op 结果 JSON（{"handle":N} 或 {"error":{code,msg}}）→ 类型化结果。
@@ -153,5 +177,47 @@ export function connectCom(): Com | null {
     cfgImport() {
       return cfg === null ? null : cfg.cfgImport();
     },
+    mcpStart(params) {
+      if (typeof ns.mcpStart !== "function") return null;
+      try {
+        const raw = ns.mcpStart(JSON.stringify(params));
+        return parseMcpStartResult(raw);
+      } catch {
+        return { ok: false, code: "bridge-error", msg: "mcpStart failed" };
+      }
+    },
+    mcpStop() {
+      return typeof ns.mcpStop === "function" ? ns.mcpStop() : null;
+    },
+    mcpFeed(lines) {
+      return typeof ns.mcpFeed === "function"
+        ? ns.mcpFeed(JSON.stringify({ lines }))
+        : null;
+    },
+    mcpCmds() {
+      return typeof ns.mcpCmds === "function" ? ns.mcpCmds() : null;
+    },
+    mcpResults(resultsJson) {
+      return typeof ns.mcpResults === "function" ? ns.mcpResults(resultsJson) : null;
+    },
+  };
+}
+
+/** mcpStart 结果 JSON（{"ok":true,"token","port"} 或 {"error":{code,msg}}）。 */
+function parseMcpStartResult(raw: string): McpStartResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ok: false, code: "bridge-error", msg: "host returned malformed json" };
+  }
+  const rec = parsed as { ok?: boolean; token?: unknown; port?: unknown; error?: { code?: string; msg?: string } };
+  if (rec?.ok === true && typeof rec.token === "string" && typeof rec.port === "number") {
+    return { ok: true, token: rec.token, port: rec.port };
+  }
+  return {
+    ok: false,
+    code: rec?.error?.code ?? "unknown",
+    msg: rec?.error?.msg ?? "mcp start failed",
   };
 }
