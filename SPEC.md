@@ -101,7 +101,7 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 
 **串口参数**（对齐 COMTool `conn_serial`）：
 
-- 端口枚举（显示 `设备名 - 描述 - 厂商 - VID/PID`；**macOS 仅枚举 `/dev/cu.*` 设备**——`/dev/tty.*` 与蓝牙串口不出现在列表中）
+- 端口枚举（显示 `设备名 - 描述 - 厂商 - VID/PID`；**macOS 仅枚举 `/dev/cu.*` 设备**——`/dev/tty.*` 与蓝牙串口不出现在列表中）。启动与下拉展开时自动刷新（无手动刷新按钮）；保存的上次端口不在枚举结果中时启动显示为未选择（`lastConn` 配置保留，设备插回后下次启动仍恢复）
 - 波特率：预设 9600–4500000 + 可编辑自定义
 - 数据位 5/6/7/8；校验 None/Odd/Even/Mark/Space；停止位 1/1.5/2
 - 流控 None / XON-XOFF / RTS-CTS / DSR-DTR

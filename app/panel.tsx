@@ -716,27 +716,13 @@ function SerialBlocks(props: {
   };
   return (
     <View>
-      {/* 端口（label 行右侧内嵌刷新按钮） */}
+      {/* 端口（展开选择器时自动刷新，无独立刷新按钮） */}
       <View class="absolute" style={{ insetT: props.top("port"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
         <FieldLabel text={() => t("conn.port")} />
-        <View
-          class="absolute flex-row items-center justify-center"
-          debugName="refreshPorts"
-          style={{ insetR: 0, insetT: 0, width: 20, height: 16, bgColor: "#00000001" }}
-          focusable
-          onPress={() => {
-            setActiveField(null);
-            refreshPorts();
-          }}
-        >
-          <Text class="text-xs" style={{ textColor: theme.value.dim, lineHeight: 16 }}>
-            ⟳
-          </Text>
-        </View>
         <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
           <Select
             display={() => portPath.value}
-            emptyText={() => t("conn.noPorts")}
+            emptyText={() => (ports.value.length === 0 ? t("conn.noPorts") : t("conn.noPortSelected"))}
             options={() =>
               ports.value.map((p) => ({
                 value: p.path,
@@ -746,6 +732,7 @@ function SerialBlocks(props: {
             onPick={(v) => {
               portPath.value = v;
             }}
+            onOpen={refreshPorts}
             disabled={() => !comAvailable}
             anchor={props.anchor("port", PAD_X, CONTENT_W)}
           />

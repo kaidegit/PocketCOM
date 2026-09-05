@@ -9,6 +9,8 @@ import { ref } from "vue";
 import { Portal, Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { getOps } from "@pocketjs/framework";
 import { focusNode } from "@pocketjs/framework/input";
+import { onFrame } from "@pocketjs/framework/lifecycle";
+import { virtualNow } from "@pocketjs/framework/clock";
 import { theme } from "./theme";
 import { STATUS_H, viewportSize } from "./layout";
 import { LINE_H as FONT_LINE_H, MONO_SLOTS } from "./fontsize";
@@ -376,6 +378,8 @@ export function Select(props: {
   value?: () => string;
   emptyText?: () => string;
   disabled?: () => boolean;
+  /** 展开弹层时回调（先于 options 快照，可刷新列表，如串口枚举） */
+  onOpen?: () => void;
   /** 控制框的屏幕绝对坐标（弹层定位用） */
   anchor: () => PopupAnchor;
 }) {
@@ -399,6 +403,7 @@ export function Select(props: {
         if (open()) {
           closePopup();
         } else {
+          props.onOpen?.();
           popup.value = {
             id,
             options: props.options(),
@@ -450,6 +455,8 @@ export interface TextFieldHandle {
 }
 
 const FIELD_PAD_X = 8;
+/** 光标闪烁半周期（秒，virtualNow 单位）：实心与隐藏各占此时长。 */
+const CARET_BLINK_S = 0.5;
 
 export function TextField(props: {
   multiline?: boolean;
@@ -477,6 +484,22 @@ export function TextField(props: {
   const padB = props.multiline ? 6 : 0;
 
   const isActive = () => activeField.value === impl;
+
+  /** 光标闪烁态：活动后实心 CARET_BLINK_S，之后按半周期明暗交替。 */
+  const caretOn = ref(true);
+  let caretActAt = 0;
+  /** 光标活动（聚焦/输入/移动）：立即重显并重置闪烁相位。 */
+  const caretPulse = (): void => {
+    caretActAt = virtualNow();
+    if (!caretOn.value) caretOn.value = true;
+  };
+  // 每帧推进闪烁相位；仅翻转时写 ref（demand-driven 重绘不因恒定相位空转）。
+  // onFrame 随组件作用域自动注销（切模式卸载 SendPane 等场景）。
+  onFrame(() => {
+    if (!isActive()) return;
+    const on = (virtualNow() - caretActAt) % (CARET_BLINK_S * 2) < CARET_BLINK_S;
+    if (on !== caretOn.value) caretOn.value = on;
+  });
 
   /** 显示文本 = 正文 + 光标处拼接的 IME preedit。 */
   const dispText = () => {
@@ -529,6 +552,7 @@ export function TextField(props: {
     const c = caret.value;
     text.value = t.slice(0, c) + s + t.slice(c);
     caret.value = c + s.length;
+    caretPulse();
     revealCaret();
   };
 
@@ -593,6 +617,7 @@ export function TextField(props: {
       default:
         break;
     }
+    caretPulse();
     revealCaret();
   };
 
@@ -607,6 +632,7 @@ export function TextField(props: {
     },
     onIme: (s) => {
       preedit.value = s ?? "";
+      caretPulse();
     },
     onKey: (k, mods) => handleKey(k, mods),
   };
@@ -617,10 +643,12 @@ export function TextField(props: {
       text.value = s;
       caret.value = s.length;
       preedit.value = "";
+      caretPulse();
       revealCaret();
     },
     focus: () => {
       setActiveField(impl);
+      caretPulse();
       if (node) focusNode(node);
     },
     blur: () => {
@@ -688,7 +716,8 @@ export function TextField(props: {
               height: lineH - 6,
               insetT: caretLineCol().line * lineH + 3,
               insetL: caretX(),
-              bgColor: theme.value.accent,
+              // 隐藏相位用透明色（style diff 只增不删，key 常设）
+              bgColor: caretOn.value ? theme.value.accent : TRANSPARENT,
             }}
           />
         ) : null}

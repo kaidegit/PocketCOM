@@ -287,6 +287,11 @@ export const ports = ref<SerialPortInfo[]>([]);
 
 export function refreshPorts(): void {
   ports.value = session?.ports() ?? [];
+  // 枚举后校验当前选择：已拔掉的端口不再显示（保存的 lastConn.serial.path
+  // 不受影响，设备插回后下次启动仍恢复）。
+  if (portPath.value !== "" && !ports.value.some((p) => p.path === portPath.value)) {
+    portPath.value = "";
+  }
 }
 
 /** 切换连接类型时自动断开旧连接（SPEC §3.2 通用行为）。 */
