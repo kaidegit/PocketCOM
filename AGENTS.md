@@ -36,7 +36,9 @@ app/            # Vue Vapor 组件与页面状态（仅渲染 + 输入），pock
 core/           # 纯 TS：连接状态机(connection)、帧合流(framing)、消息总线(bus)、编解码(codec)、
                 #   格式化(format)、日志视图(logview)、发送组装(send)、base64、会话(session)
 bridge/         # com.* HostOps 契约（类型 + sim host fixture）
-test/           # 单测，按源码分层镜像（test/core/* 对应 core/ 各模块；testutil.ts 为测试专用工具）
+test/           # 单测，按源码分层镜像（test/core/* 对应 core/ 各模块；test/bridge/* 对应 bridge/；
+                #   test/host/<系统>/* 对应 host/* 的 Rust 测试，经 #[path] 纳入宿主 crate 的
+                #   cfg(test) 编译，cargo 过滤器不变；testutil.ts 为测试专用工具）
 host/macos/     # macOS 宿主：串口/TCP/UDP/WS 原生 IO、MCP server（fork 自 vendor hosts/desktop）
 host/rtthread/  # RT-Thread 宿主（预留）：UART/lwIP 适配 bridge 契约
 assets/i18n/    # 语言包
@@ -52,12 +54,15 @@ SPEC.md         # 功能规格（权威）
 
 前置：bun（`~/.bun/bin` 需在 PATH）；首次克隆后执行 `git submodule update --init --depth 1 && cd vendor/pocketjs && bun install`。wasm32 target 仅浏览器宿主/金样测试需要，桌面开发不必装。
 
-- 核心层单测：`bun test test/`（当前 94 例，源码在 `test/core/`，与 core/ 分离）
+- 核心层单测：`bun test test/`（当前 102 例；源码在 `test/core/` 与 `test/bridge/`，与源码分层分离）
 - 类型检查：`npm run typecheck`（tsc --noEmit，tsconfig 严格度对齐上游，不要私自加严 flags——构建会用同一份 tsconfig 编译上游框架源码）
 - Manifest 校验：`npm run check`（= `bun vendor/pocketjs/tools/pocket.ts check --target macos-app --manifest app/pocket.json --project-root .`）
 - 构建 app bundle：`npm run build`（输出 `dist/pocketcom-main.js` + `.pak`）
 - 构建桌面宿主（fork 自 `vendor/pocketjs/hosts/desktop` + 自研 `com.*` 串口桥）：`cargo build --release --manifest-path host/macos/Cargo.toml`（输出 `host/macos/target/release/pocketcom-host`；首次全量编译 15–25 分钟）
-- 宿主桥接单测：`cargo test --manifest-path host/macos/Cargo.toml --bin pocketcom-host com::`（com.rs 参数校验/事件格式/端口过滤）
+- 宿主桥接单测：`cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host com::`（测试源在 `test/host/macos/`：com.rs 参数校验/事件格式/端口过滤 + main.rs 调度等，经 `#[path]` 编入宿主 crate；`--release` 复用既有 release 产物免 15–25 分钟全量重编）
+- 宿主串口硬件回环测试（需 TX↔RX 短接的真实串口；未设 `POCKETCOM_LOOPBACK_PORT` 时自动跳过）：
+  `POCKETCOM_LOOPBACK_PORT=/dev/cu.xxx POCKETCOM_LOOPBACK_BAUD=3000000 cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host com::loopback -- --nocapture`
+  （校验 serialList 枚举/打开/信号冒烟/回环逐字节（512B ramp、2048B 全字节域、64KiB 分块突发）/空闲 poll=None/close 语义/立即重开；波特率缺省 115200）
 - 桌面运行：`node tools/dev.mjs`（默认用 fork 产物 `host/macos/target/release/pocketcom-host`，未构建时回退 vendor 的 `pocket-desktop-host` 并警告 `com.*` 不可用；flags 取自 `.pocket/macos-app/plan.json`）
 - 打包分发：`tools/package-macos.sh`（前置 `npm run build` + `cargo build` 产物；组装 `dist/PocketCOM.app` 并打 `dist/PocketCOM-<版本>-macos-arm64.dmg`。launcher 设 `POCKETJS_DIST` 指向 `Resources/dist` 后 exec 宿主二进制，flags 从 `.pocket/macos-app/plan.json` 推导（同 dev.mjs）；`VERSION=x.y.z` 覆盖版本号。**仅 ad-hoc 签名**（未公证）：首次打开需右键→打开或 `xattr -cr`。不启用沙盒故无 entitlement；`NSLocalNetworkUsageDescription`（含 zh/en InfoPlist.strings）为未来 TCP/UDP/WS 连局域网设备的授权弹窗预留，监听 `127.0.0.1` 不触发该弹窗）
 - CI/CD：`.github/workflows/macos.yml`（macos-latest=arm64；push main/PR/tag `v*`/手动触发。跑 typecheck + check + 核心单测 + 全量构建 + 打包；产物上传 artifact，`v*` tag 额外创建 GitHub Release 附 .dmg 与 .app.zip；宿主编译用 `Swatinem/rust-cache` 缓存）

@@ -24,7 +24,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use base64::Engine as _;
@@ -41,6 +41,11 @@ const READ_BUF: usize = 4096;
 /// Port read timeout: the worker alternates read / command-drain at this
 /// cadence, so writes and signal changes answer within ~2× this.
 const READ_TIMEOUT: Duration = Duration::from_millis(5);
+/// close() reaps the worker for at most this long before giving up and
+/// leaving the fd close to the worker's own exit. The normal reap is one
+/// worker read cycle (~READ_TIMEOUT); the bound only matters for a worker
+/// wedged in a blocking write_all, which must not stall a guest turn.
+const CLOSE_REAP: Duration = Duration::from_millis(250);
 
 // ---------------------------------------------------------------------------
 // guest-string decoding (verbatim rationale from pocket-ui-surface): a host
@@ -260,6 +265,12 @@ impl ComCore {
 
     fn write(&mut self, handle: i32, buf: TypedArray<u8>) -> bool {
         let Some(bytes) = buf.as_bytes() else { return false };
+        self.queue_write(handle, bytes)
+    }
+
+    /// Raw write path behind the `com.write` op, split out so the bridge
+    /// tests can drive it without a QuickJS realm to build a TypedArray in.
+    fn queue_write(&mut self, handle: i32, bytes: &[u8]) -> bool {
         let ok = self
             .ports
             .get(&(handle as u32))
@@ -294,6 +305,25 @@ impl ComCore {
                 // Best effort: the worker also exits on the next terminal
                 // error, and dropping the port closes the fd either way.
                 let _ = port.cmd_tx.send(WorkerCmd::Shutdown);
+                // Reap the worker so the fd is really closed when close()
+                // returns: an immediate reopen of the same path must not race
+                // the worker's exit ("Device or resource busy" on exclusive
+                // drivers — caught by the hardware loopback test). Bounded so
+                // a wedged worker cannot stall the tick; that pathological
+                // close just stays async.
+                let deadline = Instant::now() + CLOSE_REAP;
+                loop {
+                    let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                        break;
+                    };
+                    match port.event_rx.recv_timeout(remaining) {
+                        // Residual worker events are dropped: the port is out
+                        // of the map, poll() can no longer observe them.
+                        Ok(_line) => continue,
+                        Err(mpsc::RecvTimeoutError::Disconnected) => break, // worker exited, fd closed
+                        Err(mpsc::RecvTimeoutError::Timeout) => break,      // wedged worker
+                    }
+                }
                 true
             }
             None => false,
@@ -501,63 +531,15 @@ pub fn mount(guest: &Guest) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// tests (plain cargo test in host/macos — no guest, no port required)
+// tests — sources live mirrored under test/host/macos/ (repo-wide convention),
+// compiled into this bin's cfg(test) via #[path]. `use super::*` inside them
+// still reaches this module's private items.
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+#[path = "../../../test/host/macos/com_tests.rs"]
+mod tests;
 
-    #[test]
-    fn open_param_validation_is_structured() {
-        let mut core = ComCore::new();
-        let bad = core.serial_open("{not json");
-        assert!(bad.contains("invalid-param"));
-        let bad = core.serial_open(r#"{"path":"","baudRate":115200}"#);
-        assert!(bad.contains("invalid-param"));
-        let bad = core.serial_open(r#"{"path":"/dev/cu.X","baudRate":115200,"dataBits":9}"#);
-        assert!(bad.contains("invalid-param"));
-        let bad =
-            core.serial_open(r#"{"path":"/dev/cu.X","baudRate":115200,"parity":"sometimes"}"#);
-        assert!(bad.contains("invalid-param"));
-        let bad =
-            core.serial_open(r#"{"path":"/dev/cu.X","baudRate":115200,"stopBits":3}"#);
-        assert!(bad.contains("invalid-param"));
-        let bad =
-            core.serial_open(r#"{"path":"/dev/cu.X","baudRate":115200,"flowControl":"magic"}"#);
-        assert!(bad.contains("invalid-param"));
-        // A well-formed open of a path that does not exist is an io error,
-        // not a param error and never a panic.
-        let missing = core.serial_open(r#"{"path":"/dev/cu.no-such-pocketcom","baudRate":115200}"#);
-        assert!(missing.contains("io-error"));
-        assert!(core.ports.is_empty());
-    }
-
-    #[test]
-    fn macos_lists_only_callout_devices() {
-        if cfg!(target_os = "macos") {
-            assert!(port_visible("/dev/cu.usbserial-1"));
-            assert!(!port_visible("/dev/tty.usbserial-1"));
-            assert!(!port_visible("/dev/cu")); // prefix without the dot
-        }
-    }
-
-    #[test]
-    fn worker_failure_emits_error_then_closed() {
-        let (tx, rx) = mpsc::channel();
-        fail(
-            &tx,
-            7,
-            "io-error",
-            "unplugged",
-        );
-        let first = rx.try_recv().unwrap();
-        let second = rx.try_recv().unwrap();
-        assert!(first.contains(r#""t":"error""#));
-        assert!(first.contains(r#""h":7"#));
-        assert!(first.contains("unplugged"));
-        assert!(second.contains(r#""t":"closed""#));
-        assert!(second.contains(r#""h":7"#));
-        assert!(rx.try_recv().is_err());
-    }
-}
+#[cfg(test)]
+#[path = "../../../test/host/macos/com_loopback.rs"]
+mod loopback;
