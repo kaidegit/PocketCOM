@@ -277,6 +277,7 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
   - 宿主进程内启动 MCP server，transport = **Streamable HTTP**，监听 `127.0.0.1:<port>`（默认 `7960`，可配）。
   - 开关下方显示连接 URL + token（可复制）；状态栏显示 `MCP: on (N clients)`。
   - 关闭开关 → 拒绝新连接、通知并断开现有会话。
+- **终端模式门控（§3.1 模式开关）**：MCP server 仅在**收发模式**运行。切入终端模式即自动停服（等价关闭开关：拒绝新连接、断开现有会话）；切回收发模式且开关为开时自动重启。开关本身记录用户偏好（随配置持久化），有效运行态 = `开关开 && 收发模式`；终端是独占交互通道，agent 不得同时写入。
 - Agent 侧配置示例（README 提供）：指向 `http://127.0.0.1:7960/mcp`，header 携带 `Authorization: Bearer <token>`。
 
 ### 6.2 架构位置
@@ -299,10 +300,13 @@ MCP server 实现于**宿主层**（fork 的桌面宿主 crate 内的原生线�
 
 无 resources / prompts（与 umeko 一致，后续按需扩）。
 
+约定：tool 输出为面向 agent 的稳定英文短句（不随 UI 语言切换）；`read` 行的来源标签除外（随 i18n，与 UI 前缀同源，见 §6.4）。tool 执行失败返回 `isError: true` + `content[{type:"text"}]`（`code: msg` 格式），协议层错误（未知 tool、参数缺失）走 JSON-RPC error。`send` 的 `appendNewline` 追加 `\r\n`。`config_read`/`config_write` 白名单：`language / theme / fontSize / terminal.scrollbackLines / receive.{hex,escape,timestamp,wrap} / send.{escape,crlf,appendNewline} / mcp.{enabled,port}`（token 不可读出亦不可写入）。
+
 ### 6.4 读缓冲与来源可见性
 
 - 读缓冲 = 消息总线的 MCP 侧视图：RX 帧 + **用户手动发送的 TX 帧**（标记 `手动发送`，让 agent 感知人工干预，借鉴 umeko `USER_OVERRIDE`）+ 系统事件。agent 自己 `send` 的数据不回灌其读缓冲。
-- 有界（同 §3.5 环形缓冲）；`read` 默认取空，可选 `clear: false` 窥视。
+- 行格式 `[YYYY-MM-DD HH:MM:SS.mmm] [来源标签] 内容`，内容为 UTF-8 文本（不可见字节转义 `\xNN`，非法序列 U+FFFD）；来源标签：RX=`[RX]`、手动 TX=UI 前缀文案（§3.5）、sys=`[SYS]`。
+- 有界（同 §3.5 环形缓冲；宿主侧同样 256 KiB 封顶，超限丢最旧整行）；`read` 默认取空，可选 `clear: false` 窥视；`maxBytes` 超限时保留最新字节。
 - 多条 agent 会话共享同一读缓冲（首版简化：先到先得地 drain；多会话隔离列 v1.1）。
 
 ### 6.5 并发与互斥
