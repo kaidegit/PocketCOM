@@ -27,6 +27,15 @@ import type { LogLineLabels } from "../core/format";
 import { composeSendBytes, type SendOptions } from "../core/send";
 import { strToBytes } from "../core/codec";
 import type { ConnState } from "../core/connection";
+import {
+  collectMcpLines,
+  executeMcpCommand,
+  parseMcpCommands,
+  shouldMcpRun,
+  type McpConfigPatch,
+  type McpContext,
+  type McpLabels,
+} from "../core/mcp";
 import { locale, setLocale, t, type Locale } from "./i18n";
 import { setSystemAppearance, themeMode } from "./theme";
 
@@ -48,9 +57,11 @@ export const txCount = ref(0);
 /** UI 模式（SPEC §3.1 模式开关：收发 / 终端；切换不断开连接）。 */
 export const uiMode = ref<"transfer" | "terminal">("transfer");
 
-/** 切换 UI 模式（连接与终端屏幕缓冲保持，SPEC §3.1）。 */
+/** 切换 UI 模式（连接与终端屏幕缓冲保持，SPEC §3.1）。MCP 仅在收发模式
+ *  运行（SPEC §6.1 终端模式门控）：切到终端自动停服，切回自动重启。 */
 export function setUiMode(next: "transfer" | "terminal"): void {
   uiMode.value = next;
+  syncMcpServer();
 }
 
 /** 终端回滚行数设置（SPEC §3.4：terminal.scrollbackLines，0–100000）。 */
@@ -108,6 +119,140 @@ export const session =
         },
       })
     : null;
+
+// ---------------------------------------------------------------------------
+// MCP 服务（M4，SPEC §6）：开关偏好 + 运行态 + 启停 + 命令/读行中继
+// ---------------------------------------------------------------------------
+
+/** MCP 共享开关（用户偏好，随配置持久化；有效运行态另受终端模式门控）。 */
+export const mcpEnabled = ref(DEFAULT_CONFIG.mcp.enabled);
+/** MCP 监听端口（SPEC §6.1 默认 7960）。 */
+export const mcpPort = ref(DEFAULT_CONFIG.mcp.port);
+/** Bearer token（宿主首启随机生成 32 字节回传后持久化；0600 配置文件，
+ *  导出时宿主剥离，SPEC §5.3）。 */
+export const mcpToken = ref("");
+/** MCP server 运行态（宿主经 {t:"mcp"} 事件回推；状态栏/状态工具共享）。 */
+export const mcpState = ref({ on: false, clients: 0 });
+
+/** MCP 读行来源标签（i18n 注入，RX/SYS 稳定标记，SPEC §6.4）。 */
+function mcpLabels(): McpLabels {
+  return { rx: "[RX]", txManual: `[${t("source.manual")}]`, sys: "[SYS]" };
+}
+
+/** 读行增量同步点：server 启动时归位到最新消息，agent 只看开启之后的流量。 */
+let mcpLastMsgId = 0;
+
+/** 按有效运行态（开关 && 收发模式）启停 MCP server（幂等）。 */
+export function syncMcpServer(): void {
+  if (!com) return;
+  const want = shouldMcpRun(mcpEnabled.value, uiMode.value);
+  if (want && !mcpState.value.on) {
+    if (typeof com.mcpStart !== "function") return; // 旧宿主无 mcp 桥
+    const r = com.mcpStart({ port: mcpPort.value, token: mcpToken.value });
+    if (r === null) return;
+    if (r.ok) {
+      if (r.token !== mcpToken.value) {
+        mcpToken.value = r.token; // 首启生成的 token 需持久化（防抖回写）
+      }
+      const snap = bus.buffer.peek();
+      mcpLastMsgId = snap.length > 0 ? snap[snap.length - 1]!.id : 0;
+      mcpState.value = { on: true, clients: 0 }; // 事件回推会再校准
+      sysMsg(`${t("mcp.on")}: ${mcpUrl()}`);
+    } else {
+      mcpEnabled.value = false; // 端口占用等失败：回退开关并提示
+      sysMsg(`${t("mcp.startFailed")}: ${r.msg}`);
+    }
+  } else if (!want && mcpState.value.on) {
+    com.mcpStop();
+    mcpState.value = { on: false, clients: 0 };
+  }
+}
+
+/** MCP 端点 URL（面板显示 / sys 提示共用）。 */
+export function mcpUrl(): string {
+  return `http://127.0.0.1:${mcpPort.value}/mcp`;
+}
+
+/** 白名单配置快照（config_read 工具；token 永不出现在其中）。 */
+function buildMcpConfigSnapshot(): Record<string, unknown> {
+  return {
+    language: locale.value,
+    theme: themeMode.value,
+    fontSize: fontSize.value,
+    terminal: { scrollbackLines: scrollbackLines.value },
+    receive: {
+      hex: rxHex.value,
+      escape: rxEscape.value,
+      timestamp: rxTimestamp.value,
+      wrap: rxWrap.value,
+    },
+    send: {
+      escape: sendEscape.value,
+      crlf: sendCrlf.value,
+      appendNewline: sendAppendNl.value,
+    },
+    mcp: { enabled: mcpEnabled.value, port: mcpPort.value },
+  };
+}
+
+/** 应用 MCP config_write 补丁（补丁已过 validateConfigPatch 白名单校验）。 */
+function applyMcpConfigPatch(patch: McpConfigPatch): void {
+  let needFormat = false;
+  if (patch.language !== undefined && patch.language !== locale.value) {
+    setLocale(patch.language);
+    needFormat = true;
+  }
+  if (patch.theme !== undefined) themeMode.value = patch.theme;
+  if (patch.fontSize !== undefined) {
+    fontSize.value = patch.fontSize;
+    needFormat = true;
+  }
+  if (patch.scrollbackLines !== undefined) setScrollbackLines(patch.scrollbackLines);
+  if (patch.receive) {
+    if (patch.receive.hex !== undefined) rxHex.value = patch.receive.hex;
+    if (patch.receive.escape !== undefined) rxEscape.value = patch.receive.escape;
+    if (patch.receive.timestamp !== undefined) rxTimestamp.value = patch.receive.timestamp;
+    if (patch.receive.wrap !== undefined) rxWrap.value = patch.receive.wrap;
+    needFormat = true;
+  }
+  if (patch.send) {
+    if (patch.send.escape !== undefined) sendEscape.value = patch.send.escape;
+    if (patch.send.crlf !== undefined) sendCrlf.value = patch.send.crlf;
+    if (patch.send.appendNewline !== undefined) sendAppendNl.value = patch.send.appendNewline;
+  }
+  if (patch.mcp?.port !== undefined) mcpPort.value = patch.mcp.port;
+  if (patch.mcp?.enabled !== undefined) mcpEnabled.value = patch.mcp.enabled;
+  if (needFormat) applyLogFormat();
+  persistNow();
+}
+
+/** MCP 命令执行上下文（核心执行器经它触达会话/配置/门控）。 */
+function mcpContext(): McpContext {
+  return {
+    session,
+    mcpClients: () => mcpState.value.clients,
+    configRead: buildMcpConfigSnapshot,
+    configWrite: applyMcpConfigPatch,
+    gateOpen: () => shouldMcpRun(mcpEnabled.value, uiMode.value),
+  };
+}
+
+/** 每帧 MCP 中继（pumpSession 内调用）：命令批 drain → 执行 → 回结果；
+ *  总线增量（RX + 手动 TX + sys）格式化为读行 feed 给宿主读缓冲。 */
+function pumpMcp(): void {
+  if (!com || !mcpState.value.on) return;
+  const batch = com.mcpCmds();
+  if (batch) {
+    const cmds = parseMcpCommands(batch);
+    if (cmds.length > 0) {
+      const results = cmds.map((c) => executeMcpCommand(c, mcpContext()));
+      com.mcpResults(JSON.stringify(results));
+    }
+  }
+  const { lines, lastId } = collectMcpLines(bus, mcpLastMsgId, mcpLabels());
+  mcpLastMsgId = lastId;
+  if (lines.length > 0) com.mcpFeed(lines);
+}
 
 // ---------------------------------------------------------------------------
 // 连接参数仓库（左面板状态；打开时快照进 session.open*，成功后写入 lastConn）
@@ -439,6 +584,7 @@ function buildConfigJson(): string {
     },
     lastConn: lastConn.value,
     sendHistory: sendHistory.value,
+    mcp: { enabled: mcpEnabled.value, port: mcpPort.value, token: mcpToken.value },
   };
   return JSON.stringify(cfg, null, 2);
 }
@@ -523,6 +669,9 @@ function applyConfig(cfg: AppConfig): void {
   sendAppendNl.value = cfg.send.appendNewline;
   sendHistory.value = cfg.sendHistory;
   lastConn.value = cfg.lastConn;
+  mcpEnabled.value = cfg.mcp.enabled;
+  mcpPort.value = cfg.mcp.port;
+  mcpToken.value = cfg.mcp.token;
 
   const s = cfg.lastConn.serial;
   if (s) {
@@ -553,6 +702,9 @@ function applyConfig(cfg: AppConfig): void {
     wsReconnectSec.value = String(cfg.lastConn.ws.reconnectSec);
   }
   applyLogFormat();
+  // MCP 开关随配置加载（SPEC §6.1）：收发模式下立即启动（终端模式门控见
+  // setUiMode / syncMcpServer）。
+  syncMcpServer();
 }
 
 const lastConn = ref<LastConnConfig>({});
@@ -586,9 +738,20 @@ for (const source of [
   sendAppendNl,
   sendHistory,
   lastConn,
+  mcpEnabled,
+  mcpToken,
 ]) {
   watch(source, schedulePersist, { deep: true });
 }
+// MCP 开关变化 → 立即启停（终端模式门控在 syncMcpServer 内统一判断）。
+watch(mcpEnabled, syncMcpServer);
+// 端口变化 → 重启 server 使新端口生效。
+watch(mcpPort, () => {
+  if (!mcpState.value.on) return;
+  com?.mcpStop();
+  mcpState.value = { on: false, clients: 0 };
+  syncMcpServer();
+});
 
 // ---------------------------------------------------------------------------
 // 每帧泵（app.tsx onFrame 调用）
@@ -611,6 +774,7 @@ export function pumpSession(nowMs: number): void {
     const connEvents: ComEvent[] = [];
     for (const ev of events) {
       if (ev.t === "appearance") setSystemAppearance(ev.v);
+      else if (ev.t === "mcp") mcpState.value = { on: ev.on, clients: ev.clients };
       else connEvents.push(ev);
     }
     session.poll(connEvents, nowMs);
@@ -625,6 +789,8 @@ export function pumpSession(nowMs: number): void {
         break; // 未连接/写入失败：丢弃应答
       }
     }
+    // MCP 中继（SPEC §6.2）：命令 drain→执行→回结果；总线增量→读行 feed。
+    pumpMcp();
   }
   if (terminal.version !== lastTermVersion) {
     lastTermVersion = terminal.version;

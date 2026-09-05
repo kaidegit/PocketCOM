@@ -81,7 +81,13 @@
   "mcp": {
     "toggle": "MCP Share",
     "on": "MCP: on",
-    "off": "MCP: off"
+    "off": "MCP: off",
+    "url": "URL",
+    "token": "Token",
+    "copy": "Copy",
+    "copied": "Copied",
+    "startFailed": "MCP failed to start",
+    "terminalHint": "MCP paused in terminal mode"
   },
   "terminal": {
     "hint": "Terminal ready — keystrokes go straight to the connection (no local echo)"

@@ -81,7 +81,13 @@
   "mcp": {
     "toggle": "MCP 共享",
     "on": "MCP: 开启",
-    "off": "MCP: 关闭"
+    "off": "MCP: 关闭",
+    "url": "URL",
+    "token": "Token",
+    "copy": "复制",
+    "copied": "已复制",
+    "startFailed": "MCP 启动失败",
+    "terminalHint": "终端模式下 MCP 暂停"
   },
   "terminal": {
     "hint": "终端就绪 —— 按键直接发送到当前连接（无本地回显）"

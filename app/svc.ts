@@ -65,3 +65,14 @@ export function connectSvc(): Svc | null {
     },
   };
 }
+
+/**
+ * 伴生通道单例：app.tsx 每帧 poll 事件；其他模块（如面板的复制按钮）只需
+ * send intent（{t:"copy"} 由宿主写剪贴板）。懒创建避免 import 副作用。
+ */
+let svcSingleton: Svc | null | undefined;
+
+export function getSvc(): Svc | null {
+  svcSingleton ??= connectSvc();
+  return svcSingleton;
+}

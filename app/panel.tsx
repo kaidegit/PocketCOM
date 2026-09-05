@@ -37,6 +37,10 @@ import {
   flowControl,
   importConfig,
   kickClient,
+  mcpEnabled,
+  mcpState,
+  mcpToken,
+  mcpUrl,
   openCurrentConnection,
   parity,
   portPath,
@@ -64,6 +68,7 @@ import {
   comAvailable,
 } from "./session";
 import { applyLocale } from "./locale";
+import { getSvc } from "./svc";
 
 // ---------------------------------------------------------------------------
 // 参数状态（串口波特率自定义输入框是面板局部 UI 状态）
@@ -75,6 +80,27 @@ const DATA_BITS = ["5", "6", "7", "8"];
 const customBaudVisible = ref(false);
 const customBaud = ref("115200");
 let customBaudField: TextFieldHandle | undefined;
+
+// MCP URL/token 复制反馈（M4）：1.5s 后恢复按钮文案。
+const copiedKey = ref<"url" | "token" | null>(null);
+let copyTimer: ReturnType<typeof setTimeout> | null = null;
+
+function copyMcp(key: "url" | "token", text: string): void {
+  if (text === "") return;
+  getSvc()?.send({ t: "copy", text });
+  copiedKey.value = key;
+  if (copyTimer !== null) clearTimeout(copyTimer);
+  copyTimer = setTimeout(() => {
+    copiedKey.value = null;
+  }, 1500);
+}
+
+/** token 展示（截断；未生成时为空）。 */
+function tokenDisplay(): string {
+  const tok = mcpToken.value;
+  if (tok === "") return "—";
+  return `${tok.slice(0, 12)}…${tok.slice(-4)}`;
+}
 
 /** 文本字段句柄注册表：打开连接前把未提交的输入 flush 进 session 仓库。 */
 const fieldHandles = new Map<string, TextFieldHandle>();
@@ -225,7 +251,14 @@ const layoutInfo = computed(() => {
   put("div1", 1, SECTION_GAP);
   put("mode", FIELD_H, SECTION_GAP);
   put("div2", 1, SECTION_GAP);
-  put("mcp", CHECK_H, SECTION_GAP);
+  put("mcp", CHECK_H, mcpEnabled.value ? BLOCK_GAP : SECTION_GAP);
+  if (mcpEnabled.value) {
+    put("mcpUrl", FIELD_H, BLOCK_GAP);
+    put("mcpToken", FIELD_H, uiMode.value === "terminal" ? BLOCK_GAP : SECTION_GAP);
+    if (uiMode.value === "terminal") {
+      put("mcpHint", 16, SECTION_GAP);
+    }
+  }
   put("div3", 1, SECTION_GAP);
   put("language", FIELD_H, BLOCK_GAP);
   put("theme", FIELD_H, BLOCK_GAP);
@@ -500,17 +533,35 @@ export function LeftPanel() {
             <Hairline />
           </View>
 
-          {/* MCP 共享开关（M4 置灰占位） */}
+          {/* MCP 共享开关（M4，SPEC §6.1）：仅收发模式运行，终端模式自动停服 */}
           <View class="absolute" style={{ insetT: top("mcp"), insetL: PAD_X, width: CONTENT_W, height: CHECK_H }}>
             <CheckRow
-              label={() => `${t("mcp.toggle")} · ${t("roadmap.m4")}`}
-              checked={() => false}
-              disabled={() => true}
+              label={() => t("mcp.toggle")}
+              checked={() => mcpEnabled.value}
+              disabled={() => !comAvailable}
               onToggle={() => {
-                /* M4 */
+                mcpEnabled.value = !mcpEnabled.value;
               }}
             />
           </View>
+
+          {/* 开启后：URL + token（可复制，SPEC §6.1） */}
+          {mcpEnabled.value ? (
+            <View>
+              <McpInfoRow top={top("mcpUrl")} label={() => t("mcp.url")} value={mcpUrl} copyKey="url" />
+              <McpInfoRow top={top("mcpToken")} label={() => t("mcp.token")} value={tokenDisplay} copyKey="token" />
+              {uiMode.value === "terminal" ? (
+                <View
+                  class="absolute"
+                  style={{ insetT: top("mcpHint"), insetL: PAD_X, width: CONTENT_W, height: 16 }}
+                >
+                  <Text class="text-xs" style={{ textColor: theme.value.dim, lineHeight: 16 }}>
+                    {t("mcp.terminalHint")}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
 
           {/* 分隔线 */}
           <View class="absolute" style={{ insetT: top("div3"), insetL: PAD_X, width: CONTENT_W, height: 1 }}>
@@ -860,6 +911,36 @@ function fieldBlock(top: number, label: () => string, control: ReturnType<typeof
       <FieldLabel text={label} />
       <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
         {control}
+      </View>
+    </View>
+  );
+}
+
+/** MCP URL/token 信息行：label + mono 值 + 复制按钮（M4，SPEC §6.1）。 */
+function McpInfoRow(props: {
+  top: number;
+  label: () => string;
+  value: () => string;
+  copyKey: "url" | "token";
+}) {
+  return (
+    <View class="absolute" style={{ insetT: props.top, insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
+      <FieldLabel text={props.label} />
+      <Text
+        class="absolute text-xs font-mono"
+        style={{ insetL: 0, insetT: LABEL_H + LABEL_GAP, width: CONTENT_W - 60, height: 22, lineHeight: 22, textColor: theme.value.fg }}
+      >
+        {props.value()}
+      </Text>
+      <View class="absolute" style={{ insetR: 0, insetT: LABEL_H + LABEL_GAP, width: 52, height: 22 }}>
+        <Btn
+          width={52}
+          height={22}
+          label={() => (copiedKey.value === props.copyKey ? t("mcp.copied") : t("mcp.copy"))}
+          onPress={() => {
+            copyMcp(props.copyKey, props.copyKey === "url" ? mcpUrl() : mcpToken.value);
+          }}
+        />
       </View>
     </View>
   );
