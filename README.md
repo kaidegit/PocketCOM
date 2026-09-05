@@ -86,7 +86,7 @@ Agent 侧配置示例：
 }
 ```
 
-提供的 tools：`status` / `list_serial_ports` / `connect` / `disconnect` / `send` / `read` / `config_read` / `config_write`。详见 [SPEC.md](SPEC.md) §6。
+提供的 tools：`status` / `list_serial_ports` / `connect` / `disconnect` / `send` / `read` / `config_read` / `config_write`。完整使用手册（工具参数、读缓冲语义、典型工作流、疑难排查）见 [docs/mcp.md](docs/mcp.md)；规格定义见 [SPEC.md](SPEC.md) §6。
 
 ## 测试
 
