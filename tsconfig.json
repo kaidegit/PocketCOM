@@ -15,5 +15,5 @@
     "forceConsistentCasingInFileNames": true,
     "ignoreDeprecations": "5.0"
   },
-  "include": ["app", "core", "bridge", "test"]
+  "include": ["app", "core", "bridge", "test", "host/macos/mcp"]
 }

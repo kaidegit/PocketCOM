@@ -63,6 +63,7 @@ use serde::Deserialize;
 // and at the mount call in PocketRoot::boot.
 mod com;
 mod com_env;
+mod com_mcp;
 mod com_serial;
 mod com_tcp;
 mod com_udp;

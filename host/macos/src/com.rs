@@ -8,6 +8,7 @@
 //! - `com_udp.rs`    — UDP (`udpBind`).
 //! - `com_ws.rs`     — WebSocket client (`wsConnect`).
 //! - `com_env.rs`    — settings persistence + system appearance (`cfg*`).
+//! - `com_mcp.rs`    — MCP server (Streamable HTTP, `mcp*` ops; M4 SPEC §6).
 //!
 //! Transport shape follows `pocket-net` (engine/crates/pocket-net): the core
 //! owns handles and validation; a worker thread owns the socket/port; worker
@@ -39,6 +40,7 @@ use pocket_mod::{Guest, qjs};
 use serde_json::json;
 
 use crate::com_env;
+use crate::com_mcp::{self, McpHub};
 use crate::com_serial::SerialCore;
 use crate::com_tcp;
 use crate::com_udp;
@@ -450,6 +452,20 @@ pub fn mount(guest: &Guest) -> Result<()> {
         op!("cfgWrite", move |json: LossyString| com_env::cfg_write(&json.0));
         op!("cfgExport", move |json: LossyString| com_env::cfg_export(&json.0));
         op!("cfgImport", move || com_env::cfg_import());
+
+        // --- MCP server (M4, SPEC §6) — HTTP threads + read buffer + command
+        // queue live in com_mcp.rs; UI status rides the shared event stream ---
+        let m = Arc::new(McpHub::new(reg.borrow().event_tx()));
+        let m2 = m.clone();
+        op!("mcpStart", move |params: LossyString| com_mcp::mcp_start(&m2, &params.0));
+        let m2 = m.clone();
+        op!("mcpStop", move || com_mcp::mcp_stop(&m2));
+        let m2 = m.clone();
+        op!("mcpFeed", move |json: LossyString| com_mcp::mcp_feed(&m2, &json.0));
+        let m2 = m.clone();
+        op!("mcpCmds", move || com_mcp::mcp_cmds(&m2));
+        let m2 = m.clone();
+        op!("mcpResults", move |json: LossyString| com_mcp::mcp_results(&m2, &json.0));
 
         Ok(())
     })
