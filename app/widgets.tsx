@@ -282,10 +282,19 @@ export function PopupLayer() {
     <View style={{ width: 0, height: 0 }}>
       {popup.value !== null ? (
         <Portal>
-          {/* 遮罩：alpha 1/255 的底色使其命中整个屏幕（只画边框/透明的节点不命中） */}
+          {/* 遮罩：alpha 1/255 的底色使其命中整个屏幕（只画边框/透明的节点不命中）。
+              Vue Vapor Portal 的 host 是规格屏 480x272（不随桌面视口缩放），
+              遮罩不能 inset 0 寄生于 host 盒子，必须按实时视口自撑尺寸，
+              否则右/下方点空白收不掉弹层。 */}
           <View
             class="absolute"
-            style={{ insetT: 0, insetL: 0, insetR: 0, insetB: 0, bgColor: "#00000001" }}
+            style={{
+              insetT: 0,
+              insetL: 0,
+              width: viewportSize.value.w,
+              height: viewportSize.value.h,
+              bgColor: "#00000001",
+            }}
             focusable
             debugName="backdrop"
             onPress={closePopup}

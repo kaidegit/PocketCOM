@@ -16,6 +16,7 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
   - **style 对象 diff 只增不删**：条件性样式 key（如 borderWidth）必须常设、用透明色隐藏，不能时有时无。
   - **Vue Vapor 组件不得返回 null**（宿主 JSX 运行时 anchor 崩溃）；空态用 0 尺寸占位 View，条件渲染放在父级的表达式子节点里。
   - **焦点必须跟随指针**：mouse 事件分发时 `focusNode(hitFocusable(x, y))` 无条件调用（落空也要清焦点）——否则点空白处会把 CIRCLE press 发到上一次聚焦的控件上（"点空白触发了别处的选中"）。
+  - **Vue Vapor 的 `Portal` host 固定为规格屏 480×272**（`components-vue-vapor.ts` 的 `createPortalRoot` 用静态 `SCREEN_W/H`，不读实时视口）→ 全屏遮罩等"铺满窗口"的弹层内容不能 `inset 0` 寄生于 portal host 盒子，必须按 `viewportSize` 显式给 width/height 自撑（见 `app/widgets.tsx` 的 `PopupLayer` 遮罩），否则视口超出 480×272 的区域点空白收不掉弹层。
 - **无 DOM、无运行时 CSS**：只用 `View/Text/Image` 原语；动态样式用 `style={{…}}` 或整体 class 字面量三元，**禁止拼接 class 片段**（编译错误）。
 - **字体**：统一使用 MiSans（Regular/Medium/Semibold/Bold，vendor 在 `assets/fonts/`）。桌面端经 `text.layout.native`（pocket.json 已声明）走 CoreText 运行时排版，任意 Unicode 可显示；**烘焙字形约束只对嵌入式目标成立**——嵌入式视图只允许使用已烘焙字符集，未知字形回退替换符并保证 HEX 视图无损（SPEC §5.4）。
 - **无内置串口/WebSocket/raw socket**：所有 IO 走 `bridge/` 的 `com.*` HostOps 契约，核心层不得直接 import 任何平台 API。
