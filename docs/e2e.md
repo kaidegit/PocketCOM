@@ -170,6 +170,23 @@ NAME → 按钮映射：
   反显/OSC 吞掉渲染、按键直发回显、方向键经回显驱动光标、40 行溢出贴底跟随
   与回滚积累、空屏提示）；滚轮本地滚动经 `--wheel` 注入、拖拽选区 =
   `--mouse d` + `--mouse m` + `--mouse u`、Ctrl 控制码经 `--key ctl+NAME` 注入。
+- **M4**：MCP 全链路 + 终端模式门控（`bun test host/macos/mcp/`，脚本化 MCP
+  client 经原生 fetch 走真实宿主+guest：401 鉴权 → initialize → tools/list →
+  connect（bun TCP echo）→ send → read 前缀断言 → force → disconnect →
+  config 白名单 → 会话 DELETE；门控经 `--click` 注入，见下）。
+
+## MCP 门控配方（M4，SPEC §6.1）
+
+- 配置文件经 `POCKETCOM_CONFIG` 指向临时 config（`mcp.enabled=true` + 固定
+  token + `language:"en"`，端口选 pid 相关高位避开冲突）；MCP server 在
+  guest 加载配置时自动启动（收发模式下）。
+- 终端/收发 SegCtrl 点击坐标（960x640、默认串口参数块、MCP 开启时的面板）：
+  mode 块 top=351，控件 y = 47+351+20 = 418、高 28 → 中心 y=432；
+  左半（收发）x≈74，右半（终端）x≈198。即
+  `--click 198,432@T`（切终端，停服）→ `--click 74,432@T'`（切回，自动重启）。
+- 停服窗口内工具调用：listener 已关 → 连接拒绝；竞态窗口内已入队的命令由
+  guest 执行器回 `mcp-suspended`。
+- 坐标随面板布局表变（panel.tsx layoutInfo + layout.ts），改布局先重截图核对。
 
 ## 常见坑
 
@@ -179,6 +196,6 @@ NAME → 按钮映射：
 2. 点击无效果：先检查是否 hover 聚焦（`--mouse` 一帧），再看坐标是否画布
    逻辑坐标（截图像素要 `/2` 且减标题栏 56px）。
 3. 事件没到 guest：`POCKETCOM_TRACE=1` 看 svc 行；行到了但 UI 没变，多半是
-   坐标命中落空或该功能尚未实装（如 M4 的 MCP 开关）。
+   坐标命中落空。com.* 侧看 `pocketcom-trace: com.mcpStart …` 等 op trace。
 4. `--wheel` 不滚动：指针未落在目标分区（面板 x<270 / 日志 / 终端），或该区
    已在滚动边界。

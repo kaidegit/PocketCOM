@@ -71,7 +71,9 @@ tools/package-macos.sh   # 产出 dist/PocketCOM.app 与 dist/PocketCOM-<版本>
 
 ## MCP 接入
 
-在左侧面板打开 **MCP 共享开关**后，界面会显示连接 URL 与 token。Agent 侧配置示例：
+在左侧面板打开 **MCP 共享开关**后，界面会显示连接 URL 与 token（可复制）。MCP 服务仅在**收发模式**运行：切到终端模式自动停服（断开全部 MCP 会话），切回且开关为开时自动重启——终端是独占交互通道，agent 不得同时写入。
+
+Agent 侧配置示例：
 
 ```json
 {
@@ -90,7 +92,9 @@ tools/package-macos.sh   # 产出 dist/PocketCOM.app 与 dist/PocketCOM-<版本>
 
 ```bash
 bun test test/                          # 核心层 + 桥接单测
-cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host com::   # 宿主桥接单测
+bun test host/macos/mcp/                # MCP 集成测试（脚本化 MCP client 走真实宿主+guest 全链路，
+                                        #   含终端模式门控；需先 npm run build + cargo build --release）
+cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host   # 宿主桥接单测（含 MCP 协议单测）
 
 # 串口硬件回环测试（需 TX↔RX 短接的真实串口，未设环境变量时自动跳过）
 POCKETCOM_LOOPBACK_PORT=/dev/cu.xxx cargo test --release \

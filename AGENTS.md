@@ -45,7 +45,8 @@ core/           # 纯 TS：连接状态机(connection)、帧合流(framing)、�
                 #   （session：串口+四类网络+tcps 客户端表+自动重连）、设置持久化
                 #   （config：schema/归一化/历史封顶 50）、headless 终端模型
                 #   （term：VT100/xterm 解析 + 网格/光标/属性/滚动区域/alt 屏/回滚 +
-                #   按键/粘贴编码 + DSR/DA 应答队列，SPEC §3.4，M3）
+                #   按键/粘贴编码 + DSR/DA 应答队列，SPEC §3.4，M3）、MCP 命令执行器/
+                #   读行格式化/终端模式门控/config 白名单（mcp，SPEC §6，M4）
 bridge/         # com.* HostOps 契约：com.ts 命名空间探测/共享事件/枢纽 +
                 #   serial.ts（串口）/net.ts（四类网络）/cfg.ts（设置持久化）
 test/           # 单测，按源码分层镜像（test/core/* 对应 core/ 各模块；test/bridge/* 对应 bridge/；
@@ -55,7 +56,11 @@ host/macos/     # macOS 宿主：串口/TCP/UDP/WS 原生 IO、设置持久化+�
                 #   MCP server（fork 自 vendor hosts/desktop）。com.rs 只留命名空间
                 #   挂载与共享设施（句柄计数/连接注册表/事件流），实现按协议分文件：
                 #   com_serial.rs（串口）/com_tcp.rs（TCP+TCP Server）/com_udp.rs（UDP）/
-                #   com_ws.rs（WebSocket）/com_env.rs（配置+外观）。fork 差异：on_key_down
+                #   com_ws.rs（WebSocket）/com_env.rs（配置+外观）/com_mcp.rs（MCP server，
+                #   M4：手写 Streamable HTTP + JSON-RPC，仅绑 127.0.0.1 + Bearer token，
+                #   读缓冲有界 256KiB，工具命令经 mcpCmds/mcpResults 在 tick 边界进
+                #   guest 核心层执行，read 由宿主缓冲直答；客户端数变化经
+                #   {t:"mcp",on,clients} 事件回推 UI）。fork 差异：on_key_down
                 #   把 Ctrl 修饰的单字符键以 key 行（ctl 标志）转发给 guest（上游只会发
                 #   命名键/纯文本，终端模式的控制码如 Ctrl+C 依赖此路径；Alt 不转发，
                 #   保留 Option 组合字符的 insertText 输入）
@@ -73,21 +78,21 @@ SPEC.md         # 功能规格（权威）
 
 前置：bun（`~/.bun/bin` 需在 PATH）；首次克隆后执行 `git submodule update --init --depth 1 && cd vendor/pocketjs && bun install`。wasm32 target 仅浏览器宿主/金样测试需要，桌面开发不必装。
 
-- 核心层单测：`bun test test/`（当前 168 例；源码在 `test/core/` 与 `test/bridge/`，与源码分层分离）
+- 核心层单测：`bun test test/`（当前 195 例；源码在 `test/core/` 与 `test/bridge/`，与源码分层分离）
 - 类型检查：`npm run typecheck`（tsc --noEmit，tsconfig 严格度对齐上游，不要私自加严 flags——构建会用同一份 tsconfig 编译上游框架源码）
 - Manifest 校验：`npm run check`（= `bun vendor/pocketjs/tools/pocket.ts check --target macos-app --manifest app/pocket.json --project-root .`）
 - 构建 app bundle：`npm run build`（输出 `dist/pocketcom-main.js` + `.pak`）
 - 构建桌面宿主（fork 自 `vendor/pocketjs/hosts/desktop` + 自研 `com.*` 串口/网络/配置桥）：`cargo build --release --manifest-path host/macos/Cargo.toml`（输出 `host/macos/target/release/pocketcom-host`；首次全量编译 15–25 分钟；网络桥依赖 tungstenite(rustls)）
-- 宿主桥接单测：`cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host`（当前 29 例，测试源在 `test/host/macos/`：serial_tests.rs 参数校验/事件格式/端口过滤、tcp_tests.rs 参数校验 + 127.0.0.1 TCP 回环（监听/接入/定向/广播/踢除/关停级联）、udp_tests.rs UDP 回环、ws_tests.rs 参数校验/握手失败/子协议头、env_tests.rs 配置原子写 0600/导出剥 token（`POCKETCOM_CONFIG` 重定向路径）、main_tests.rs 调度/repaint hash/脚本 flags 解析、shot_tests.rs PNG 头校验等，经 `#[path]` 编入宿主 crate；`--release` 复用既有 release 产物免 15–25 分钟全量重编）
+- 宿主桥接单测：`cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host`（当前 47 例，测试源在 `test/host/macos/`：serial_tests.rs 参数校验/事件格式/端口过滤、tcp_tests.rs 参数校验 + 127.0.0.1 TCP 回环（监听/接入/定向/广播/踢除/关停级联）、udp_tests.rs UDP 回环、ws_tests.rs 参数校验/握手失败/子协议头、env_tests.rs 配置原子写 0600/导出剥 token（`POCKETCOM_CONFIG` 重定向路径）、main_tests.rs 调度/repaint hash/脚本 flags 解析、shot_tests.rs PNG 头校验、mcp_tests.rs HTTP 解析/401 鉴权/JSON-RPC 分发/读缓冲有界/命令往返/mcpStop 语义等，经 `#[path]` 编入宿主 crate；`--release` 复用既有 release 产物免 15–25 分钟全量重编）
 - 宿主串口硬件回环测试（需 TX↔RX 短接的真实串口；未设 `POCKETCOM_LOOPBACK_PORT` 时自动跳过）：
   `POCKETCOM_LOOPBACK_PORT=/dev/cu.xxx POCKETCOM_LOOPBACK_BAUD=3000000 cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host com_serial::loopback -- --nocapture`
   （校验 serialList 枚举/打开/信号冒烟/回环逐字节（512B ramp、2048B 全字节域、64KiB 分块突发）/空闲 poll=None/close 语义/立即重开；波特率缺省 115200）
 - 桌面运行：`node tools/dev.mjs`（默认用 fork 产物 `host/macos/target/release/pocketcom-host`，未构建时回退 vendor 的 `pocket-desktop-host` 并警告 `com.*` 不可用；flags 取自 `.pocket/macos-app/plan.json`）
 - 打包分发：`tools/package-macos.sh`（前置 `npm run build` + `cargo build` 产物；组装 `dist/PocketCOM.app` 并打 `dist/PocketCOM-<版本>-macos-arm64.dmg`。launcher 设 `POCKETJS_DIST` 指向 `Resources/dist` 后 exec 宿主二进制，flags 从 `.pocket/macos-app/plan.json` 推导（同 dev.mjs）；`VERSION=x.y.z` 覆盖版本号。**仅 ad-hoc 签名**（未公证）：首次打开需右键→打开或 `xattr -cr`。不启用沙盒故无 entitlement；`NSLocalNetworkUsageDescription`（含 zh/en InfoPlist.strings）为未来 TCP/UDP/WS 连局域网设备的授权弹窗预留，监听 `127.0.0.1` 不触发该弹窗）
 - CI/CD：`.github/workflows/macos.yml`（macos-latest=arm64；push main/PR/tag `v*`/手动触发。跑 typecheck + check + 核心单测 + 全量构建 + 打包；产物上传 artifact，`v*` tag 额外创建 GitHub Release 附 .dmg 与 .app.zip；宿主编译用 `Swatinem/rust-cache` 缓存）
-- 脚本化 UI 验证：宿主脚本 flags（`--mouse` `--click` `--wheel` `--key` `--type` `--press` `--storm` `--screenshot` `--quit-after` `--announce-ready`；`@T` 为 60Hz 虚拟时钟 tick 序号）经 `node tools/dev.mjs -- <flags…>` 原样转发给宿主二进制（不带 `--` 行为不变）。**各参数详解、tick/坐标系、拖拽与组合键配方、截图机制与坑位见 [docs/e2e.md](docs/e2e.md)**；观测用 `POCKETCOM_TRACE=1`。本机真机 e2e 已验证：串口全链路（M1）、TCP Client 回环（M2）、`--screenshot`/`--wheel`/`--key cmd+enter`、终端模式（M3，滚轮/拖拽选区/Ctrl 控制码均可脚本注入）；截图为 opt-in flag，CI 不触发。
+- 脚本化 UI 验证：宿主脚本 flags（`--mouse` `--click` `--wheel` `--key` `--type` `--press` `--storm` `--screenshot` `--quit-after` `--announce-ready`；`@T` 为 60Hz 虚拟时钟 tick 序号）经 `node tools/dev.mjs -- <flags…>` 原样转发给宿主二进制（不带 `--` 行为不变）。**各参数详解、tick/坐标系、拖拽与组合键配方、截图机制与坑位见 [docs/e2e.md](docs/e2e.md)**；观测用 `POCKETCOM_TRACE=1`。本机真机 e2e 已验证：串口全链路（M1）、TCP Client 回环（M2）、`--screenshot`/`--wheel`/`--key cmd+enter`、终端模式（M3，滚轮/拖拽选区/Ctrl 控制码均可脚本注入）、MCP 全链路含终端模式门控（M4，见上）；截图为 opt-in flag，CI 不触发。
 - UI 金样测试：PocketJS headless Bun host（byte-exact PNG golden，待落地）
-- MCP 集成测试：`bun test host/macos/mcp/`（待落地）
+- MCP 集成测试：`bun test host/macos/mcp/`（前置 `npm run build` + `cargo build --release`；脚本化 MCP client 经原生 fetch 走真实宿主+guest 全链路：401 鉴权 → initialize 会话 → tools/list → connect（bun TCP echo）→ send → read 前缀断言（`[RX]`/`[SYS]`/i18n 手动前缀）→ force 语义 → disconnect → config 白名单（token 不可触）→ 会话 DELETE；终端模式门控（SPEC §6.1）经 `--click` 脚本切模式验证停服/重启。产物缺失自动跳过，CI 在前置步骤产出两者）
 - RT-Thread 固件构建（预留）：`host/rtthread/` 按 RT-Thread package 规范组织（`SConscript` + `Kconfig`），在固件工程中经 `scons` 编译；前期可用 QEMU（如 `qemu-vexpress-a9` BSP）验证，命令落地后更新本节。
 
 ## 参考代码库（只读，禁止修改）
