@@ -62,7 +62,7 @@ host/macos/     # macOS 宿主：串口/TCP/UDP/WS 原生 IO、设置持久化+�
 host/rtthread/  # RT-Thread 宿主（预留）：UART/lwIP 适配 bridge 契约
 assets/i18n/    # 语言包
 assets/fonts/   # MiSans 字体文件（vendor，构建期烘焙字形）
-docs/           # 调研与移植文档
+docs/           # 调研、移植与脚本化 UI 验证文档（e2e.md）
 vendor/pocketjs # PocketJS 上游（git submodule；引擎 crates 与桌面宿主来源）
 SPEC.md         # 功能规格（权威）
 ```
@@ -85,7 +85,7 @@ SPEC.md         # 功能规格（权威）
 - 桌面运行：`node tools/dev.mjs`（默认用 fork 产物 `host/macos/target/release/pocketcom-host`，未构建时回退 vendor 的 `pocket-desktop-host` 并警告 `com.*` 不可用；flags 取自 `.pocket/macos-app/plan.json`）
 - 打包分发：`tools/package-macos.sh`（前置 `npm run build` + `cargo build` 产物；组装 `dist/PocketCOM.app` 并打 `dist/PocketCOM-<版本>-macos-arm64.dmg`。launcher 设 `POCKETJS_DIST` 指向 `Resources/dist` 后 exec 宿主二进制，flags 从 `.pocket/macos-app/plan.json` 推导（同 dev.mjs）；`VERSION=x.y.z` 覆盖版本号。**仅 ad-hoc 签名**（未公证）：首次打开需右键→打开或 `xattr -cr`。不启用沙盒故无 entitlement；`NSLocalNetworkUsageDescription`（含 zh/en InfoPlist.strings）为未来 TCP/UDP/WS 连局域网设备的授权弹窗预留，监听 `127.0.0.1` 不触发该弹窗）
 - CI/CD：`.github/workflows/macos.yml`（macos-latest=arm64；push main/PR/tag `v*`/手动触发。跑 typecheck + check + 核心单测 + 全量构建 + 打包；产物上传 artifact，`v*` tag 额外创建 GitHub Release 附 .dmg 与 .app.zip；宿主编译用 `Swatinem/rust-cache` 缓存）
-- 脚本化 UI 验证：宿主 flags `--mouse X,Y@T`（hover）/`--click X,Y@T`（press）/`--key [cmd+]NAME@T`/`--type TEXT@T`/`--screenshot PATH@T`（第 T tick 把窗口内容导出 PNG，可重复传多个时刻）/`--quit-after N`；注意 **press 必须用 `--click`**（`--mouse d/u` 只发 svc 行不产生 CIRCLE），且点击前必须先 `--mouse` hover 一帧聚焦；`--screenshot` 走系统 `screencapture -l` 捕获**本进程窗口**（自窗口免 Screen Recording 授权，CI/agent 零弹窗；AppKit `cacheDisplayInRect` 拿不到 Metal 层内容，勿改回），PNG 含 28pt 标题栏、尺寸=2x 物理像素，同 UI 状态输出字节一致可做断言；**脚本 flags 经 `node tools/dev.mjs -- <flags…>` 转发**（`--` 之后的参数原样传给宿主二进制，如 `node tools/dev.mjs -- --screenshot out.png@120 --quit-after 130`；不带 `--` 行为不变）；`--key`/cmd-chord 送小写原始键名，app 侧 `app.tsx KEY_ALIAS` 归一化。观测用 `POCKETCOM_TRACE=1`（dump 双向 svc 行 + com.serialList/serialOpen/write/tcpConnect/tcpListen/udpBind/wsConnect/cfgRead/cfgWrite）。本机真机 e2e 已验证：串口全链路（M1）、TCP Client 回环（M2：选类型→填 host/port→打开→发送→echo 收到→关闭→lastConn/发送历史持久化 0600）、`--screenshot` 全链路（多时刻/交互后截图/语言切换捕获，CI 不跑截图——opt-in flag 不传即不触发）、终端模式（M3：TCP 回环 echo 下切终端→ANSI 16 色/256 色/粗体/下划线/反显/OSC 吞掉渲染、按键直发回显、方向键经回显驱动光标、40 行溢出贴底跟随与回滚积累、空屏提示；滚轮本地滚动/拖拽选区/Ctrl 控制码无脚本 flags 可注入，由核心层单测覆盖）。
+- 脚本化 UI 验证：宿主脚本 flags（`--mouse` `--click` `--wheel` `--key` `--type` `--press` `--storm` `--screenshot` `--quit-after` `--announce-ready`；`@T` 为 60Hz 虚拟时钟 tick 序号）经 `node tools/dev.mjs -- <flags…>` 原样转发给宿主二进制（不带 `--` 行为不变）。**各参数详解、tick/坐标系、拖拽与组合键配方、截图机制与坑位见 [docs/e2e.md](docs/e2e.md)**；观测用 `POCKETCOM_TRACE=1`。本机真机 e2e 已验证：串口全链路（M1）、TCP Client 回环（M2）、`--screenshot`/`--wheel`/`--key cmd+enter`、终端模式（M3，滚轮/拖拽选区/Ctrl 控制码均可脚本注入）；截图为 opt-in flag，CI 不触发。
 - UI 金样测试：PocketJS headless Bun host（byte-exact PNG golden，待落地）
 - MCP 集成测试：`bun test host/macos/mcp/`（待落地）
 - RT-Thread 固件构建（预留）：`host/rtthread/` 按 RT-Thread package 规范组织（`SConscript` + `Kconfig`），在固件工程中经 `scons` 编译；前期可用 QEMU（如 `qemu-vexpress-a9` BSP）验证，命令落地后更新本节。

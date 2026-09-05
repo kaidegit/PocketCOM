@@ -62,6 +62,63 @@ fn screenshot_flag_rejects_malformed_specs() {
     assert!(args_from(&["--unknown"]).is_err());
 }
 
+#[test]
+fn key_flag_parses_modifier_chords() {
+    let a = args_from(&["--key", "cmd+sh+pageup@60"]).unwrap();
+    assert!(
+        matches!(a.script.as_slice(), [ScriptEvent::Key(60, k, true, false, false, true)] if k == "pageup")
+    );
+    let a = args_from(&["--key", "alt+ctl+x@5"]).unwrap();
+    assert!(
+        matches!(a.script.as_slice(), [ScriptEvent::Key(5, k, false, true, true, false)] if k == "x")
+    );
+    // Bare key: no modifiers.
+    let a = args_from(&["--key", "escape@1"]).unwrap();
+    assert!(
+        matches!(a.script.as_slice(), [ScriptEvent::Key(1, k, false, false, false, false)] if k == "escape")
+    );
+    // Chord with no key name is rejected.
+    assert!(args_from(&["--key", "cmd+@1"]).is_err());
+}
+
+#[test]
+fn wheel_flag_parses_position_and_delta() {
+    let a = args_from(&["--wheel", "135,300,-120@70"]).unwrap();
+    assert!(matches!(a.script.as_slice(), [ScriptEvent::Wheel(70, x, y, dy)] if *x == 135.0 && *y == 300.0 && *dy == -120.0));
+    // Malformed: wrong part count / missing @TICK.
+    assert!(args_from(&["--wheel", "135,-120@70"]).is_err());
+    assert!(args_from(&["--wheel", "135,300,-120"]).is_err());
+    assert!(args_from(&["--wheel"]).is_err());
+}
+
+#[test]
+fn mouse_flag_covers_a_full_drag_sequence() {
+    // Drag = down → moves → up, all via --mouse kind suffixes.
+    let a = args_from(&[
+        "--mouse",
+        "100,100,d@60",
+        "--mouse",
+        "150,120,m@62",
+        "--mouse",
+        "200,140,m@64",
+        "--mouse",
+        "200,140,u@66",
+    ])
+    .unwrap();
+    let kinds: Vec<char> = a
+        .script
+        .iter()
+        .filter_map(|ev| match ev {
+            ScriptEvent::Mouse(_, _, _, kind) => Some(*kind),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(kinds, ['d', 'm', 'm', 'u']);
+    assert!(
+        matches!(a.script.first(), Some(ScriptEvent::Mouse(60, x, y, _)) if *x == 100.0 && *y == 100.0)
+    );
+}
+
 
 #[test]
 fn app_supervisor_uses_lifecycle_focus_and_shell_painter_order() {

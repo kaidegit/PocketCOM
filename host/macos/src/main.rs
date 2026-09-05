@@ -109,6 +109,10 @@ enum ScriptEvent {
     /// Raw pointer line at a tick: kind 'd' presses, 'u' releases, 'm' moves
     /// with the current scripted button state (drag scripting).
     Mouse(u64, f32, f32, char),
+    /// Wheel scroll at logical (x, y) at a tick: re-positions the pointer
+    /// (the app routes dy by the last mouse position) then sends dy in
+    /// logical px — the same line the real wheel path emits.
+    Wheel(u64, f32, f32, f32),
     /// Named key with optional cmd+/alt+/ctl+/sh+ prefixes (svc `key` line).
     Key(u64, String, bool, bool, bool, bool),
 }
@@ -445,6 +449,9 @@ fn parse_args_from<I: Iterator<Item = String>>(mut it: I) -> Result<Args> {
                         break;
                     }
                 }
+                if name.is_empty() {
+                    return Err(anyhow!("--key NAME@TICK"));
+                }
                 args.script.push(ScriptEvent::Key(
                     t.parse()?,
                     name.to_string(),
@@ -452,6 +459,25 @@ fn parse_args_from<I: Iterator<Item = String>>(mut it: I) -> Result<Args> {
                     alt,
                     ctl,
                     sh,
+                ));
+            }
+            "--wheel" => {
+                // --wheel X,Y,DY@TICK — scripted wheel scroll (dy in logical
+                // px; the app's panel handler scrolls down for negative dy,
+                // matching the real wheel's pixel delta).
+                let v = val("--wheel")?;
+                let (spec, t) = v
+                    .rsplit_once('@')
+                    .ok_or_else(|| anyhow!("--wheel X,Y,DY@TICK"))?;
+                let parts: Vec<&str> = spec.split(',').collect();
+                if parts.len() != 3 {
+                    return Err(anyhow!("--wheel X,Y,DY@TICK"));
+                }
+                args.script.push(ScriptEvent::Wheel(
+                    t.parse()?,
+                    parts[0].parse()?,
+                    parts[1].parse()?,
+                    parts[2].parse()?,
                 ));
             }
             "--quit-after" => args.quit_after_ticks = Some(val("--quit-after")?.parse()?),
@@ -1217,6 +1243,14 @@ impl PocketRoot {
                             {"t": "mouse", "x": x, "y": y, "d": down, "sh": false}
                         ));
                     }
+                }
+                ScriptEvent::Wheel(t, x, y, dy) if t == tick => {
+                    // svc scroll carries no coordinates — the app routes dy
+                    // by the last mouse position, so re-position first.
+                    self.svc(serde_json::json!(
+                        {"t": "mouse", "x": x, "y": y, "d": self.script_mouse, "sh": false}
+                    ));
+                    self.svc(serde_json::json!({"t": "scroll", "dy": dy}));
                 }
                 ScriptEvent::Key(t, ref k, cmd, alt, ctl, sh) if t == tick => {
                     self.svc(serde_json::json!(
