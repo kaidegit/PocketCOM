@@ -66,6 +66,12 @@ export class LogView {
     this.rebuild();
   }
 
+  /** 测量函数语义变化（如字号切换）：宽度缓存随之失效，清缓存并重排版。 */
+  remeasure(): void {
+    this.widthCache.clear();
+    this.rebuild();
+  }
+
   /**
    * 从总线同步新消息（每帧调用）。返回本次新增行数。
    * 不清空已见 id：清屏用 clear()。
