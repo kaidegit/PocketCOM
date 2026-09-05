@@ -30,7 +30,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # npm 11 (node 24) — the package-lock.json is generated/maintained
+          # with npm 11; npm 10's `npm ci` sync check rejects its @emnapi
+          # optional-peer entries.
+          node-version: 24
 
       - uses: oven-sh/setup-bun@v2
 
