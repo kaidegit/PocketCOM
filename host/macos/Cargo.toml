@@ -30,8 +30,16 @@ base64 = "0.22"
 # worker model (no tokio); rustls + bundled webpki roots cover wss://.
 tungstenite = { version = "0.28", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
 # (System appearance for follow-system theme, SPEC §3.7, reads the global
-# AppleInterfaceStyle preference through raw CoreFoundation FFI — no objc
-# binding crate needed.)
+# AppleInterfaceStyle preference through raw CoreFoundation FFI — no AppKit
+# binding crate needed; --screenshot window lookup below is the one place
+# that does go through ObjC.)
+# --screenshot PATH@TICK (shot.rs): `screencapture -l` of our own window —
+# window-server compositing captures the gpui Metal layer, and own-window
+# content needs no Screen Recording TCC authorization. objc2 only finds the
+# window (title match) and its windowNumber.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSBitmapImageRep", "NSResponder", "NSView", "NSWindow", "NSImageRep"] }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSData", "NSDictionary", "NSGeometry", "NSString"] }
 
 [profile.release]
 debug = false

@@ -67,6 +67,8 @@ mod com_serial;
 mod com_tcp;
 mod com_udp;
 mod com_ws;
+// POCKETCOM: --screenshot PATH@TICK self-window capture (shot.rs).
+mod shot;
 
 #[cfg(target_os = "macos")]
 const HOST_ID: &str = "macos-app";
@@ -312,6 +314,9 @@ struct Args {
     density: u32,
     script: Vec<ScriptEvent>,
     quit_after_ticks: Option<u64>,
+    /// PNG the window content at ticks (--screenshot PATH@TICK, repeatable;
+    /// AppKit self-window capture, shot.rs — no Screen Recording permission).
+    screenshots: Vec<(u64, PathBuf)>,
     /// Benchmark typing storm: (chars/sec, start tick, duration ticks) —
     /// svc `ch` lines through the same edit path real typing takes.
     storm: Option<(u32, u64, u64)>,
@@ -321,6 +326,10 @@ struct Args {
 }
 
 fn parse_args() -> Result<Args> {
+    parse_args_from(std::env::args().skip(1))
+}
+
+fn parse_args_from<I: Iterator<Item = String>>(mut it: I) -> Result<Args> {
     let mut args = Args {
         app: "note-main".into(),
         js: None,
@@ -336,11 +345,11 @@ fn parse_args() -> Result<Args> {
         density: 2,
         script: Vec::new(),
         quit_after_ticks: None,
+        screenshots: Vec::new(),
         storm: None,
         announce_ready: false,
     };
     let mut system_plan_path = None;
-    let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         let mut val = |name: &str| -> Result<String> {
             it.next().ok_or_else(|| anyhow!("{name} needs a value"))
@@ -468,6 +477,16 @@ fn parse_args() -> Result<Args> {
                     .split_once('+')
                     .ok_or_else(|| anyhow!("--storm CPS@START+DUR"))?;
                 args.storm = Some((cps.parse()?, start.parse()?, dur.parse()?));
+            }
+            "--screenshot" => {
+                // --screenshot PATH@TICK — dump the live window as PNG at a
+                // tick (repeatable; AppKit self-window capture, shot.rs).
+                let v = val("--screenshot")?;
+                let (path, t) = v
+                    .rsplit_once('@')
+                    .filter(|(path, _)| !path.is_empty())
+                    .ok_or_else(|| anyhow!("--screenshot PATH@TICK"))?;
+                args.screenshots.push((t.parse()?, PathBuf::from(path)));
             }
             other => return Err(anyhow!("unknown flag {other}")),
         }
@@ -1360,6 +1379,21 @@ impl PocketRoot {
         if hash != self.hash {
             self.hash = hash;
             cx.notify();
+        }
+
+        // Scheduled --screenshot PATH@TICK: this tick's content is applied
+        // and the DrawList is final; capture what the window shows now (the
+        // tick base matches run_script events). A failing shot must not kill
+        // the app — quit stays --quit-after's business.
+        for (_, path) in self.args.screenshots.iter().filter(|(t, _)| *t == self.ticks) {
+            match shot::capture_to_path(path, &self.args.title) {
+                Ok((w, h)) => {
+                    println!("pocket-desktop-host: screenshot {} ({w}x{h})", path.display());
+                }
+                Err(e) => {
+                    eprintln!("pocket-desktop-host: screenshot {} failed: {e:#}", path.display());
+                }
+            }
         }
 
         self.ticks += 1;

@@ -315,6 +315,7 @@ MCP server 实现于**宿主层**（fork 的桌面宿主 crate 内的原生线�
 
 - **核心层纯 TS 单测**（Vitest/Bun test）：帧合流、hex/escape/UTF-8 解码（含截断序列与非法字节）、ANSI/VT100 模型（对齐经典用例）、环形缓冲、消息总线、状态机迁移。
 - **UI 测试**：PocketJS headless Bun host + 帧金样（PNG golden），覆盖双模式、双主题、双语言。
+- **脚本化 UI 截图**（宿主能力，配合 e2e/文档产出）：宿主 flag `--screenshot PATH@T` 在第 T tick（60Hz 虚拟时钟，与 `--mouse/--click/--key/--type` 的 `@T` 同基准，可重复传入）把主窗口当前内容导出为 PNG。实现走系统 `screencapture -l` 捕获本进程窗口——自窗口内容免 Screen Recording（TCC）授权，agent/CI 运行零弹窗；不采用 `CGWindowListCreateImage`（deprecated）与 CPU 光栅（跳过 TEXT_RUN，native-text 下丢全部文字）。截图为窗口实际渲染内容（含 28pt 标题栏、2x 物理像素），含 CoreText 排版与合成器结果，**非确定性，不做 byte-exact 金样**（金样仍走 headless 路线）；同 UI 状态下输出字节一致，可作 e2e 相等断言。该 flag 为 opt-in：CI 不传即不触发，宿主单测仅覆盖参数解析与 PNG 头校验纯函数。
 - **桥接契约测试**：sim host（确定性 fixture）驱动核心层全链路。
 - **MCP 集成测试**：脚本化 MCP client 走完整会话（connect → send → read → 前缀断言 → disconnect）。
 - 真机回归：macOS 实机串口回环（USB 转串口 TX-RX 短接）。

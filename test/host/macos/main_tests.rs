@@ -1,11 +1,67 @@
 //! `main.rs` tests — scheduling, realm isolation, repaint hashing, system
-//! plan resolution. No window opened; pure logic + engine/surface primitives.
+//! plan resolution, script flag parsing. No window opened; pure logic +
+//! engine/surface primitives.
 //!
 //! Mirrored under test/host/macos/ per repo convention; compiled into the
 //! `pocketcom-host` bin via `#[path]` from host/macos/src/main.rs, so
 //! `use super::*` reaches main.rs's private items.
 
 use super::*;
+
+fn args_from(argv: &[&str]) -> Result<Args> {
+    parse_args_from(argv.iter().map(|s| s.to_string()))
+}
+
+#[test]
+fn parse_args_from_is_injectable_and_defaults_match() {
+    let a = args_from(&[]).unwrap();
+    assert_eq!(a.app, "note-main");
+    assert!(a.screenshots.is_empty());
+    assert!(a.script.is_empty());
+    assert_eq!(a.quit_after_ticks, None);
+}
+
+#[test]
+fn screenshot_flag_parses_path_at_tick() {
+    let a = args_from(&["--screenshot", "/tmp/a.png@120"]).unwrap();
+    assert_eq!(a.screenshots, vec![(120, PathBuf::from("/tmp/a.png"))]);
+}
+
+#[test]
+fn screenshot_flag_is_repeatable_and_mixes_with_other_script_flags() {
+    let a = args_from(&[
+        "--quit-after",
+        "200",
+        "--screenshot",
+        "shot1.png@30",
+        "--click",
+        "10,20@5",
+        "--screenshot",
+        "/tmp/shot2.png@90",
+    ])
+    .unwrap();
+    assert_eq!(
+        a.screenshots,
+        vec![(30, PathBuf::from("shot1.png")), (90, PathBuf::from("/tmp/shot2.png"))]
+    );
+    assert_eq!(a.quit_after_ticks, Some(200));
+    assert!(matches!(a.script.as_slice(), [ScriptEvent::Click(5, x, y)] if *x == 10.0 && *y == 20.0));
+}
+
+#[test]
+fn screenshot_flag_rejects_malformed_specs() {
+    // Missing value.
+    assert!(args_from(&["--screenshot"]).is_err());
+    // Missing @TICK.
+    assert!(args_from(&["--screenshot", "noatt.png"]).is_err());
+    // Empty path.
+    assert!(args_from(&["--screenshot", "@10"]).is_err());
+    // Non-numeric tick.
+    assert!(args_from(&["--screenshot", "a.png@abc"]).is_err());
+    // Unknown flags stay rejected.
+    assert!(args_from(&["--unknown"]).is_err());
+}
+
 
 #[test]
 fn app_supervisor_uses_lifecycle_focus_and_shell_painter_order() {

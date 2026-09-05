@@ -34,7 +34,13 @@ const flags = [
   ...(plan.companions?.length ? ["--editor"] : []),
 ];
 
-const child = spawn(bin, flags, {
+// `--` ends dev.mjs's own args; the rest are forwarded verbatim to the host
+// binary (scripted UI verification flags, e.g.
+// `node tools/dev.mjs -- --screenshot out.png@120 --quit-after 130`).
+const sep = process.argv.indexOf("--");
+const extra = sep === -1 ? [] : process.argv.slice(sep + 1);
+
+const child = spawn(bin, [...flags, ...extra], {
   stdio: "inherit",
   env: { ...process.env, POCKETJS_DIST: resolve(root, "dist"), RUST_LOG: process.env.RUST_LOG ?? "info" },
 });
