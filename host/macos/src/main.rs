@@ -1516,6 +1516,21 @@ impl PocketRoot {
                     "alt": ks.modifiers.alt, "ctl": ks.modifiers.control,
                 }));
             }
+            // Ctrl-modified printable keys never reach the input handler as
+            // text (no ch line), so forward them as a key line with the ctl
+            // flag — the guest terminal encoder maps Ctrl+letter to control
+            // codes (SPEC §3.4). stop_propagation keeps the platform input
+            // context from also inserting the character. Alt is NOT forwarded:
+            // Option+letter produces composed characters (ç, €…) via
+            // insertText, which terminal mode sends as plain bytes.
+            else if ks.modifiers.control && ks.key.chars().count() == 1 {
+                self.svc(serde_json::json!({
+                    "t": "key", "k": ks.key, "sh": shift,
+                    "alt": false, "ctl": true,
+                }));
+                cx.stop_propagation();
+                return;
+            }
             // Plain typing is NOT emitted here. gpui hands the unhandled key
             // event to the input context after this listener, and insertText:
             // always reaches the registered input handler — so the character
