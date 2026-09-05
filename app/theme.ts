@@ -1,7 +1,7 @@
 // app/theme.ts — 设计令牌（SPEC §3.7）。
-// 深色/浅色双套令牌（三态模式：浅色/深色/跟随系统，跟随系统暂无宿主
-// 外观读取通道，先按深色处理）；样式一律经 theme token 的 style 绑定，
-// 禁止拼接 class 片段。
+// 深色/浅色双套令牌；三态模式：浅色 / 深色 / 跟随系统（系统外观由宿主
+// appearance 事件经 app/session 注入，见 setSystemAppearance）；样式一律经
+// theme token 的 style 绑定，禁止拼接 class 片段。
 import { computed, ref } from "vue";
 
 export type ThemeMode = "dark" | "light" | "system";
@@ -101,8 +101,21 @@ const light: ThemeTokens = {
 
 const THEMES: Record<Exclude<ThemeMode, "system">, ThemeTokens> = { dark, light };
 
-/** 主题模式（跟随系统暂按深色处理，M2 接宿主外观读取后放开）。 */
+/** 主题模式（跟随系统 = 宿主上报的系统外观，M2 起）。 */
 export const themeMode = ref<ThemeMode>("dark");
 
-/** 当前生效令牌。 */
-export const theme = computed<ThemeTokens>(() => THEMES[themeMode.value === "light" ? "light" : "dark"]);
+/** 宿主上报的系统外观（appearance 事件驱动；缺省按浅色）。 */
+export const systemAppearance = ref<"light" | "dark">("light");
+
+/** 宿主 appearance 事件入口（app/session 的事件泵调用）。 */
+export function setSystemAppearance(v: "light" | "dark"): void {
+  systemAppearance.value = v;
+}
+
+/** 当前生效令牌：light/dark 直接取，system 跟随宿主上报的外观。 */
+export const theme = computed<ThemeTokens>(() => {
+  const mode = themeMode.value;
+  if (mode === "light") return THEMES.light;
+  if (mode === "dark") return THEMES.dark;
+  return THEMES[systemAppearance.value];
+});

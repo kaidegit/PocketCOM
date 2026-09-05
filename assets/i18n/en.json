@@ -50,7 +50,17 @@
       "xonxoff": "XON/XOFF",
       "rtscts": "RTS/CTS",
       "dsrdtr": "DSR/DTR"
-    }
+    },
+    "host": "Host",
+    "remotePort": "Remote port",
+    "listenPort": "Listen port",
+    "localPort": "Local port",
+    "targetHost": "Target host",
+    "wsUrl": "URL",
+    "wsProtocols": "Subprotocols (comma-separated)",
+    "autoReconnect": "Auto reconnect",
+    "kick": "Kick",
+    "cancel": "Cancel"
   },
   "mode": {
     "transfer": "Transfer",
@@ -99,7 +109,9 @@
     "parseFailed": "Failed to parse payload",
     "failed": "Send failed",
     "history": "History",
-    "sendFile": "Send file"
+    "sendFile": "Send file",
+    "broadcast": "Broadcast",
+    "historyClear": "Clear history"
   },
   "sys": {
     "openFailed": "Failed to open connection",
@@ -116,6 +128,18 @@
     "langName": {
       "zh-CN": "简体中文",
       "en": "English"
-    }
+    },
+    "fontSizeSmall": "Small",
+    "fontSizeMedium": "Medium",
+    "fontSizeLarge": "Large",
+    "export": "Export config",
+    "import": "Import config",
+    "exportDone": "Config exported",
+    "exportCanceled": "Export canceled",
+    "exportFailed": "Export failed",
+    "importDone": "Config imported",
+    "importCanceled": "Import canceled",
+    "importFailed": "Import failed",
+    "persistFailed": "Failed to save settings"
   }
 }

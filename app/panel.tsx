@@ -1,8 +1,8 @@
-// app/panel.tsx — 左侧连接配置面板（SPEC §3.1/§3.2），重写版。
+// app/panel.tsx — 左侧连接配置面板（SPEC §3.1/§3.2），M2 重写版。
 // 布局：头部（固定）+ 内容滚动区（absolute 布局表，每块 insetT 显式定位，
 // 规避深层 flex-col 堆叠怪癖；同时给 Select 弹层提供精确的屏幕锚点）+
 // 页脚（固定：打开/关闭按钮 + 状态灯，不随内容滚动）。
-// M1 只有串口可用；TCP/UDP/WS 与终端模式、MCP 共享置灰占位（文案走 i18n）。
+// 连接类型四类 + 串口全参数；布局表随 connType/客户端数/字段显隐动态伸缩。
 import { computed, ref } from "vue";
 import { Text, View } from "@pocketjs/framework/components";
 import {
@@ -23,47 +23,110 @@ import { locale, t, type Locale } from "./i18n";
 import { PANEL_FOOTER_H, PANEL_HEADER_H, PANEL_W, viewportSize } from "./layout";
 import { onWheel } from "./wheel";
 import { setActiveField } from "./fields";
-import type { SerialOpenParams } from "../bridge/com";
 import {
+  applyLogFormat,
+  baud,
+  clientList,
   closeConnection,
-  comAvailable,
   connState,
-  openConnection,
+  connType,
+  dataBits,
+  dtr,
+  exportConfig,
+  fontSize,
+  flowControl,
+  importConfig,
+  kickClient,
+  openCurrentConnection,
+  parity,
+  portPath,
   ports,
   refreshPorts,
+  rts,
   session,
-  sysMsg,
+  setConnType,
+  stopBits,
+  tcpAutoReconnect,
+  tcpHost,
+  tcpPort,
+  tcpReconnectSec,
+  tcpsPort,
+  udpBindPort,
+  udpHost,
+  udpPort,
+  wsAutoReconnect,
+  wsReconnectSec,
+  wsUrl,
+  comAvailable,
 } from "./session";
 import { applyLocale } from "./locale";
 
 // ---------------------------------------------------------------------------
-// 参数状态（打开时快照进 session.open）
+// 参数状态（串口波特率自定义输入框是面板局部 UI 状态）
 // ---------------------------------------------------------------------------
-
-const connType = ref("serial");
-const portPath = ref("");
-const baud = ref("115200");
-const customBaudVisible = ref(false);
-const customBaud = ref("115200");
-const dataBits = ref("8");
-const parity = ref("none");
-const stopBits = ref("1");
-const flowControl = ref("none");
-const dtr = ref(false);
-const rts = ref(false);
 
 const BAUD_PRESETS = ["9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"];
 const DATA_BITS = ["5", "6", "7", "8"];
 
+const customBaudVisible = ref(false);
+const customBaud = ref("115200");
 let customBaudField: TextFieldHandle | undefined;
 
-/** 有效波特率字符串（自定义输入框的值打开连接时实时读取）。 */
-function effectiveBaud(): string {
-  if (customBaudVisible.value && customBaudField) {
-    return customBaudField.text().trim() || customBaud.value;
-  }
-  return BAUD_PRESETS.includes(baud.value) ? baud.value : customBaud.value;
+/** 文本字段句柄注册表：打开连接前把未提交的输入 flush 进 session 仓库。 */
+const fieldHandles = new Map<string, TextFieldHandle>();
+function bindField(key: string, target: { value: string }): {
+  onHandle: (h: TextFieldHandle) => void;
+  onEnter: (h: TextFieldHandle) => void;
+} {
+  return {
+    onHandle: (h) => {
+      fieldHandles.set(key, h);
+    },
+    onEnter: (h) => {
+      target.value = h.text();
+    },
+  };
 }
+
+function flushFields(): void {
+  for (const [key, h] of fieldHandles) {
+    const text = h.text();
+    switch (key) {
+      case "tcpHost":
+        tcpHost.value = text;
+        break;
+      case "tcpPort":
+        tcpPort.value = text;
+        break;
+      case "tcpReconnectSec":
+        tcpReconnectSec.value = text;
+        break;
+      case "tcpsPort":
+        tcpsPort.value = text;
+        break;
+      case "udpBindPort":
+        udpBindPort.value = text;
+        break;
+      case "udpHost":
+        udpHost.value = text;
+        break;
+      case "udpPort":
+        udpPort.value = text;
+        break;
+      case "wsUrl":
+        wsUrl.value = text;
+        break;
+      case "wsProtocols":
+        wsProtocols.value = text;
+        break;
+      case "wsReconnectSec":
+        wsReconnectSec.value = text;
+        break;
+    }
+  }
+}
+
+export const wsProtocols = ref("");
 
 function stateColor(): string {
   switch (connState.value) {
@@ -79,34 +142,16 @@ function stateColor(): string {
 }
 
 function tryOpen(): void {
-  const path = portPath.value;
-  if (path === "") {
-    sysMsg(t("conn.noPortSelected"));
-    return;
+  flushFields();
+  if (customBaudVisible.value && customBaudField) {
+    baud.value = customBaudField.text().trim() || "115200";
   }
-  const baudText = effectiveBaud();
-  const baudRate = Number.parseInt(baudText, 10);
-  if (!/^\d+$/.test(baudText) || baudRate <= 0) {
-    sysMsg(`${t("conn.baudInvalid")}: ${baudText}`);
-    return;
-  }
-  const params: SerialOpenParams = {
-    path,
-    baudRate,
-    dataBits: Number(dataBits.value) as 5 | 6 | 7 | 8,
-    parity: parity.value as SerialOpenParams["parity"],
-    stopBits: Number(stopBits.value) as 1 | 2,
-    flowControl: flowControl.value as SerialOpenParams["flowControl"],
-  };
-  if (openConnection(params) && session) {
-    session.setSignals({ dtr: dtr.value, rts: rts.value });
-  }
+  openCurrentConnection();
 }
 
 function toggleOpen(): void {
   const s = connState.value;
-  if (s === "CONNECTED") closeConnection();
-  else if (s === "LOST") closeConnection(); // 确认掉线 → DISCONNECTED
+  if (s === "CONNECTED" || s === "LOST" || s === "CONNECTING") closeConnection();
   else if (s === "DISCONNECTED") tryOpen();
 }
 
@@ -126,11 +171,19 @@ const SECTION_GAP = 12;
 const CHECK_H = 26;
 const CUSTOM_H = 6 + CTL_H;
 const PAIR_GAP = 8;
+const CLIENT_ROW_H = 24;
 
 const CONTENT_W = PANEL_W - PAD_X * 2;
 const PAIR_W = Math.floor((CONTENT_W - PAIR_GAP) / 2);
 
-/** 内容块 id → 顶部偏移，以及内容总高（自定义波特率展开时伸缩）。 */
+const isSerial = computed(() => connType.value === "serial");
+const withReconnect = computed(
+  () =>
+    (connType.value === "tcp" && tcpAutoReconnect.value) ||
+    (connType.value === "ws" && wsAutoReconnect.value),
+);
+
+/** 内容块 id → 顶部偏移，以及内容总高（随 connType/客户端列表/字段显隐伸缩）。 */
 const layoutInfo = computed(() => {
   const top: Record<string, number> = {};
   let y = PAD_TOP;
@@ -139,18 +192,41 @@ const layoutInfo = computed(() => {
     y += h + gapAfter;
   };
   put("connType", FIELD_H, BLOCK_GAP);
-  put("port", FIELD_H, BLOCK_GAP);
-  put("baud", FIELD_H + (customBaudVisible.value ? CUSTOM_H : 0), BLOCK_GAP);
-  put("pair1", FIELD_H, BLOCK_GAP);
-  put("pair2", FIELD_H, BLOCK_GAP);
-  put("signals", CHECK_H, SECTION_GAP);
+  if (isSerial.value) {
+    put("port", FIELD_H, BLOCK_GAP);
+    put("baud", FIELD_H + (customBaudVisible.value ? CUSTOM_H : 0), BLOCK_GAP);
+    put("pair1", FIELD_H, BLOCK_GAP);
+    put("pair2", FIELD_H, BLOCK_GAP);
+    put("signals", CHECK_H, SECTION_GAP);
+  } else if (connType.value === "tcp") {
+    put("tcpHost", FIELD_H, BLOCK_GAP);
+    put("tcpPort", FIELD_H, SECTION_GAP);
+    put("tcpReconnect", CHECK_H, withReconnect.value ? 0 : SECTION_GAP);
+  } else if (connType.value === "tcps") {
+    put("tcpsPort", FIELD_H, SECTION_GAP);
+    if (clientList.value.length > 0) {
+      put("clients", clientList.value.length * CLIENT_ROW_H, SECTION_GAP);
+    }
+  } else if (connType.value === "udp") {
+    put("udpHost", FIELD_H, BLOCK_GAP);
+    put("udpPair", FIELD_H, SECTION_GAP);
+  } else if (connType.value === "ws") {
+    put("wsUrl", FIELD_H, BLOCK_GAP);
+    put("wsProtocols", FIELD_H, BLOCK_GAP);
+    put("wsReconnect", CHECK_H, withReconnect.value ? 0 : SECTION_GAP);
+  }
+  if (withReconnect.value) {
+    put("reconnectSec", CUSTOM_H, SECTION_GAP);
+  }
   put("div1", 1, SECTION_GAP);
   put("mode", FIELD_H, SECTION_GAP);
   put("div2", 1, SECTION_GAP);
   put("mcp", CHECK_H, SECTION_GAP);
   put("div3", 1, SECTION_GAP);
   put("language", FIELD_H, BLOCK_GAP);
-  put("theme", FIELD_H, 0);
+  put("theme", FIELD_H, BLOCK_GAP);
+  put("fontSize", FIELD_H, BLOCK_GAP);
+  put("cfgBtns", 30, 0);
   return { top, total: y + PAD_BOTTOM };
 });
 
@@ -166,12 +242,12 @@ export function LeftPanel() {
   });
 
   /** 控制框屏幕锚点（弹层定位用）：面板从 (0,0) 开始，头部固定高。 */
-  const anchor = (blockId: string, x: number, w: number): (() => PopupAnchor) => {
+  const anchor = (blockId: string, x: number, w: number, ctlH = CTL_H): (() => PopupAnchor) => {
     return () => ({
       x,
       y: PANEL_HEADER_H + 1 + (layoutInfo.value.top[blockId] ?? 0) + LABEL_H + LABEL_GAP - scroll.value,
       w,
-      h: CTL_H,
+      h: ctlH,
     });
   };
 
@@ -207,205 +283,187 @@ export function LeftPanel() {
             <FieldLabel text={() => t("conn.type")} />
             <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
               <Select
-                display={() => t("conn.serial")}
+                display={() => {
+                  const k = connType.value;
+                  const key = k === "tcp" ? "tcpClient" : k === "tcps" ? "tcpServer" : k === "ws" ? "wsClient" : k;
+                  return t(`conn.${key}`);
+                }}
+                value={() => connType.value}
                 options={() => [
                   { value: "serial", label: t("conn.serial") },
-                  { value: "tcp", label: `${t("conn.tcpClient")} · ${t("roadmap.m2")}`, disabled: true },
-                  { value: "tcps", label: `${t("conn.tcpServer")} · ${t("roadmap.m2")}`, disabled: true },
-                  { value: "udp", label: `${t("conn.udp")} · ${t("roadmap.m2")}`, disabled: true },
-                  { value: "ws", label: `${t("conn.wsClient")} · ${t("roadmap.m2")}`, disabled: true },
+                  { value: "tcp", label: t("conn.tcpClient") },
+                  { value: "tcps", label: t("conn.tcpServer") },
+                  { value: "udp", label: t("conn.udp") },
+                  { value: "ws", label: t("conn.wsClient") },
                 ]}
                 onPick={(v) => {
-                  connType.value = v;
+                  closePopup();
+                  setConnType(v as typeof connType.value);
                 }}
                 anchor={anchor("connType", PAD_X, CONTENT_W)}
               />
             </View>
           </View>
 
-          {/* 端口（label 行右侧内嵌刷新图标按钮；控制框只显示路径，描述留在弹层选项里） */}
-          <View class="absolute" style={{ insetT: top("port"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
-            <FieldLabel text={() => t("conn.port")} />
-            <View
-              class="absolute flex-row items-center justify-center"
-              debugName="refreshPorts"
-              style={{ insetR: 0, insetT: 0, width: 20, height: 16, bgColor: "#00000001" }}
-              focusable
-              onPress={() => {
-                setActiveField(null);
-                refreshPorts();
+          {/* ---- 串口参数 ---- */}
+          {isSerial.value ? (
+            <SerialBlocks
+              top={top}
+              anchor={anchor}
+              customBaudVisible={customBaudVisible}
+              customBaud={customBaud}
+              setCustomBaudField={(h) => {
+                customBaudField = h;
               }}
-            >
-              <Text class="text-xs" style={{ textColor: theme.value.dim, lineHeight: 16 }}>
-                ⟳
-              </Text>
-            </View>
-            <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
-              <Select
-                display={() => portPath.value}
-                emptyText={() => t("conn.noPorts")}
-                options={() =>
-                  ports.value.map((p) => ({
-                    value: p.path,
-                    label: `${p.path}${p.description ? " — " + p.description : ""}`,
-                  }))
-                }
-                onPick={(v) => {
-                  portPath.value = v;
-                }}
-                disabled={() => !comAvailable}
-                anchor={anchor("port", PAD_X, CONTENT_W)}
-              />
-            </View>
-          </View>
+              readCustomBaud={() => customBaudField?.text().trim() || ""}
+            />
+          ) : null}
 
-          {/* 波特率（自定义展开输入框） */}
-          <View
-            class="absolute"
-            style={{
-              insetT: top("baud"),
-              insetL: PAD_X,
-              width: CONTENT_W,
-              height: FIELD_H + (customBaudVisible.value ? CUSTOM_H : 0),
-            }}
-          >
-            <FieldLabel text={() => t("conn.baudRate")} />
-            <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
-              <Select
-                display={() => effectiveBaud()}
-                value={() => (customBaudVisible.value ? "__custom__" : baud.value)}
-                options={() => [
-                  ...BAUD_PRESETS.map((b) => ({ value: b, label: b })),
-                  { value: "__custom__", label: t("conn.custom") },
-                ]}
-                onPick={(v) => {
-                  if (v === "__custom__") {
-                    customBaudVisible.value = true;
-                  } else {
-                    baud.value = v;
-                    customBaudVisible.value = false;
-                  }
-                }}
-                anchor={anchor("baud", PAD_X, CONTENT_W)}
-              />
-            </View>
-            {customBaudVisible.value ? (
-              <View class="absolute left-0 right-0" style={{ insetT: FIELD_H + 6, height: CTL_H }}>
+          {/* ---- TCP Client ---- */}
+          {connType.value === "tcp" ? (
+            <View>
+              {fieldBlock(
+                top("tcpHost"),
+                () => t("conn.host"),
                 <TextField
-                  initial={customBaud.value}
-                  onHandle={(h) => {
-                    customBaudField = h;
-                    h.focus(); // 选"自定义…"后直接可输入
-                  }}
-                  onEnter={(h) => {
-                    customBaud.value = h.text().trim() || "115200";
+                  initial={tcpHost.value}
+                  placeholder={() => "127.0.0.1"}
+                  {...bindField("tcpHost", tcpHost)}
+                />,
+              )}
+              {fieldBlock(
+                top("tcpPort"),
+                () => t("conn.remotePort"),
+                <TextField initial={tcpPort.value} {...bindField("tcpPort", tcpPort)} />,
+              )}
+              <View
+                class="absolute"
+                style={{ insetT: top("tcpReconnect"), insetL: PAD_X, width: CONTENT_W, height: CHECK_H }}
+              >
+                <CheckRow
+                  label={() => t("conn.autoReconnect")}
+                  checked={() => tcpAutoReconnect.value}
+                  onToggle={() => {
+                    tcpAutoReconnect.value = !tcpAutoReconnect.value;
                   }}
                 />
               </View>
-            ) : null}
-          </View>
+            </View>
+          ) : null}
 
-          {/* 数据位 | 校验 */}
-          <View class="absolute" style={{ insetT: top("pair1"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
-            <View class="absolute" style={{ insetL: 0, insetT: 0, width: PAIR_W, height: FIELD_H }}>
-              <FieldLabel text={() => t("conn.dataBits")} />
-              <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
-                <Select
-                  display={() => dataBits.value}
-                  value={() => dataBits.value}
-                  options={() => DATA_BITS.map((b) => ({ value: b, label: b }))}
-                  onPick={(v) => {
-                    dataBits.value = v;
-                  }}
-                  anchor={anchor("pair1", PAD_X, PAIR_W)}
-                />
-              </View>
+          {/* ---- TCP Server ---- */}
+          {connType.value === "tcps" ? (
+            <View>
+              {fieldBlock(
+                top("tcpsPort"),
+                () => t("conn.listenPort"),
+                <TextField initial={tcpsPort.value} {...bindField("tcpsPort", tcpsPort)} />,
+              )}
+              {clientList.value.length > 0 ? (
+                <View
+                  class="absolute"
+                  style={{ insetT: top("clients"), insetL: PAD_X, width: CONTENT_W, height: clientList.value.length * CLIENT_ROW_H }}
+                >
+                  {clientList.value.map((c, i) => (
+                    <View
+                      class="absolute flex-row items-center gap-2"
+                      style={{ insetT: i * CLIENT_ROW_H, width: CONTENT_W, height: CLIENT_ROW_H }}
+                    >
+                      <Text class="flex-1 text-xs font-mono" style={{ textColor: theme.value.fg }}>
+                        {c.addr}
+                      </Text>
+                      <View style={{ width: 52, height: 20 }}>
+                        <Btn
+                          width={52}
+                          height={20}
+                          label={() => t("conn.kick")}
+                          onPress={() => kickClient(c.handle)}
+                        />
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
             </View>
-            <View class="absolute" style={{ insetL: PAIR_W + PAIR_GAP, insetT: 0, width: PAIR_W, height: FIELD_H }}>
-              <FieldLabel text={() => t("conn.parity")} />
-              <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
-                <Select
-                  display={() => t(`conn.parityOpt.${parity.value}`)}
-                  value={() => parity.value}
-                  options={() => [
-                    { value: "none", label: t("conn.parityOpt.none") },
-                    { value: "odd", label: t("conn.parityOpt.odd") },
-                    { value: "even", label: t("conn.parityOpt.even") },
-                    { value: "mark", label: `${t("conn.parityOpt.mark")} · ${t("conn.unsupported")}`, disabled: true },
-                    { value: "space", label: `${t("conn.parityOpt.space")} · ${t("conn.unsupported")}`, disabled: true },
-                  ]}
-                  onPick={(v) => {
-                    parity.value = v;
-                  }}
-                  anchor={anchor("pair1", PAD_X + PAIR_W + PAIR_GAP, PAIR_W)}
-                />
-              </View>
-            </View>
-          </View>
+          ) : null}
 
-          {/* 停止位 | 流控 */}
-          <View class="absolute" style={{ insetT: top("pair2"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
-            <View class="absolute" style={{ insetL: 0, insetT: 0, width: PAIR_W, height: FIELD_H }}>
-              <FieldLabel text={() => t("conn.stopBits")} />
-              <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
-                <Select
-                  display={() => t(`conn.stopBitsOpt.${stopBits.value}`)}
-                  value={() => stopBits.value}
-                  options={() => [
-                    { value: "1", label: t("conn.stopBitsOpt.1") },
-                    { value: "1.5", label: `${t("conn.stopBitsOpt.15")} · ${t("conn.unsupported")}`, disabled: true },
-                    { value: "2", label: t("conn.stopBitsOpt.2") },
-                  ]}
-                  onPick={(v) => {
-                    stopBits.value = v;
-                  }}
-                  anchor={anchor("pair2", PAD_X, PAIR_W)}
-                />
+          {/* ---- UDP ---- */}
+          {connType.value === "udp" ? (
+            <View>
+              {fieldBlock(
+                top("udpHost"),
+                () => t("conn.targetHost"),
+                <TextField
+                  initial={udpHost.value}
+                  placeholder={() => "127.0.0.1"}
+                  {...bindField("udpHost", udpHost)}
+                />,
+              )}
+              <View class="absolute" style={{ insetT: top("udpPair"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
+                <View class="absolute" style={{ insetL: 0, insetT: 0, width: PAIR_W, height: FIELD_H }}>
+                  <FieldLabel text={() => t("conn.localPort")} />
+                  <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
+                    <TextField initial={udpBindPort.value} {...bindField("udpBindPort", udpBindPort)} />
+                  </View>
+                </View>
+                <View class="absolute" style={{ insetL: PAIR_W + PAIR_GAP, insetT: 0, width: PAIR_W, height: FIELD_H }}>
+                  <FieldLabel text={() => t("conn.remotePort")} />
+                  <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
+                    <TextField initial={udpPort.value} {...bindField("udpPort", udpPort)} />
+                  </View>
+                </View>
               </View>
             </View>
-            <View class="absolute" style={{ insetL: PAIR_W + PAIR_GAP, insetT: 0, width: PAIR_W, height: FIELD_H }}>
-              <FieldLabel text={() => t("conn.flowControl")} />
-              <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
-                <Select
-                  display={() => t(`conn.flow.${flowControl.value}`)}
-                  value={() => flowControl.value}
-                  options={() => [
-                    { value: "none", label: t("conn.flow.none") },
-                    { value: "xonxoff", label: t("conn.flow.xonxoff") },
-                    { value: "rtscts", label: t("conn.flow.rtscts") },
-                    { value: "dsrdtr", label: t("conn.flow.dsrdtr") },
-                  ]}
-                  onPick={(v) => {
-                    flowControl.value = v;
-                  }}
-                  anchor={anchor("pair2", PAD_X + PAIR_W + PAIR_GAP, PAIR_W)}
-                />
-              </View>
-            </View>
-          </View>
+          ) : null}
 
-          {/* DTR / RTS */}
-          <View
-            class="absolute flex-row items-center gap-3"
-            style={{ insetT: top("signals"), insetL: PAD_X, width: CONTENT_W, height: CHECK_H }}
-          >
-            <CheckRow
-              label={() => t("conn.dtr")}
-              checked={() => dtr.value}
-              onToggle={() => {
-                dtr.value = !dtr.value;
-                session?.setSignals({ dtr: dtr.value, rts: rts.value });
-              }}
-            />
-            <CheckRow
-              label={() => t("conn.rts")}
-              checked={() => rts.value}
-              onToggle={() => {
-                rts.value = !rts.value;
-                session?.setSignals({ dtr: dtr.value, rts: rts.value });
-              }}
-            />
-          </View>
+          {/* ---- WebSocket Client ---- */}
+          {connType.value === "ws" ? (
+            <View>
+              {fieldBlock(
+                top("wsUrl"),
+                () => t("conn.wsUrl"),
+                <TextField
+                  initial={wsUrl.value}
+                  placeholder={() => "ws://127.0.0.1:8080"}
+                  {...bindField("wsUrl", wsUrl)}
+                />,
+              )}
+              {fieldBlock(
+                top("wsProtocols"),
+                () => t("conn.wsProtocols"),
+                <TextField initial={wsProtocols.value} {...bindField("wsProtocols", wsProtocols)} />,
+              )}
+              <View
+                class="absolute"
+                style={{ insetT: top("wsReconnect"), insetL: PAD_X, width: CONTENT_W, height: CHECK_H }}
+              >
+                <CheckRow
+                  label={() => t("conn.autoReconnect")}
+                  checked={() => wsAutoReconnect.value}
+                  onToggle={() => {
+                    wsAutoReconnect.value = !wsAutoReconnect.value;
+                  }}
+                />
+              </View>
+            </View>
+          ) : null}
+
+          {/* 重连间隔（tcp/ws 勾选自动重连后展开） */}
+          {withReconnect.value ? (
+            <View
+              class="absolute"
+              style={{ insetT: top("reconnectSec"), insetL: PAD_X, width: CONTENT_W, height: CUSTOM_H }}
+            >
+              <View class="absolute left-0 right-0" style={{ insetT: 6, height: CTL_H }}>
+                <TextField
+                  initial={connType.value === "tcp" ? tcpReconnectSec.value : wsReconnectSec.value}
+                  {...(connType.value === "tcp"
+                    ? bindField("tcpReconnectSec", tcpReconnectSec)
+                    : bindField("wsReconnectSec", wsReconnectSec))}
+                />
+              </View>
+            </View>
+          ) : null}
 
           {/* 分隔线 */}
           <View class="absolute" style={{ insetT: top("div1"), insetL: PAD_X, width: CONTENT_W, height: 1 }}>
@@ -470,7 +528,7 @@ export function LeftPanel() {
             </View>
           </View>
 
-          {/* 主题（跟随系统暂无宿主通道，按深色处理） */}
+          {/* 主题（三态，跟随系统经宿主 appearance 事件） */}
           <View class="absolute" style={{ insetT: top("theme"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
             <FieldLabel text={() => t("settings.theme")} />
             <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
@@ -486,13 +544,50 @@ export function LeftPanel() {
                 options={() => [
                   { value: "light", label: t("settings.themeLight") },
                   { value: "dark", label: t("settings.themeDark") },
-                  { value: "system", label: `${t("settings.themeSystem")} · ${t("roadmap.m2")}`, disabled: true },
+                  { value: "system", label: t("settings.themeSystem") },
                 ]}
                 onPick={(v) => {
                   themeMode.value = v as ThemeMode;
                 }}
                 anchor={anchor("theme", PAD_X, CONTENT_W)}
               />
+            </View>
+          </View>
+
+          {/* 字号（收发区 mono 字号，三档） */}
+          <View class="absolute" style={{ insetT: top("fontSize"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
+            <FieldLabel text={() => t("settings.fontSize")} />
+            <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
+              <Select
+                display={() =>
+                  fontSize.value === 12
+                    ? t("settings.fontSizeSmall")
+                    : fontSize.value === 16
+                      ? t("settings.fontSizeLarge")
+                      : t("settings.fontSizeMedium")
+                }
+                value={() => String(fontSize.value)}
+                options={() => [
+                  { value: "12", label: t("settings.fontSizeSmall") },
+                  { value: "14", label: t("settings.fontSizeMedium") },
+                  { value: "16", label: t("settings.fontSizeLarge") },
+                ]}
+                onPick={(v) => {
+                  fontSize.value = Number(v) as 12 | 14 | 16;
+                  applyLogFormat();
+                }}
+                anchor={anchor("fontSize", PAD_X, CONTENT_W)}
+              />
+            </View>
+          </View>
+
+          {/* 配置导出 / 导入 */}
+          <View class="absolute flex-row gap-2" style={{ insetT: top("cfgBtns"), insetL: PAD_X, width: CONTENT_W, height: 30 }}>
+            <View class="flex-1" style={{ height: 30 }}>
+              <Btn width={PAIR_W} height={30} label={() => t("settings.export")} onPress={exportConfig} />
+            </View>
+            <View style={{ width: PAIR_W, height: 30 }}>
+              <Btn width={PAIR_W} height={30} label={() => t("settings.import")} onPress={importConfig} />
             </View>
           </View>
         </View>
@@ -506,15 +601,17 @@ export function LeftPanel() {
           <Btn
             width={CONTENT_W}
             height={30}
-            accent={() => connState.value !== "CONNECTED"}
+            accent={() => connState.value !== "CONNECTED" && connState.value !== "CONNECTING"}
             label={() =>
               connState.value === "CONNECTED"
                 ? t("conn.close")
                 : connState.value === "LOST"
                   ? t("conn.ackLost")
-                  : t("conn.open")
+                  : connState.value === "CONNECTING"
+                    ? t("conn.cancel")
+                    : t("conn.open")
             }
-            disabled={() => !comAvailable || connState.value === "CONNECTING"}
+            disabled={() => !comAvailable}
             onPress={toggleOpen}
           />
         </View>
@@ -527,6 +624,227 @@ export function LeftPanel() {
       </View>
     </View>
   );
+}
+
+/** 串口参数块（port/baud/pairs/signals），布局 id 与主布局表一致。 */
+function SerialBlocks(props: {
+  top: (id: string) => number;
+  anchor: (blockId: string, x: number, w: number) => () => PopupAnchor;
+  customBaudVisible: typeof customBaudVisible;
+  customBaud: typeof customBaud;
+  setCustomBaudField: (h: TextFieldHandle | undefined) => void;
+  readCustomBaud: () => string;
+}) {
+  const effectiveBaud = (): string => {
+    if (props.customBaudVisible.value) {
+      return props.readCustomBaud() || props.customBaud.value;
+    }
+    return BAUD_PRESETS.includes(baud.value) ? baud.value : props.customBaud.value;
+  };
+  return (
+    <View>
+      {/* 端口（label 行右侧内嵌刷新按钮） */}
+      <View class="absolute" style={{ insetT: props.top("port"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
+        <FieldLabel text={() => t("conn.port")} />
+        <View
+          class="absolute flex-row items-center justify-center"
+          debugName="refreshPorts"
+          style={{ insetR: 0, insetT: 0, width: 20, height: 16, bgColor: "#00000001" }}
+          focusable
+          onPress={() => {
+            setActiveField(null);
+            refreshPorts();
+          }}
+        >
+          <Text class="text-xs" style={{ textColor: theme.value.dim, lineHeight: 16 }}>
+            ⟳
+          </Text>
+        </View>
+        <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
+          <Select
+            display={() => portPath.value}
+            emptyText={() => t("conn.noPorts")}
+            options={() =>
+              ports.value.map((p) => ({
+                value: p.path,
+                label: `${p.path}${p.description ? " — " + p.description : ""}`,
+              }))
+            }
+            onPick={(v) => {
+              portPath.value = v;
+            }}
+            disabled={() => !comAvailable}
+            anchor={props.anchor("port", PAD_X, CONTENT_W)}
+          />
+        </View>
+      </View>
+
+      {/* 波特率（自定义展开输入框） */}
+      <View
+        class="absolute"
+        style={{
+          insetT: props.top("baud"),
+          insetL: PAD_X,
+          width: CONTENT_W,
+          height: FIELD_H + (props.customBaudVisible.value ? CUSTOM_H : 0),
+        }}
+      >
+        <FieldLabel text={() => t("conn.baudRate")} />
+        <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
+          <Select
+            display={() => effectiveBaud()}
+            value={() => (props.customBaudVisible.value ? "__custom__" : baud.value)}
+            options={() => [
+              ...BAUD_PRESETS.map((b) => ({ value: b, label: b })),
+              { value: "__custom__", label: t("conn.custom") },
+            ]}
+            onPick={(v) => {
+              if (v === "__custom__") {
+                props.customBaudVisible.value = true;
+              } else {
+                baud.value = v;
+                props.customBaudVisible.value = false;
+              }
+            }}
+            anchor={props.anchor("baud", PAD_X, CONTENT_W)}
+          />
+        </View>
+        {props.customBaudVisible.value ? (
+          <View class="absolute left-0 right-0" style={{ insetT: FIELD_H + 6, height: CTL_H }}>
+            <TextField
+              initial={props.customBaud.value}
+              onHandle={(h) => {
+                props.setCustomBaudField(h);
+                h.focus(); // 选"自定义…"后直接可输入
+              }}
+              onEnter={(h) => {
+                props.customBaud.value = h.text().trim() || "115200";
+              }}
+            />
+          </View>
+        ) : null}
+      </View>
+
+      {/* 数据位 | 校验 */}
+      <View class="absolute" style={{ insetT: props.top("pair1"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
+        <View class="absolute" style={{ insetL: 0, insetT: 0, width: PAIR_W, height: FIELD_H }}>
+          <FieldLabel text={() => t("conn.dataBits")} />
+          <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
+            <Select
+              display={() => dataBits.value}
+              value={() => dataBits.value}
+              options={() => DATA_BITS.map((b) => ({ value: b, label: b }))}
+              onPick={(v) => {
+                dataBits.value = v;
+              }}
+              anchor={props.anchor("pair1", PAD_X, PAIR_W)}
+            />
+          </View>
+        </View>
+        <View class="absolute" style={{ insetL: PAIR_W + PAIR_GAP, insetT: 0, width: PAIR_W, height: FIELD_H }}>
+          <FieldLabel text={() => t("conn.parity")} />
+          <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
+            <Select
+              display={() => t(`conn.parityOpt.${parity.value}`)}
+              value={() => parity.value}
+              options={() => [
+                { value: "none", label: t("conn.parityOpt.none") },
+                { value: "odd", label: t("conn.parityOpt.odd") },
+                { value: "even", label: t("conn.parityOpt.even") },
+                { value: "mark", label: `${t("conn.parityOpt.mark")} · ${t("conn.unsupported")}`, disabled: true },
+                { value: "space", label: `${t("conn.parityOpt.space")} · ${t("conn.unsupported")}`, disabled: true },
+              ]}
+              onPick={(v) => {
+                parity.value = v;
+              }}
+              anchor={props.anchor("pair1", PAD_X + PAIR_W + PAIR_GAP, PAIR_W)}
+            />
+          </View>
+        </View>
+      </View>
+
+      {/* 停止位 | 流控 */}
+      <View class="absolute" style={{ insetT: props.top("pair2"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
+        <View class="absolute" style={{ insetL: 0, insetT: 0, width: PAIR_W, height: FIELD_H }}>
+          <FieldLabel text={() => t("conn.stopBits")} />
+          <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
+            <Select
+              display={() => t(`conn.stopBitsOpt.${stopBits.value}`)}
+              value={() => stopBits.value}
+              options={() => [
+                { value: "1", label: t("conn.stopBitsOpt.1") },
+                { value: "1.5", label: `${t("conn.stopBitsOpt.15")} · ${t("conn.unsupported")}`, disabled: true },
+                { value: "2", label: t("conn.stopBitsOpt.2") },
+              ]}
+              onPick={(v) => {
+                stopBits.value = v;
+              }}
+              anchor={props.anchor("pair2", PAD_X, PAIR_W)}
+            />
+          </View>
+        </View>
+        <View class="absolute" style={{ insetL: PAIR_W + PAIR_GAP, insetT: 0, width: PAIR_W, height: FIELD_H }}>
+          <FieldLabel text={() => t("conn.flowControl")} />
+          <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
+            <Select
+              display={() => t(`conn.flow.${flowControl.value}`)}
+              value={() => flowControl.value}
+              options={() => [
+                { value: "none", label: t("conn.flow.none") },
+                { value: "xonxoff", label: t("conn.flow.xonxoff") },
+                { value: "rtscts", label: t("conn.flow.rtscts") },
+                { value: "dsrdtr", label: t("conn.flow.dsrdtr") },
+              ]}
+              onPick={(v) => {
+                flowControl.value = v;
+              }}
+              anchor={props.anchor("pair2", PAD_X + PAIR_W + PAIR_GAP, PAIR_W)}
+            />
+          </View>
+        </View>
+      </View>
+
+      {/* DTR / RTS */}
+      <View
+        class="absolute flex-row items-center gap-3"
+        style={{ insetT: props.top("signals"), insetL: PAD_X, width: CONTENT_W, height: CHECK_H }}
+      >
+        <CheckRow
+          label={() => t("conn.dtr")}
+          checked={() => dtr.value}
+          onToggle={() => {
+            dtr.value = !dtr.value;
+            applySignals();
+          }}
+        />
+        <CheckRow
+          label={() => t("conn.rts")}
+          checked={() => rts.value}
+          onToggle={() => {
+            rts.value = !rts.value;
+            applySignals();
+          }}
+        />
+      </View>
+    </View>
+  );
+}
+
+/** 通用字段块：label + 控件区。以表达式调用内联（Vue JSX 的组件 children
+ *  走 slot 通道，这里必须传渲染结果而非 JSX 子节点）。 */
+function fieldBlock(top: number, label: () => string, control: ReturnType<typeof Text>) {
+  return (
+    <View class="absolute" style={{ insetT: top, insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
+      <FieldLabel text={label} />
+      <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
+        {control}
+      </View>
+    </View>
+  );
+}
+
+function applySignals(): void {
+  session?.setSignals({ dtr: dtr.value, rts: rts.value });
 }
 
 function FieldLabel(props: { text: () => string }) {

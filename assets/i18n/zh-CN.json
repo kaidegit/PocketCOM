@@ -50,7 +50,17 @@
       "xonxoff": "XON/XOFF",
       "rtscts": "RTS/CTS",
       "dsrdtr": "DSR/DTR"
-    }
+    },
+    "host": "主机",
+    "remotePort": "目标端口",
+    "listenPort": "监听端口",
+    "localPort": "本地端口",
+    "targetHost": "目标主机",
+    "wsUrl": "URL",
+    "wsProtocols": "子协议（逗号分隔）",
+    "autoReconnect": "自动重连",
+    "kick": "踢除",
+    "cancel": "取消"
   },
   "mode": {
     "transfer": "收发",
@@ -99,7 +109,9 @@
     "parseFailed": "发送内容解析失败",
     "failed": "发送失败",
     "history": "历史",
-    "sendFile": "发送文件"
+    "sendFile": "发送文件",
+    "broadcast": "广播",
+    "historyClear": "清空历史"
   },
   "sys": {
     "openFailed": "打开连接失败",
@@ -116,6 +128,18 @@
     "langName": {
       "zh-CN": "简体中文",
       "en": "English"
-    }
+    },
+    "fontSizeSmall": "小",
+    "fontSizeMedium": "中",
+    "fontSizeLarge": "大",
+    "export": "导出配置",
+    "import": "导入配置",
+    "exportDone": "配置已导出",
+    "exportCanceled": "已取消导出",
+    "exportFailed": "导出失败",
+    "importDone": "配置已导入",
+    "importCanceled": "已取消导入",
+    "importFailed": "导入失败",
+    "persistFailed": "设置保存失败"
   }
 }

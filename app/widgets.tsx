@@ -11,6 +11,7 @@ import { getOps } from "@pocketjs/framework";
 import { focusNode } from "@pocketjs/framework/input";
 import { theme } from "./theme";
 import { STATUS_H, viewportSize } from "./layout";
+import { LINE_H as FONT_LINE_H, MONO_SLOTS } from "./fontsize";
 import { activeField, setActiveField, type KeyMods, type TextField as TextFieldProto } from "./fields";
 
 /** 标准控件高（Select/SegCtrl/单行 TextField/Btn）。 */
@@ -21,17 +22,16 @@ export const FIELD_LINE_H = 18;
 /** 透明色（alpha 0 = 不绘制，spec：Unset (alpha 0) colors emit nothing）。 */
 const TRANSPARENT = "#00000000";
 
-/** 等宽字体测量槽：text-sm font-mono（fontSlotFor(14,false,mono)）。 */
-const MONO_SLOT = 17;
-
+/** 等宽字体测量：按字号档位取 mono 字形槽；缓存按 槽:文本 键。 */
 const measureCache = new Map<string, number>();
-function measureMono(text: string): number {
+function measureMono(text: string, slot: number): number {
   if (text === "") return 0;
-  let w = measureCache.get(text);
+  const key = `${slot}:${text}`;
+  let w = measureCache.get(key);
   if (w === undefined) {
-    w = getOps().measureText(text, MONO_SLOT);
+    w = getOps().measureText(text, slot);
     if (measureCache.size > 4096) measureCache.clear();
-    measureCache.set(text, w);
+    measureCache.set(key, w);
   }
   return w;
 }
@@ -447,6 +447,8 @@ export function TextField(props: {
   initial?: string;
   placeholder?: () => string;
   height?: number;
+  /** mono 字号档位（默认 14；发送区随字号设置联动，SPEC §3.8）。 */
+  monoSize?: 12 | 14 | 16;
   onHandle?: (h: TextFieldHandle) => void;
   /** Cmd/Ctrl+Enter */
   onSubmit?: () => void;
@@ -461,7 +463,8 @@ export function TextField(props: {
   let node: NodeMirror | undefined;
 
   const bodyH = props.height ?? CTL_H;
-  const padT = props.multiline ? 6 : Math.max(0, (bodyH - FIELD_LINE_H) / 2);
+  const lineH = FONT_LINE_H[props.monoSize ?? 14];
+  const padT = props.multiline ? 6 : Math.max(0, (bodyH - lineH) / 2);
   const padB = props.multiline ? 6 : 0;
 
   const isActive = () => activeField.value === impl;
@@ -494,7 +497,7 @@ export function TextField(props: {
 
   const caretX = () => {
     const { line, col } = caretLineCol();
-    return measureMono((lines()[line] ?? "").slice(0, col));
+    return measureMono((lines()[line] ?? "").slice(0, col), MONO_SLOTS[props.monoSize ?? 14]);
   };
 
   /** 多行：滚动保持光标行可见。 */
@@ -502,9 +505,9 @@ export function TextField(props: {
     if (!props.multiline) return;
     const visibleH = bodyH - padT - padB;
     const { line } = caretLineCol();
-    const top = line * FIELD_LINE_H;
+    const top = line * lineH;
     if (top < scrollY.value) scrollY.value = top;
-    else if (top + FIELD_LINE_H > scrollY.value + visibleH) scrollY.value = top + FIELD_LINE_H - visibleH;
+    else if (top + lineH > scrollY.value + visibleH) scrollY.value = top + lineH - visibleH;
   };
 
   const setCaretClamped = (i: number) => {
@@ -637,19 +640,31 @@ export function TextField(props: {
       <View class="absolute" style={{ insetL: FIELD_PAD_X, insetR: FIELD_PAD_X, insetT: padT, translateY: -scrollY.value }}>
         {dispText() === "" ? (
           <Text
-            class="absolute text-sm font-mono"
-            style={{ insetT: 0, height: FIELD_LINE_H, lineHeight: FIELD_LINE_H, textColor: theme.value.dim }}
+            class={
+              props.monoSize === 12
+                ? "absolute text-xs font-mono"
+                : props.monoSize === 16
+                  ? "absolute text-base font-mono"
+                  : "absolute text-sm font-mono"
+            }
+            style={{ insetT: 0, height: lineH, lineHeight: lineH, textColor: theme.value.dim }}
           >
             {props.placeholder?.() ?? ""}
           </Text>
         ) : null}
         {lines().map((line, i) => (
           <Text
-            class="absolute left-0 right-0 text-sm font-mono"
+            class={
+              props.monoSize === 12
+                ? "absolute left-0 right-0 text-xs font-mono"
+                : props.monoSize === 16
+                  ? "absolute left-0 right-0 text-base font-mono"
+                  : "absolute left-0 right-0 text-sm font-mono"
+            }
             style={{
-              insetT: i * FIELD_LINE_H,
-              height: FIELD_LINE_H,
-              lineHeight: FIELD_LINE_H,
+              insetT: i * lineH,
+              height: lineH,
+              lineHeight: lineH,
               textColor: theme.value.fg,
             }}
           >
@@ -661,8 +676,8 @@ export function TextField(props: {
             class="absolute"
             style={{
               width: 2,
-              height: FIELD_LINE_H - 6,
-              insetT: caretLineCol().line * FIELD_LINE_H + 3,
+              height: lineH - 6,
+              insetT: caretLineCol().line * lineH + 3,
               insetL: caretX(),
               bgColor: theme.value.accent,
             }}
@@ -673,9 +688,9 @@ export function TextField(props: {
             class="absolute"
             style={{
               height: 1,
-              insetT: caretLineCol().line * FIELD_LINE_H + FIELD_LINE_H - 3,
-              insetL: caretX() - measureMono(preedit.value),
-              width: measureMono(preedit.value),
+              insetT: caretLineCol().line * lineH + lineH - 3,
+              insetL: caretX() - measureMono(preedit.value, MONO_SLOTS[props.monoSize ?? 14]),
+              width: measureMono(preedit.value, MONO_SLOTS[props.monoSize ?? 14]),
               bgColor: theme.value.accent,
             }}
           />

@@ -19,13 +19,31 @@ import { PopupLayer, closePopup, popupOpen, popupWheel } from "./widgets";
 import { pumpSession, refreshPorts, comAvailable } from "./session";
 import { t } from "./i18n";
 
+/** svc 键名别名：小写/口语名 → 控件层 Pascal 名（宿主 --key 脚本与
+ *  cmd-chord 路径送原始小写；真机 on_key_down 路径已归一化）。 */
+const KEY_ALIAS: Record<string, string> = {
+  enter: "Enter",
+  return: "Enter",
+  backspace: "Backspace",
+  delete: "Delete",
+  left: "Left",
+  right: "Right",
+  up: "Up",
+  down: "Down",
+  home: "Home",
+  end: "End",
+  pageup: "PageUp",
+  pagedown: "PageDown",
+  escape: "Escape",
+  tab: "Tab",
+};
+
 export default () => {
   const svc = connectSvc();
   /** 最近指针位置（滚轮按 x 分区路由：左面板 or 接收区）。 */
   const lastMouse = { x: -1, y: -1 };
   /** 弹层关闭后下一帧重新 hover 聚焦（弹层节点已卸载，焦点悬空）。 */
   const rehover = ref(false);
-
   watch(popupOpen, (open) => {
     if (!open) rehover.value = true;
   });
@@ -48,7 +66,10 @@ export default () => {
         break;
       case "key": {
         const mods = { cmd: ev.cmd ?? false, alt: ev.alt ?? false, ctl: ev.ctl ?? false, sh: ev.sh ?? false };
-        if (ev.k === "Escape") {
+        // 键名归一化：宿主 cmd-chord 与 --key 脚本路径送小写原始名（真机
+        // on_key_down 路径才做 Pascal 化）；svc 是 app 级协议，统一在这里收敛。
+        const k = KEY_ALIAS[(ev.k ?? "").toLowerCase()] ?? ev.k;
+        if (k === "Escape") {
           // Escape：先收弹层；否则清 IME preedit 并借焦
           if (popupOpen()) {
             closePopup();
@@ -58,7 +79,7 @@ export default () => {
           setActiveField(null);
           break;
         }
-        activeField.value?.onKey(ev.k ?? "", mods);
+        activeField.value?.onKey(k ?? "", mods);
         break;
       }
       case "mouse": {

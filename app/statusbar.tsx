@@ -1,8 +1,8 @@
-// app/statusbar.tsx — 底部状态栏（SPEC §3.1）：连接状态 │ Rx/Tx 计数 │ MCP 状态占位。
+// app/statusbar.tsx — 底部状态栏（SPEC §3.1）：连接状态 │ 摘要 │ Rx/Tx 计数 │ MCP 状态占位。
 import { Text, View } from "@pocketjs/framework/components";
 import { theme } from "./theme";
 import { t } from "./i18n";
-import { connState, rxCount, txCount } from "./session";
+import { connState, connSummary, rxCount, txCount } from "./session";
 import { Hairline, StatusDot } from "./widgets";
 
 function fmtBytes(n: number): string {
@@ -33,6 +33,11 @@ export function StatusBar(props: { height: number }) {
         <Text class="text-xs" style={{ textColor: stateColor() }}>
           {t(`conn.status.${connState.value.toLowerCase()}`)}
         </Text>
+        {connSummary() !== "" ? (
+          <Text class="text-xs font-mono" style={{ textColor: theme.value.dim }}>
+            {connSummary()}
+          </Text>
+        ) : null}
         <Text class="text-xs font-mono" style={{ textColor: theme.value.dim }}>
           Rx: {fmtBytes(rxCount.value)}
         </Text>
