@@ -1,14 +1,14 @@
-//! `com.rs` unit tests — no guest, no serial port required.
+//! `com_serial.rs` unit tests — no guest, no serial port required.
 //!
 //! Mirrored under test/host/macos/ per repo convention; compiled into the
-//! `pocketcom-host` bin via `#[path]` from host/macos/src/com.rs, so
-//! `use super::*` reaches com.rs's private items.
+//! `pocketcom-host` bin via `#[path]` from host/macos/src/com_serial.rs, so
+//! `use super::*` reaches com_serial's private items.
 
 use super::*;
 
 #[test]
 fn open_param_validation_is_structured() {
-    let mut core = ComCore::new();
+    let mut core = SerialCore::new(Arc::new(AtomicU32::new(1)));
     let bad = core.serial_open("{not json");
     assert!(bad.contains("invalid-param"));
     let bad = core.serial_open(r#"{"path":"","baudRate":115200}"#);
@@ -53,7 +53,7 @@ fn worker_failure_emits_error_then_closed() {
 
 #[test]
 fn ops_on_unknown_handles_are_false() {
-    let mut core = ComCore::new();
+    let mut core = SerialCore::new(Arc::new(AtomicU32::new(1)));
     assert!(!core.queue_write(99, b"x"));
     assert!(!core.set_signals(99, r#"{"dtr":true}"#));
     assert!(!core.close(99));

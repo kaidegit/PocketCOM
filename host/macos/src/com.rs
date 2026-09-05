@@ -1,58 +1,55 @@
-//! POCKETCOM — the `com` surface: serial-port HostOps mounted into the guest
-//! as `globalThis.com` (SPEC §4.2).
+//! POCKETCOM — the `com` surface hub: mounts HostOps into the guest as
+//! `globalThis.com` (SPEC §4.2) and owns everything shared across the
+//! namespace: the handle counter, the connection registry, and the
+//! tick-boundary event stream. Protocol implementations live in siblings:
+//!
+//! - `com_serial.rs` — serial ports (`serialList` / `serialOpen` / `setSignals`).
+//! - `com_tcp.rs`    — TCP client + TCP server (`tcpConnect` / `tcpListen`).
+//! - `com_udp.rs`    — UDP (`udpBind`).
+//! - `com_ws.rs`     — WebSocket client (`wsConnect`).
+//! - `com_env.rs`    — settings persistence + system appearance (`cfg*`).
 //!
 //! Transport shape follows `pocket-net` (engine/crates/pocket-net): the core
-//! owns handles and validation; a worker thread owns the port; worker events
-//! cross an mpsc queue and are only observed when the guest polls at a tick
-//! boundary (`com.poll()`). The worker NEVER calls into QuickJS — the desktop
+//! owns handles and validation; a worker thread owns the socket/port; worker
+//! events cross an mpsc queue and are only observed when the guest polls at a
+//! tick boundary (`com.poll()`). Workers NEVER call into QuickJS — the desktop
 //! host is single-threaded and native threads must not touch the realm.
 //!
-//! Op summary (JS side of the contract lives in bridge/com.ts):
-//! - `com.serialList()`      → JSON array string (macOS: /dev/cu.* only).
-//! - `com.serialOpen(json)`  → `{"handle":N}` or `{"error":{code,msg}}`.
-//! - `com.write(h, bytes)`   → bool (queued for the worker; TypedArray<u8>,
-//!                             the same body convention as pocket-net).
-//! - `com.setSignals(h,json)`→ bool (`{dtr?, rts?}` queued for the worker).
-//! - `com.close(h)`          → bool.
-//! - `com.poll()`            → newline-joined JSON event lines for this tick:
-//!                             `{t:"data",h,b64}` / `{t:"closed",h,reason}` /
-//!                             `{t:"error",h,code,msg}`; null when idle.
+//! Event shapes (JSON lines on the shared stream; net events from M2):
+//! - `{t:"data",h,b64}` / `{t:"error",h,code,msg}` / `{t:"closed",h,reason}`
+//! - `{t:"opened",h,addr}`     — async connection established (net).
+//! - `{t:"accepted",h,c,addr}` — TCP server accepted child `c` on listener `h`.
+//! - `{t:"appearance",v}`      — system appearance changed (com_env watcher).
+//!
+//! Handles come from ONE monotonic counter shared by serial and net, so the
+//! guest treats every handle uniformly; `com.write`/`com.close` dispatch on
+//! which map owns the handle.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::io::{ErrorKind, Read, Write};
 use std::rc::Rc;
-use std::sync::mpsc;
-use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 
 use anyhow::Result;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
 use pocket_mod::qjs::{Coerced, Ctx, FromJs, Function, TypedArray, Value};
 use pocket_mod::{Guest, qjs};
-use serde::Deserialize;
 use serde_json::json;
-use serialport::{DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortType, StopBits};
 
-/// Read granularity per worker loop. 4096 covers a full 115200-baud burst
-/// with headroom; larger reads only delay command processing.
-const READ_BUF: usize = 4096;
-/// Port read timeout: the worker alternates read / command-drain at this
-/// cadence, so writes and signal changes answer within ~2× this.
-const READ_TIMEOUT: Duration = Duration::from_millis(5);
-/// close() reaps the worker for at most this long before giving up and
-/// leaving the fd close to the worker's own exit. The normal reap is one
-/// worker read cycle (~READ_TIMEOUT); the bound only matters for a worker
-/// wedged in a blocking write_all, which must not stall a guest turn.
-const CLOSE_REAP: Duration = Duration::from_millis(250);
+use crate::com_env;
+use crate::com_serial::SerialCore;
+use crate::com_tcp;
+use crate::com_udp;
+use crate::com_ws;
 
 // ---------------------------------------------------------------------------
 // guest-string decoding (verbatim rationale from pocket-ui-surface): a host
 // op must never abort the frame transaction over a legal JS value.
 // ---------------------------------------------------------------------------
 
-struct LossyString(String);
+pub(crate) struct LossyString(String);
 
 impl<'js> FromJs<'js> for LossyString {
     fn from_js(ctx: &Ctx<'js>, value: Value<'js>) -> qjs::Result<LossyString> {
@@ -72,419 +69,275 @@ impl<'js> FromJs<'js> for LossyString {
 }
 
 // ---------------------------------------------------------------------------
-// core
+// shared com-namespace infrastructure
 // ---------------------------------------------------------------------------
 
 /// Structured failure returned to the guest as JSON, never as a panic.
-struct ComFailure {
-    code: &'static str,
-    message: String,
+pub(crate) struct ComFailure {
+    pub(crate) code: &'static str,
+    pub(crate) message: String,
 }
 
 impl ComFailure {
-    fn param(message: impl Into<String>) -> Self {
+    pub(crate) fn param(message: impl Into<String>) -> Self {
         Self {
             code: "invalid-param",
             message: message.into(),
         }
     }
 
-    fn io(message: impl Into<String>) -> Self {
+    pub(crate) fn io(message: impl Into<String>) -> Self {
         Self {
             code: "io-error",
             message: message.into(),
         }
     }
 
-    fn to_json(&self) -> serde_json::Value {
+    pub(crate) fn to_json(&self) -> serde_json::Value {
         json!({"error": {"code": self.code, "msg": self.message}})
     }
 }
 
-enum WorkerCmd {
+/// Env-gated trace (POCKETCOM_TRACE=1, scripted UI debugging). Shared by every
+/// com.* module so `POCKETCOM_TRACE=1` dumps every op.
+pub(crate) fn trace_enabled() -> bool {
+    std::env::var_os("POCKETCOM_TRACE").is_some()
+}
+
+/// Next handle from the shared com-namespace counter. Monotonic across serial
+/// AND net (and never 0), so no cross-map collision is possible.
+pub(crate) fn next_handle(counter: &AtomicU32) -> u32 {
+    loop {
+        let h = counter.fetch_add(1, Ordering::Relaxed);
+        if h != 0 {
+            return h;
+        }
+    }
+}
+
+/// host:port target validation shared by tcp/udp opens.
+pub(crate) fn validate_host_port(host: &str, port: u16) -> Option<ComFailure> {
+    if host.is_empty() {
+        return Some(ComFailure::param("host is required"));
+    }
+    if port == 0 {
+        return Some(ComFailure::param("port must be 1..65535"));
+    }
+    None
+}
+
+// ---------------------------------------------------------------------------
+// net connection registry (tcp/udp/ws share one table, one event stream)
+// ---------------------------------------------------------------------------
+
+pub(crate) enum StreamCmd {
     Write(Vec<u8>),
-    Signals { dtr: Option<bool>, rts: Option<bool> },
     Shutdown,
 }
 
-struct Port {
-    cmd_tx: mpsc::Sender<WorkerCmd>,
-    /// Pre-formatted JSON event lines from the worker, drained at tick
-    /// boundaries by `poll()`.
-    event_rx: mpsc::Receiver<String>,
-    /// The worker exits by itself on Shutdown or a terminal port error; we
-    /// never join it (the host must not block a guest turn on a thread).
-    #[allow(dead_code)]
-    worker: JoinHandle<()>,
+pub(crate) enum ListenCmd {
+    Shutdown,
 }
 
-struct ComCore {
-    ports: HashMap<u32, Port>,
-    next_handle: u32,
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum StreamKind {
+    TcpClient,
+    TcpChild,
+    Udp,
+    Ws,
 }
 
-impl ComCore {
-    fn new() -> Self {
-        Self {
-            ports: HashMap::new(),
-            next_handle: 1,
-        }
-    }
+/// One entry in the shared connection map. The map lives behind a Mutex
+/// because the TCP-listener worker thread registers accepted children from
+/// its own thread — the guest must be able to write/close a child handle
+/// even before it has processed the `accepted` event.
+pub(crate) enum NetConn {
+    Stream {
+        /// Diagnostic tag (tests / future per-kind behavior).
+        #[allow(dead_code)]
+        kind: StreamKind,
+        cmd_tx: mpsc::Sender<StreamCmd>,
+        /// Listener handle that accepted this child (TCP children only).
+        parent: Option<u32>,
+    },
+    Listener {
+        cmd_tx: mpsc::Sender<ListenCmd>,
+        children: Vec<u32>,
+        /// Bound address, reported via the `opened` event (kept for tests).
+        #[allow(dead_code)]
+        local: String,
+    },
+}
 
-    fn serial_list(&mut self) -> String {
-        let result = match serialport::available_ports() {
-            Ok(ports) => serde_json::Value::Array(
-                ports
-                    .iter()
-                    .filter(|p| port_visible(&p.port_name))
-                    .map(describe_port)
-                    .collect(),
-            )
-            .to_string(),
-            Err(e) => ComFailure::io(format!("enumerating serial ports: {e}")).to_json().to_string(),
-        };
-        if std::env::var_os("POCKETCOM_TRACE").is_some() {
-            eprintln!("pocketcom-trace: com.serialList -> {result}");
-        }
-        result
-    }
+/// The net side of the `com` namespace: connection table + handle counter
+/// (shared with serial) + the global worker-event queue. Op functions in
+/// com_tcp/com_udp/com_ws receive `&NetRegistry` and spawn their workers.
+pub(crate) struct NetRegistry {
+    conns: Arc<Mutex<HashMap<u32, NetConn>>>,
+    handles: Arc<AtomicU32>,
+    /// Global worker-event queue: every net worker pushes JSON lines here,
+    /// `poll()` drains them at a tick boundary.
+    event_tx: mpsc::Sender<String>,
+    event_rx: Mutex<mpsc::Receiver<String>>,
+}
 
-    fn serial_open(&mut self, params_json: &str) -> String {
-        // POCKETCOM: env-gated trace (POCKETCOM_TRACE=1, scripted UI debugging).
-        let trace = std::env::var_os("POCKETCOM_TRACE").is_some();
-        let result = match self.try_open(params_json) {
-            Ok(handle) => json!({"handle": handle}).to_string(),
-            Err(failure) => failure.to_json().to_string(),
-        };
-        if trace {
-            eprintln!("pocketcom-trace: com.serialOpen {params_json} -> {result}");
-        }
-        result
-    }
-
-    fn try_open(&mut self, params_json: &str) -> std::result::Result<u32, ComFailure> {
-        let params: OpenParams = serde_json::from_str(params_json)
-            .map_err(|e| ComFailure::param(format!("malformed open params: {e}")))?;
-        if params.path.is_empty() {
-            return Err(ComFailure::param("path is required"));
-        }
-        let mut builder = serialport::new(&params.path, params.baud_rate).timeout(READ_TIMEOUT);
-        if let Some(bits) = params.data_bits {
-            builder = builder.data_bits(match bits {
-                5 => DataBits::Five,
-                6 => DataBits::Six,
-                7 => DataBits::Seven,
-                8 => DataBits::Eight,
-                other => {
-                    return Err(ComFailure::param(format!(
-                        "dataBits must be 5..8, got {other}"
-                    )))
-                }
-            });
-        }
-        if let Some(parity) = params.parity {
-            builder = builder.parity(match parity.as_str() {
-                "none" => Parity::None,
-                "odd" => Parity::Odd,
-                "even" => Parity::Even,
-                // serialport 4 has no Mark/Space (the contract admits values
-                // "per serialport capability"): refuse rather than silently
-                // downgrade the line format.
-                "mark" | "space" => {
-                    return Err(ComFailure::param(format!(
-                        "parity {parity:?} is not supported by serialport 4"
-                    )))
-                }
-                other => {
-                    return Err(ComFailure::param(format!(
-                        "parity must be none|odd|even, got {other:?}"
-                    )))
-                }
-            });
-        }
-        if let Some(stop_bits) = params.stop_bits {
-            builder = builder.stop_bits(match stop_bits {
-                StopBitsParam::Int(1) => StopBits::One,
-                StopBitsParam::Int(2) => StopBits::Two,
-                StopBitsParam::Str(s) if s == "1" => StopBits::One,
-                StopBitsParam::Str(s) if s == "2" => StopBits::Two,
-                // serialport 4 dropped OnePointFive.
-                other => {
-                    return Err(ComFailure::param(format!(
-                        "stopBits must be 1 or 2 (\"1.5\" is not supported by serialport 4), got {other:?}"
-                    )))
-                }
-            });
-        }
-        if let Some(flow) = params.flow_control {
-            builder = builder.flow_control(match flow.as_str() {
-                "none" => FlowControl::None,
-                "xonxoff" => FlowControl::Software,
-                // serialport models both as hardware handshake (the same
-                // support ceiling the contract promises).
-                "rtscts" | "dsrdtr" => FlowControl::Hardware,
-                other => {
-                    return Err(ComFailure::param(format!(
-                        "flowControl must be none|xonxoff|rtscts|dsrdtr, got {other:?}"
-                    )))
-                }
-            });
-        }
-        let port = builder
-            .open()
-            .map_err(|e| ComFailure::io(format!("opening {}: {e}", params.path)))?;
-
-        let handle = self.alloc_handle();
-        let (cmd_tx, cmd_rx) = mpsc::channel();
+impl NetRegistry {
+    pub(crate) fn new(handles: Arc<AtomicU32>) -> Self {
         let (event_tx, event_rx) = mpsc::channel();
-        let worker = std::thread::spawn(move || worker_main(port, handle, cmd_rx, event_tx));
-        self.ports.insert(
+        Self {
+            conns: Arc::new(Mutex::new(HashMap::new())),
+            handles,
+            event_tx,
+            event_rx: Mutex::new(event_rx),
+        }
+    }
+
+    /// Event sink shared with the appearance watcher (com_env.rs).
+    pub(crate) fn event_tx(&self) -> mpsc::Sender<String> {
+        self.event_tx.clone()
+    }
+
+    pub(crate) fn alloc(&self) -> u32 {
+        next_handle(&self.handles)
+    }
+
+    /// Registry internals for the TCP listener worker (accepts register
+    /// children from its own thread).
+    pub(crate) fn conns(&self) -> &Arc<Mutex<HashMap<u32, NetConn>>> {
+        &self.conns
+    }
+
+    pub(crate) fn handles(&self) -> &Arc<AtomicU32> {
+        &self.handles
+    }
+
+    pub(crate) fn insert_stream(
+        &self,
+        handle: u32,
+        kind: StreamKind,
+        cmd_tx: mpsc::Sender<StreamCmd>,
+        parent: Option<u32>,
+    ) {
+        self.conns.lock().unwrap().insert(
             handle,
-            Port {
+            NetConn::Stream {
+                kind,
                 cmd_tx,
-                event_rx,
-                worker,
+                parent,
             },
         );
-        Ok(handle)
     }
 
-    fn alloc_handle(&mut self) -> u32 {
-        loop {
-            let handle = self.next_handle;
-            self.next_handle = if self.next_handle == u32::MAX {
-                1
-            } else {
-                self.next_handle + 1
-            };
-            if !self.ports.contains_key(&handle) {
-                return handle;
+    pub(crate) fn insert_listener(&self, handle: u32, cmd_tx: mpsc::Sender<ListenCmd>, local: String) {
+        self.conns.lock().unwrap().insert(
+            handle,
+            NetConn::Listener {
+                cmd_tx,
+                children: Vec::new(),
+                local,
+            },
+        );
+    }
+
+    /// Whether any connection is still registered (teardown tests).
+    #[cfg(test)]
+    pub(crate) fn has_connections(&self) -> bool {
+        !self.conns.lock().unwrap().is_empty()
+    }
+
+    /// Write to a stream queues the bytes; writing to a listener broadcasts
+    /// to every connected child. `false` = unknown handle or dead worker.
+    pub(crate) fn write(&self, handle: i32, bytes: &[u8]) -> bool {
+        let conns = self.conns.lock().unwrap();
+        match conns.get(&(handle as u32)) {
+            Some(NetConn::Stream { cmd_tx, .. }) => {
+                cmd_tx.send(StreamCmd::Write(bytes.to_vec())).is_ok()
             }
-        }
-    }
-
-    fn write(&mut self, handle: i32, buf: TypedArray<u8>) -> bool {
-        let Some(bytes) = buf.as_bytes() else { return false };
-        self.queue_write(handle, bytes)
-    }
-
-    /// Raw write path behind the `com.write` op, split out so the bridge
-    /// tests can drive it without a QuickJS realm to build a TypedArray in.
-    fn queue_write(&mut self, handle: i32, bytes: &[u8]) -> bool {
-        let ok = self
-            .ports
-            .get(&(handle as u32))
-            .is_some_and(|port| port.cmd_tx.send(WorkerCmd::Write(bytes.to_vec())).is_ok());
-        // POCKETCOM: env-gated trace (POCKETCOM_TRACE=1, scripted UI debugging).
-        if std::env::var_os("POCKETCOM_TRACE").is_some() {
-            eprintln!(
-                "pocketcom-trace: com.write h={handle} n={} ok={ok}",
-                bytes.len()
-            );
-        }
-        ok
-    }
-
-    fn set_signals(&mut self, handle: i32, json: &str) -> bool {
-        let Ok(signals) = serde_json::from_str::<Signals>(json) else {
-            return false;
-        };
-        self.ports.get(&(handle as u32)).is_some_and(|port| {
-            port.cmd_tx
-                .send(WorkerCmd::Signals {
-                    dtr: signals.dtr,
-                    rts: signals.rts,
-                })
-                .is_ok()
-        })
-    }
-
-    fn close(&mut self, handle: i32) -> bool {
-        match self.ports.remove(&(handle as u32)) {
-            Some(port) => {
-                // Best effort: the worker also exits on the next terminal
-                // error, and dropping the port closes the fd either way.
-                let _ = port.cmd_tx.send(WorkerCmd::Shutdown);
-                // Reap the worker so the fd is really closed when close()
-                // returns: an immediate reopen of the same path must not race
-                // the worker's exit ("Device or resource busy" on exclusive
-                // drivers — caught by the hardware loopback test). Bounded so
-                // a wedged worker cannot stall the tick; that pathological
-                // close just stays async.
-                let deadline = Instant::now() + CLOSE_REAP;
-                loop {
-                    let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
-                        break;
-                    };
-                    match port.event_rx.recv_timeout(remaining) {
-                        // Residual worker events are dropped: the port is out
-                        // of the map, poll() can no longer observe them.
-                        Ok(_line) => continue,
-                        Err(mpsc::RecvTimeoutError::Disconnected) => break, // worker exited, fd closed
-                        Err(mpsc::RecvTimeoutError::Timeout) => break,      // wedged worker
+            Some(NetConn::Listener { children, .. }) => {
+                let mut ok = !children.is_empty();
+                for &c in children {
+                    if let Some(NetConn::Stream { cmd_tx, .. }) = conns.get(&c) {
+                        ok |= cmd_tx.send(StreamCmd::Write(bytes.to_vec())).is_ok();
                     }
                 }
-                true
+                ok
             }
             None => false,
         }
     }
 
-    /// Tick-boundary drain: worker events become the guest's batch. Called
-    /// only from the guest's frame turn, never from a native thread.
-    fn poll(&mut self) -> Option<String> {
+    /// Close a stream or listener. Closing a listener also disconnects all
+    /// its children (SPEC §3.2: closing a connection closes the connection).
+    /// No bounded reap here (unlike serial): the worker observes Shutdown
+    /// within a read timeout and drops its socket on exit; nothing in the
+    /// net path needs an fd to be free the instant close() returns.
+    pub(crate) fn close(&self, handle: i32) -> bool {
+        let mut conns = self.conns.lock().unwrap();
+        let Some(conn) = conns.remove(&(handle as u32)) else {
+            return false;
+        };
+        match conn {
+            NetConn::Stream { cmd_tx, parent, .. } => {
+                let _ = cmd_tx.send(StreamCmd::Shutdown);
+                if let Some(p) = parent {
+                    if let Some(NetConn::Listener { children, .. }) = conns.get_mut(&p) {
+                        children.retain(|&c| c != handle as u32);
+                    }
+                }
+                true
+            }
+            NetConn::Listener { cmd_tx, children, .. } => {
+                let _ = cmd_tx.send(ListenCmd::Shutdown);
+                for c in children {
+                    if let Some(NetConn::Stream { cmd_tx, .. }) = conns.remove(&c) {
+                        let _ = cmd_tx.send(StreamCmd::Shutdown);
+                    }
+                }
+                true
+            }
+        }
+    }
+
+    /// Tick-boundary drain of the shared net event queue (guest thread only).
+    pub(crate) fn poll(&self) -> Option<String> {
+        let rx = self.event_rx.lock().unwrap();
         let mut batch = String::new();
-        for port in self.ports.values_mut() {
-            while let Ok(line) = port.event_rx.try_recv() {
-                batch.push_str(&line);
-                batch.push('\n');
-            }
+        while let Ok(line) = rx.try_recv() {
+            batch.push_str(&line);
+            batch.push('\n');
         }
-        if batch.is_empty() {
-            None
-        } else {
-            Some(batch)
-        }
+        if batch.is_empty() { None } else { Some(batch) }
     }
 }
 
 // ---------------------------------------------------------------------------
-// open-params decoding
+// worker-event emitters (shared by tcp/udp/ws workers)
 // ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OpenParams {
-    path: String,
-    baud_rate: u32,
-    data_bits: Option<u8>,
-    parity: Option<String>,
-    stop_bits: Option<StopBitsParam>,
-    flow_control: Option<String>,
+pub(crate) fn data(events: &mpsc::Sender<String>, handle: u32, bytes: &[u8]) {
+    let _ = events.send(
+        json!({"t": "data", "h": handle, "b64": B64.encode(bytes)}).to_string(),
+    );
 }
 
-#[derive(Deserialize, Debug)]
-#[serde(untagged)]
-enum StopBitsParam {
-    Int(u8),
-    Str(String),
+pub(crate) fn opened(events: &mpsc::Sender<String>, handle: u32, addr: &str) {
+    let _ = events.send(json!({"t": "opened", "h": handle, "addr": addr}).to_string());
 }
 
-#[derive(Deserialize)]
-struct Signals {
-    dtr: Option<bool>,
-    rts: Option<bool>,
+pub(crate) fn accepted(events: &mpsc::Sender<String>, listener: u32, child: u32, addr: &str) {
+    let _ = events.send(
+        json!({"t": "accepted", "h": listener, "c": child, "addr": addr}).to_string(),
+    );
 }
 
-// ---------------------------------------------------------------------------
-// worker thread
-// ---------------------------------------------------------------------------
-
-fn worker_main(
-    mut port: Box<dyn SerialPort>,
-    handle: u32,
-    cmd_rx: mpsc::Receiver<WorkerCmd>,
-    events: mpsc::Sender<String>,
-) {
-    let mut buf = [0u8; READ_BUF];
-    loop {
-        // Commands first: a close/signal request must not wait on a read.
-        while let Ok(cmd) = cmd_rx.try_recv() {
-            match cmd {
-                WorkerCmd::Write(bytes) => {
-                    if let Err(e) = port.write_all(&bytes) {
-                        fail(&events, handle, "io-error", &e.to_string());
-                        return;
-                    }
-                }
-                WorkerCmd::Signals { dtr, rts } => {
-                    let result = dtr
-                        .map_or(Ok(()), |v| port.write_data_terminal_ready(v))
-                        .and_then(|()| {
-                            rts.map_or(Ok(()), |v| port.write_request_to_send(v))
-                        });
-                    if let Err(e) = result {
-                        fail(&events, handle, "io-error", &e.description);
-                        return;
-                    }
-                }
-                WorkerCmd::Shutdown => return,
-            }
-        }
-        match port.read(&mut buf) {
-            Ok(n) if n > 0 => {
-                let line = json!({
-                    "t": "data",
-                    "h": handle,
-                    "b64": B64.encode(&buf[..n]),
-                })
-                .to_string();
-                if events.send(line).is_err() {
-                    return; // core gone; port drops and the thread ends.
-                }
-            }
-            Ok(_) => {}
-            // READ_TIMEOUT expiry: loop back to the command queue.
-            Err(e) if e.kind() == ErrorKind::TimedOut => {}
-            Err(e) => {
-                let code = if e.kind() == ErrorKind::NotFound {
-                    "not-found"
-                } else {
-                    "io-error"
-                };
-                fail(&events, handle, code, &e.to_string());
-                return;
-            }
-        }
-    }
+pub(crate) fn closed(events: &mpsc::Sender<String>, handle: u32, reason: &str) {
+    let _ = events.send(json!({"t": "closed", "h": handle, "reason": reason}).to_string());
 }
 
-/// Terminal port failure → error event + closed event, then the thread ends.
-fn fail(events: &mpsc::Sender<String>, handle: u32, code: &str, msg: &str) {
+/// Terminal failure → error event + closed event, then the thread ends.
+pub(crate) fn fail(events: &mpsc::Sender<String>, handle: u32, code: &str, msg: &str) {
     let _ = events.send(json!({"t": "error", "h": handle, "code": code, "msg": msg}).to_string());
     let _ = events.send(json!({"t": "closed", "h": handle, "reason": msg}).to_string());
-}
-
-// ---------------------------------------------------------------------------
-// port description
-// ---------------------------------------------------------------------------
-
-/// SPEC §3.2: macOS lists only callout devices (`/dev/cu.*`), never the
-/// matching `/dev/tty.*` duplicates.
-fn port_visible(path: &str) -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        path.starts_with("/dev/cu.")
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = path;
-        true
-    }
-}
-
-fn describe_port(info: &SerialPortInfo) -> serde_json::Value {
-    let description = match &info.port_type {
-        SerialPortType::UsbPort(_) => "USB serial device",
-        SerialPortType::PciPort => "PCI serial port",
-        SerialPortType::BluetoothPort => "Bluetooth serial port",
-        SerialPortType::Unknown => "Serial port",
-    };
-    let mut v = json!({
-        "path": info.port_name,
-        "description": description,
-    });
-    if let SerialPortType::UsbPort(usb) = &info.port_type {
-        if let Some(manufacturer) = &usb.manufacturer {
-            v["manufacturer"] = json!(manufacturer);
-        }
-        v["vid"] = json!(usb.vid);
-        v["pid"] = json!(usb.pid);
-        if let Some(product) = &usb.product {
-            v["description"] = json!(product);
-        }
-    }
-    v
 }
 
 // ---------------------------------------------------------------------------
@@ -492,9 +345,18 @@ fn describe_port(info: &SerialPortInfo) -> serde_json::Value {
 // ---------------------------------------------------------------------------
 
 /// Mount `globalThis.com` into `guest`. Call after the ui surface mount,
-/// before evaluating the bundle (PocketRoot::boot).
+/// before evaluating the bundle (PocketRoot::boot). One namespace covers
+/// serial (`com_serial.rs`) + net (`com_tcp/com_udp/com_ws.rs`) + env
+/// (`com_env.rs`): the guest sees a single feature-detectable surface with
+/// one shared handle space and one event stream.
 pub fn mount(guest: &Guest) -> Result<()> {
-    let core = Rc::new(RefCell::new(ComCore::new()));
+    let handles = Arc::new(AtomicU32::new(1));
+    let serial = Rc::new(RefCell::new(SerialCore::new(handles.clone())));
+    let reg = Rc::new(RefCell::new(NetRegistry::new(handles.clone())));
+    // The env bridge (cfg ops + appearance watcher) mounts its own namespace
+    // concerns into the same `com` namespace below; the watcher thread only
+    // needs the shared event sink.
+    com_env::start_appearance_watcher(reg.borrow().event_tx());
     guest.mount("com", move |ctx, ns| {
         macro_rules! op {
             ($name:literal, $f:expr) => {
@@ -502,44 +364,93 @@ pub fn mount(guest: &Guest) -> Result<()> {
             };
         }
 
-        let c = core.clone();
-        op!("serialList", move || c.borrow_mut().serial_list());
+        let s = serial.clone();
+        op!("serialList", move || s.borrow_mut().serial_list());
 
-        let c = core.clone();
-        op!("serialOpen", move |params: LossyString| c
+        let s = serial.clone();
+        op!("serialOpen", move |params: LossyString| s
             .borrow_mut()
             .serial_open(&params.0));
 
-        let c = core.clone();
-        op!("write", move |handle: i32, buf: TypedArray<u8>| c
-            .borrow_mut()
-            .write(handle, buf));
+        let s = serial.clone();
+        let r = reg.clone();
+        op!("write", move |handle: i32, buf: TypedArray<u8>| {
+            let Some(bytes) = buf.as_bytes() else { return false };
+            let len = bytes.len();
+            let owned = s.borrow_mut().owns(handle);
+            let ok = if owned {
+                s.borrow_mut().queue_write(handle, bytes)
+            } else {
+                r.borrow().write(handle, bytes)
+            };
+            if trace_enabled() {
+                eprintln!("pocketcom-trace: com.write h={handle} n={len} ok={ok}");
+            }
+            ok
+        });
 
-        let c = core.clone();
-        op!("setSignals", move |handle: i32, json: LossyString| c
+        let s = serial.clone();
+        op!("setSignals", move |handle: i32, json: LossyString| s
             .borrow_mut()
             .set_signals(handle, &json.0));
 
-        let c = core.clone();
-        op!("close", move |handle: i32| c.borrow_mut().close(handle));
+        let s = serial.clone();
+        let r = reg.clone();
+        op!("close", move |handle: i32| {
+            let owned = s.borrow_mut().owns(handle);
+            let ok = if owned {
+                s.borrow_mut().close(handle)
+            } else {
+                r.borrow().close(handle)
+            };
+            if trace_enabled() {
+                eprintln!("pocketcom-trace: com.close h={handle} ok={ok}");
+            }
+            ok
+        });
 
-        let c = core.clone();
-        op!("poll", move || -> Option<String> { c.borrow_mut().poll() });
+        let s = serial.clone();
+        let r = reg.clone();
+        op!("poll", move || -> Option<String> {
+            let mut batch = s.borrow_mut().poll();
+            match r.borrow().poll() {
+                Some(net_batch) => {
+                    batch.get_or_insert_with(String::new).push_str(&net_batch);
+                    batch
+                }
+                None => batch,
+            }
+        });
+
+        // --- net bridge (M2, SPEC §3.2) ---
+        let r = reg.clone();
+        op!("tcpConnect", move |params: LossyString| com_tcp::tcp_connect(
+            &r.borrow(),
+            &params.0,
+        ));
+        let r = reg.clone();
+        op!("tcpListen", move |params: LossyString| com_tcp::tcp_listen(
+            &r.borrow(),
+            &params.0,
+        ));
+        let r = reg.clone();
+        op!("udpBind", move |params: LossyString| com_udp::udp_bind(
+            &r.borrow(),
+            &params.0,
+        ));
+        let r = reg.clone();
+        op!("wsConnect", move |params: LossyString| com_ws::ws_connect(
+            &r.borrow(),
+            &params.0,
+        ));
+
+        // --- settings persistence + system appearance (M2, SPEC §3.7/3.8) —
+        // stateless ops live in com_env.rs ---
+        op!("cfgRead", move || com_env::cfg_read());
+        op!("cfgWrite", move |json: LossyString| com_env::cfg_write(&json.0));
+        op!("cfgExport", move |json: LossyString| com_env::cfg_export(&json.0));
+        op!("cfgImport", move || com_env::cfg_import());
 
         Ok(())
     })
 }
-
-// ---------------------------------------------------------------------------
-// tests — sources live mirrored under test/host/macos/ (repo-wide convention),
-// compiled into this bin's cfg(test) via #[path]. `use super::*` inside them
-// still reaches this module's private items.
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-#[path = "../../../test/host/macos/com_tests.rs"]
-mod tests;
-
-#[cfg(test)]
-#[path = "../../../test/host/macos/com_loopback.rs"]
-mod loopback;

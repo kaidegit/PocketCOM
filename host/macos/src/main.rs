@@ -62,6 +62,11 @@ use serde::Deserialize;
 // com.rs; this file differs from upstream hosts/desktop/src/main.rs only here
 // and at the mount call in PocketRoot::boot.
 mod com;
+mod com_env;
+mod com_serial;
+mod com_tcp;
+mod com_udp;
+mod com_ws;
 
 #[cfg(target_os = "macos")]
 const HOST_ID: &str = "macos-app";

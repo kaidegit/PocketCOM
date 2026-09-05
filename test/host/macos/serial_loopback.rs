@@ -11,7 +11,7 @@
 //! ```
 //!
 //! Mirrored under test/host/macos/ per repo convention; compiled into the
-//! `pocketcom-host` bin via `#[path]` from host/macos/src/com.rs.
+//! `pocketcom-host` bin via `#[path]` from host/macos/src/com_serial.rs.
 
 use super::*;
 use std::time::{Duration, Instant};
@@ -61,7 +61,7 @@ fn env_port() -> Option<(String, u32)> {
     Some((path, baud))
 }
 
-fn open(core: &mut ComCore, path: &str, baud: u32) -> u32 {
+fn open(core: &mut SerialCore, path: &str, baud: u32) -> u32 {
     let opened =
         core.serial_open(&serde_json::json!({"path": path, "baudRate": baud}).to_string());
     let v: serde_json::Value = serde_json::from_str(&opened)
@@ -76,7 +76,7 @@ fn open(core: &mut ComCore, path: &str, baud: u32) -> u32 {
 /// contract (`{"t":"data","h","b64"}`) on every line; error/closed events and
 /// wrong-handle events fail the phase. The whole poll batch is always
 /// consumed, so duplicated bytes surface as acc.len() > want in the caller.
-fn collect_echo(core: &mut ComCore, handle: u32, want: usize, acc: &mut Vec<u8>) {
+fn collect_echo(core: &mut SerialCore, handle: u32, want: usize, acc: &mut Vec<u8>) {
     let deadline = Instant::now() + PHASE_DEADLINE;
     loop {
         if let Some(batch) = core.poll() {
@@ -109,7 +109,7 @@ fn collect_echo(core: &mut ComCore, handle: u32, want: usize, acc: &mut Vec<u8>)
 }
 
 /// One single-shot echo roundtrip with exact byte comparison.
-fn echo(core: &mut ComCore, handle: u32, label: &str, expected: &[u8]) {
+fn echo(core: &mut SerialCore, handle: u32, label: &str, expected: &[u8]) {
     println!("  echo[{label}] {} B …", expected.len());
     let start = Instant::now();
     assert!(
@@ -136,7 +136,7 @@ fn echo(core: &mut ComCore, handle: u32, label: &str, expected: &[u8]) {
 
 /// Sustained traffic in ping-pong chunks (see BURST_CHUNK for why not one
 /// single shot).
-fn echo_burst(core: &mut ComCore, handle: u32, label: &str) {
+fn echo_burst(core: &mut SerialCore, handle: u32, label: &str) {
     println!("  echo[{label}] {BURST_TOTAL} B in {BURST_CHUNK} B ping-pong chunks …");
     let start = Instant::now();
     let mut seed = 0x1234_5678_u32;
@@ -170,7 +170,7 @@ fn echo_burst(core: &mut ComCore, handle: u32, label: &str) {
 }
 
 /// Quiet line → poll() must stay None (no spurious/duplicated events).
-fn expect_idle(core: &mut ComCore, label: &str) {
+fn expect_idle(core: &mut SerialCore, label: &str) {
     let deadline = Instant::now() + IDLE_GRACE;
     while Instant::now() < deadline {
         if let Some(batch) = core.poll() {
@@ -192,7 +192,7 @@ fn hardware_loopback() {
     };
     println!("com::loopback: {path} @ {baud} (TX↔RX shorted)");
 
-    let mut core = ComCore::new();
+    let mut core = SerialCore::new(Arc::new(AtomicU32::new(1)));
 
     // serialList: the tested port is enumerated, and the macOS list is
     // callout-only (SPEC §3.2).
