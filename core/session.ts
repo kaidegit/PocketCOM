@@ -235,7 +235,9 @@ export class ComSession {
   }
 
   private handleEvent(ev: ComEvent, nowMs: number): void {
-    if (ev.t === "appearance") return; // app 层已拦截路由给主题；会话只认连接事件
+    // appearance 在 app 层拦截路由给主题；mcp 是宿主 MCP 服务状态（app 层消费）；
+    // 会话只认连接事件。
+    if (ev.t === "appearance" || ev.t === "mcp") return;
     const known =
       ev.h === this.handle || (this.kind === "tcps" && this.clients.has(ev.h));
     if (!known) return; // 已关闭句柄的迟到事件 / 未知句柄
