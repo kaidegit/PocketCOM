@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeStopBits, SerialSession } from "./session";
-import { MessageBus } from "./bus";
+import { normalizeStopBits, SerialSession } from "../../core/session";
+import { MessageBus } from "../../core/bus";
 import { encodeBase64 } from "./testutil";
-import type { Com, ComEvent, SerialOpenParams } from "../bridge/com";
-import { StateError } from "./errors";
+import type { Com, ComEvent, SerialOpenParams } from "../../bridge/com";
+import { StateError } from "../../core/errors";
 
 /** 确定性 fake Com：脚本化事件批，记录调用。 */
 class FakeCom implements Com {

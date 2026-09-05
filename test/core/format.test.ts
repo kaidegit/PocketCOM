@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { formatContent, formatLogText, formatTimestamp, messagePrefix } from "./format";
-import { strToBytes } from "./codec";
-import type { Message } from "./message";
-import type { LogFormatOptions, LogLineLabels } from "./format";
+import { formatContent, formatLogText, formatTimestamp, messagePrefix } from "../../core/format";
+import { strToBytes } from "../../core/codec";
+import type { Message } from "../../core/message";
+import type { LogFormatOptions, LogLineLabels } from "../../core/format";
 
 const LABELS: LogLineLabels = { rx: "<=", txManual: "[手动发送]", txMcp: "[MCP发送]", sys: "[--]" };
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { composeSendBytes, convertInputText } from "./send";
-import { ParamError } from "./errors";
-import type { SendOptions } from "./send";
+import { composeSendBytes, convertInputText } from "../../core/send";
+import { ParamError } from "../../core/errors";
+import type { SendOptions } from "../../core/send";
 
 const ASCII: SendOptions = { hex: false, escape: false, crlf: false, appendNewline: false };
 

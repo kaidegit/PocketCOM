@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { decodeBase64 } from "./base64";
-import { ProtocolError } from "./errors";
+import { decodeBase64 } from "../../core/base64";
+import { ProtocolError } from "../../core/errors";
 
 describe("decodeBase64", () => {
   test("空串 → 空数组", () => {

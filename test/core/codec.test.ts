@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { bytesToHex, bytesToStr, hexStrToBytes, strToBytes } from "./codec";
-import { ParamError } from "./errors";
+import { bytesToHex, bytesToStr, hexStrToBytes, strToBytes } from "../../core/codec";
+import { ParamError } from "../../core/errors";
 
 const te = new TextEncoder();
 const td = new TextDecoder();

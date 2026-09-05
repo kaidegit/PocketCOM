@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "bun test core/",
+    "test": "bun test test/",
     "typecheck": "tsc --noEmit",
     "check": "bun vendor/pocketjs/tools/pocket.ts check --target macos-app --manifest app/pocket.json --project-root .",
     "build": "bun vendor/pocketjs/tools/pocket.ts compile --target macos-app --manifest app/pocket.json --project-root .",

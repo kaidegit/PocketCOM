@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { ConnectionStateMachine, TRANSITIONS, type ConnState } from "./connection";
-import { StateError } from "./errors";
+import { ConnectionStateMachine, TRANSITIONS, type ConnState } from "../../core/connection";
+import { StateError } from "../../core/errors";
 
 const ALL: ConnState[] = ["DISCONNECTED", "CONNECTING", "CONNECTED", "LOST"];
 

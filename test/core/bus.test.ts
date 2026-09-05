@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { isVisibleToMcp, MessageBus } from "./bus";
-import type { Message } from "./message";
+import { isVisibleToMcp, MessageBus } from "../../core/bus";
+import type { Message } from "../../core/message";
 
 function makeBus(now: () => number = () => 1000): MessageBus {
   return new MessageBus({ now, maxFrames: 100, maxBytes: 1024 * 1024 });

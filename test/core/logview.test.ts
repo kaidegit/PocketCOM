@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { LogView } from "./logview";
-import { MessageBus } from "./bus";
-import { strToBytes } from "./codec";
-import type { LogFormatOptions, LogLineLabels } from "./format";
-import type { NewMessage } from "./message";
+import { LogView } from "../../core/logview";
+import { MessageBus } from "../../core/bus";
+import { strToBytes } from "../../core/codec";
+import type { LogFormatOptions, LogLineLabels } from "../../core/format";
+import type { NewMessage } from "../../core/message";
 
 const LABELS: LogLineLabels = { rx: "<=", txManual: "[手动发送]", txMcp: "[MCP发送]", sys: "[--]" };
 const FORMAT: LogFormatOptions = { hex: false, escape: false, timestamp: false };

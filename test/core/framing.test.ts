@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { computeByteTimeMs, FrameCoalescer } from "./framing";
-import { ParamError } from "./errors";
+import { computeByteTimeMs, FrameCoalescer } from "../../core/framing";
+import { ParamError } from "../../core/errors";
 
 function collector(): { frames: Uint8Array[]; onFrame: (f: Uint8Array) => void } {
   const frames: Uint8Array[] = [];

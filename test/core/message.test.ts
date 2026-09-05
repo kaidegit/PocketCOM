@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { ParamError } from "./errors";
-import { RingBuffer, type Message, type NewMessage } from "./message";
+import { ParamError } from "../../core/errors";
+import { RingBuffer, type Message, type NewMessage } from "../../core/message";
 
 function msg(payload: number[], overrides: Partial<NewMessage> = {}): Message {
   return {
