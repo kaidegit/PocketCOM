@@ -144,9 +144,13 @@ fn listener_write_broadcasts_to_children() {
     let mut c2 = TcpStream::connect(("127.0.0.1", port)).unwrap();
     c1.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
     c2.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-    for _ in 0..2 {
-        util::wait_event(&reg, Duration::from_secs(5), &|v| v["t"] == "accepted").unwrap();
-    }
+    // 两个 accepted 可能落在同一 poll 批里：wait_event 会丢弃同批非匹配事件，
+    // 这里必须用 wait_batch 累积（否则第二次等待超时，负载下偶发）。
+    util::wait_batch(&reg, Duration::from_secs(5), &|evs| {
+        evs.iter().filter(|v| v["t"] == "accepted").count() >= 2
+    })
+    .last()
+    .expect("2 accepted events");
     assert!(reg.write(listener as i32, b"bc"));
     let mut buf = [0u8; 2];
     c1.read_exact(&mut buf).unwrap();
