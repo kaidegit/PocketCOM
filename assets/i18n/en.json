@@ -83,6 +83,9 @@
     "on": "MCP: on",
     "off": "MCP: off"
   },
+  "terminal": {
+    "hint": "Terminal ready — keystrokes go straight to the connection (no local echo)"
+  },
   "receive": {
     "clear": "Clear",
     "pause": "Pause",

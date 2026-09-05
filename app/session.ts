@@ -12,6 +12,7 @@ import { getOps } from "@pocketjs/framework";
 import { connectCom, type ComEvent, type NetOpenParams, type SerialPortInfo } from "../bridge/com";
 import { MessageBus } from "../core/bus";
 import { ComSession, type ClientInfo, type NetSessionParams } from "../core/session";
+import { Terminal } from "../core/term";
 import {
   DEFAULT_CONFIG,
   normalizeConfig,
@@ -43,6 +44,55 @@ export const bus = new MessageBus();
 export const connState = ref<ConnState>("DISCONNECTED");
 export const rxCount = ref(0);
 export const txCount = ref(0);
+
+/** UI 模式（SPEC §3.1 模式开关：收发 / 终端；切换不断开连接）。 */
+export const uiMode = ref<"transfer" | "terminal">("transfer");
+
+/** 切换 UI 模式（连接与终端屏幕缓冲保持，SPEC §3.1）。 */
+export function setUiMode(next: "transfer" | "terminal"): void {
+  uiMode.value = next;
+}
+
+/** 终端回滚行数设置（SPEC §3.4：terminal.scrollbackLines，0–100000）。 */
+export const scrollbackLines = ref(DEFAULT_CONFIG.terminal.scrollbackLines);
+
+/** 终端模式核心（SPEC §3.4）：RX 帧持续灌入（模式切换不清屏），响应字节经
+ *  pumpSession 写回连接。 */
+export const terminal = new Terminal({ scrollback: scrollbackLines.value });
+/** terminal.version 的渲染镜像：每帧比对，变更才 bump 触发重绘。 */
+export const termVersion = ref(0);
+/** 终端视口滚动偏移（0 = 贴底，向上为正，单位：行）。 */
+export const termScroll = ref(0);
+
+// RX → 终端模型（单一事实源总线；tx/sys 不进终端屏）。
+bus.subscribe((msg) => {
+  if (msg.dir !== "rx" || msg.payload.byteLength === 0) return;
+  try {
+    terminal.feed(msg.payload);
+  } catch {
+    // 终端模型错误不阻断总线（与订阅者错误隔离同策略）
+  }
+});
+
+/** 回滚行数设置（即时生效，越界裁剪，SPEC §3.4）。 */
+export function setScrollbackLines(n: number): void {
+  if (!Number.isFinite(n)) return;
+  const v = Math.min(100000, Math.max(0, Math.floor(n)));
+  scrollbackLines.value = v;
+  terminal.setScrollback(v);
+  termScroll.value = Math.min(termScroll.value, terminal.scrollbackCount);
+}
+
+/** 终端键入/粘贴直发（无本地回显，SPEC §3.4）；未连接静默丢弃。 */
+export function sendTermBytes(bytes: Uint8Array): boolean {
+  if (!session || connState.value !== "CONNECTED" || bytes.byteLength === 0) return false;
+  try {
+    session.write(bytes, "manual");
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** TCP Server 已接入客户端快照（onClientsChange 钩子刷新）。 */
 export const clientList = ref<ClientInfo[]>([]);
@@ -375,6 +425,7 @@ function buildConfigJson(): string {
     language: locale.value,
     theme: themeMode.value,
     fontSize: fontSize.value,
+    terminal: { scrollbackLines: scrollbackLines.value },
     receive: {
       hex: rxHex.value,
       escape: rxEscape.value,
@@ -462,6 +513,7 @@ function applyConfig(cfg: AppConfig): void {
   setLocale(cfg.language as Locale);
   themeMode.value = cfg.theme;
   fontSize.value = cfg.fontSize;
+  setScrollbackLines(cfg.terminal.scrollbackLines);
   rxHex.value = cfg.receive.hex;
   rxEscape.value = cfg.receive.escape;
   rxTimestamp.value = cfg.receive.timestamp;
@@ -524,6 +576,7 @@ for (const source of [
   locale,
   themeMode,
   fontSize,
+  scrollbackLines,
   rxHex,
   rxEscape,
   rxTimestamp,
@@ -544,9 +597,13 @@ for (const source of [
 /** 语言切换钩子（ReceivePane 注册以重取前缀文案）。 */
 export const localeChangeHooks: (() => void)[] = [];
 
+/** terminal.version 上次同步点（避免每帧 bump 渲染版本）。 */
+let lastTermVersion = 0;
+
 /**
  * 每帧：drain com 事件批（appearance → 主题，其余 → 会话）→ 计数同步 →
- * LogView 同步（暂停时不同步；恢复后从总线环形缓冲自然追上，SPEC §3.3）。
+ * LogView 同步（暂停时不同步；恢复后从总线环形缓冲自然追上，SPEC §3.3）→
+ * 终端模型版本/应答泵（DSR/DA 应答写回连接，SPEC §3.4）。
  */
 export function pumpSession(nowMs: number): void {
   if (com && session) {
@@ -559,6 +616,19 @@ export function pumpSession(nowMs: number): void {
     session.poll(connEvents, nowMs);
     if (rxCount.value !== session.rxBytes) rxCount.value = session.rxBytes;
     if (txCount.value !== session.txBytes) txCount.value = session.txBytes;
+    // 终端查询应答（CPR/DA）：连接在场就写回（shell 在等）。
+    const responses = terminal.takeResponses();
+    for (const bytes of responses) {
+      try {
+        session.write(bytes, "system");
+      } catch {
+        break; // 未连接/写入失败：丢弃应答
+      }
+    }
+  }
+  if (terminal.version !== lastTermVersion) {
+    lastTermVersion = terminal.version;
+    termVersion.value++;
   }
   if (!rxPaused.value && logView.sync(bus) > 0) {
     logVersion.value++;

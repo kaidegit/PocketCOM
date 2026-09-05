@@ -83,6 +83,9 @@
     "on": "MCP: 开启",
     "off": "MCP: 关闭"
   },
+  "terminal": {
+    "hint": "终端就绪 —— 按键直接发送到当前连接（无本地回显）"
+  },
   "receive": {
     "clear": "清屏",
     "pause": "暂停",

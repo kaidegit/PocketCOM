@@ -43,14 +43,18 @@ import {
   ports,
   refreshPorts,
   rts,
+  scrollbackLines,
   session,
   setConnType,
+  setScrollbackLines,
+  setUiMode,
   stopBits,
   tcpAutoReconnect,
   tcpHost,
   tcpPort,
   tcpReconnectSec,
   tcpsPort,
+  uiMode,
   udpBindPort,
   udpHost,
   udpPort,
@@ -226,6 +230,7 @@ const layoutInfo = computed(() => {
   put("language", FIELD_H, BLOCK_GAP);
   put("theme", FIELD_H, BLOCK_GAP);
   put("fontSize", FIELD_H, BLOCK_GAP);
+  put("scrollback", FIELD_H, BLOCK_GAP);
   put("cfgBtns", 30, 0);
   return { top, total: y + PAD_BOTTOM };
 });
@@ -470,18 +475,21 @@ export function LeftPanel() {
             <Hairline />
           </View>
 
-          {/* 模式开关（终端 M3 置灰） */}
+          {/* 模式开关（收发 / 终端，M3；切换不断开连接） */}
           <View class="absolute" style={{ insetT: top("mode"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
             <FieldLabel text={() => t("panel.mode")} />
             <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
               <SegCtrl
                 options={[
                   { value: "transfer", label: t("mode.transfer") },
-                  { value: "terminal", label: `${t("mode.terminal")} · ${t("roadmap.m3")}`, disabled: true },
+                  { value: "terminal", label: t("mode.terminal") },
                 ]}
-                value={() => "transfer"}
-                onPick={() => {
-                  /* M1 固定收发模式 */
+                value={() => uiMode.value}
+                onPick={(v) => {
+                  if (v === "terminal" || v === "transfer") {
+                    setActiveField(null);
+                    setUiMode(v);
+                  }
                 }}
               />
             </View>
@@ -577,6 +585,20 @@ export function LeftPanel() {
                   applyLogFormat();
                 }}
                 anchor={anchor("fontSize", PAD_X, CONTENT_W)}
+              />
+            </View>
+          </View>
+
+          {/* 终端回滚行数（0–100000，修改即时生效，SPEC §3.4） */}
+          <View class="absolute" style={{ insetT: top("scrollback"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
+            <FieldLabel text={() => t("settings.scrollbackLines")} />
+            <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
+              <TextField
+                initial={String(scrollbackLines.value)}
+                onEnter={(h) => {
+                  const n = Number.parseInt(h.text().trim(), 10);
+                  setScrollbackLines(Number.isFinite(n) ? n : 9999);
+                }}
               />
             </View>
           </View>

@@ -3,7 +3,7 @@
 // 暂停 = 停止从总线同步（数据继续入总线），清屏归零计数。
 // 发送区：ASCII/HEX 互转、转义/CRLF/追加换行、定时循环、发送历史（M2 持久化）、
 // TCP Server 多客户端定向/广播发送（M2）。
-import { ref, watch } from "vue";
+import { onUnmounted, ref, watch } from "vue";
 import { Text, View } from "@pocketjs/framework/components";
 import { virtualNow } from "@pocketjs/framework/clock";
 import {
@@ -227,9 +227,7 @@ const timedPumpers: (() => void)[] = [];
 /** app.tsx 每帧调用：驱动定时循环发送（帧基时钟）。 */
 export function pumpTimedSend(): void {
   for (const p of timedPumpers) p();
-}
-
-/** 发送历史选项的显示截断。 */
+}/** 发送历史选项的显示截断。 */
 function historyLabel(s: string): string {
   const one = s.replace(/\n/g, "⏎");
   return one.length > 28 ? `${one.slice(0, 27)}…` : one;
@@ -267,14 +265,20 @@ export function SendPane() {
     sendText(field.text(), sendOpts(), targetHandle);
   };
 
-  // 定时循环发送（默认 300ms 可配，SPEC §3.3）
-  timedPumpers.push(() => {
+  // 定时循环发送（默认 300ms 可配，SPEC §3.3）；SendPane 卸载（切终端模式）
+  // 时摘除 pumper，避免闭包泄漏
+  const timedPump = (): void => {
     if (!timed.value || !session || session.state !== "CONNECTED" || !field) return;
     const now = virtualNow();
     if (lastTimedAt === 0 || (now - lastTimedAt) * 1000 >= readIntervalMs()) {
       lastTimedAt = now;
       doSend();
     }
+  };
+  timedPumpers.push(timedPump);
+  onUnmounted(() => {
+    const i = timedPumpers.indexOf(timedPump);
+    if (i >= 0) timedPumpers.splice(i, 1);
   });
 
   // ASCII/HEX 切换：内容互转（SPEC §3.3）；互转失败保留原文，发送时再校验

@@ -47,7 +47,22 @@ export interface ThemeTokens {
   stateConnecting: string;
   stateConnected: string;
   stateLost: string;
+  /** 终端视图调色板（独立于 UI，SPEC §3.7：默认深色 #212121 底 + 8 色 ANSI） */
+  termBg: string;
+  termFg: string;
+  termCursor: string;
+  termSelection: string;
+  /** ANSI 基础 16 色（0–15），两主题共用；256 色扩展在渲染层按公式映射 */
+  termPalette: readonly string[];
 }
+
+/** xterm 风格 ANSI 16 色（0–15）。 */
+const TERM_PALETTE: readonly string[] = [
+  "#2e3436", "#cd3131", "#0dbc79", "#e5e510",
+  "#2472c8", "#bc3fbc", "#11a8cd", "#e5e5e5",
+  "#666666", "#f14c4c", "#23d18b", "#f5f543",
+  "#3b8eea", "#d670d6", "#29b8db", "#ffffff",
+];
 
 const dark: ThemeTokens = {
   bg: "#0e1116",
@@ -72,6 +87,11 @@ const dark: ThemeTokens = {
   stateConnecting: "#e5b545",
   stateConnected: "#3fce7a",
   stateLost: "#f07b4d",
+  termBg: "#212121",
+  termFg: "#e8e8e8",
+  termCursor: "#4c8dff",
+  termSelection: "#4c8dff40",
+  termPalette: TERM_PALETTE,
 };
 
 const light: ThemeTokens = {
@@ -97,6 +117,11 @@ const light: ThemeTokens = {
   stateConnecting: "#b58a12",
   stateConnected: "#189a52",
   stateLost: "#d9632c",
+  termBg: "#f6f6f6",
+  termFg: "#1c1c1c",
+  termCursor: "#2f6fdd",
+  termSelection: "#2f6fdd33",
+  termPalette: TERM_PALETTE,
 };
 
 const THEMES: Record<Exclude<ThemeMode, "system">, ThemeTokens> = { dark, light };
