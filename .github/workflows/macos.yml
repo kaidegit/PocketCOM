@@ -1,0 +1,92 @@
+# macOS (arm64) CI: build the JS bundle + the pocketcom-host binary, assemble
+# PocketCOM.app and a distributable .dmg (tools/package-macos.sh). Every run
+# uploads artifacts; v* tags additionally publish a GitHub Release. Bundles
+# are ad-hoc signed only — see the release note below.
+name: macOS CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build macOS arm64 .app/.dmg
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install framework deps (vendor/pocketjs)
+        working-directory: vendor/pocketjs
+        run: bun install
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Manifest check
+        run: npm run check
+
+      - name: Core tests
+        run: bun test test/
+
+      - name: Build JS bundle
+        run: npm run build
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # First full host build takes 15–25 min; cache is what makes CI viable.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host/macos
+
+      - name: Build host binary
+        run: cargo build --locked --release --manifest-path host/macos/Cargo.toml
+
+      - name: Package .app + .dmg
+        env:
+          VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: tools/package-macos.sh
+
+      - name: Zip .app
+        run: zip -r -q -y dist/PocketCOM-macos-arm64.app.zip dist/PocketCOM.app
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PocketCOM-macos-arm64
+          path: |
+            dist/PocketCOM-*.dmg
+            dist/PocketCOM-macos-arm64.app.zip
+          if-no-files-found: error
+
+      - name: Publish release (v* tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "PocketCOM ${GITHUB_REF_NAME#v}" \
+            --notes 'Unsigned (ad-hoc) build: if Gatekeeper blocks the first launch, right-click PocketCOM.app -> Open, or run xattr -cr /Applications/PocketCOM.app. macOS 12.3+ (arm64).' \
+            "dist/PocketCOM-${GITHUB_REF_NAME#v}-macos-arm64.dmg" \
+            dist/PocketCOM-macos-arm64.app.zip

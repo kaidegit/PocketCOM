@@ -59,6 +59,8 @@ SPEC.md         # 功能规格（权威）
 - 构建桌面宿主（fork 自 `vendor/pocketjs/hosts/desktop` + 自研 `com.*` 串口桥）：`cargo build --release --manifest-path host/macos/Cargo.toml`（输出 `host/macos/target/release/pocketcom-host`；首次全量编译 15–25 分钟）
 - 宿主桥接单测：`cargo test --manifest-path host/macos/Cargo.toml --bin pocketcom-host com::`（com.rs 参数校验/事件格式/端口过滤）
 - 桌面运行：`node tools/dev.mjs`（默认用 fork 产物 `host/macos/target/release/pocketcom-host`，未构建时回退 vendor 的 `pocket-desktop-host` 并警告 `com.*` 不可用；flags 取自 `.pocket/macos-app/plan.json`）
+- 打包分发：`tools/package-macos.sh`（前置 `npm run build` + `cargo build` 产物；组装 `dist/PocketCOM.app` 并打 `dist/PocketCOM-<版本>-macos-arm64.dmg`。launcher 设 `POCKETJS_DIST` 指向 `Resources/dist` 后 exec 宿主二进制，flags 从 `.pocket/macos-app/plan.json` 推导（同 dev.mjs）；`VERSION=x.y.z` 覆盖版本号。**仅 ad-hoc 签名**（未公证）：首次打开需右键→打开或 `xattr -cr`。不启用沙盒故无 entitlement；`NSLocalNetworkUsageDescription`（含 zh/en InfoPlist.strings）为未来 TCP/UDP/WS 连局域网设备的授权弹窗预留，监听 `127.0.0.1` 不触发该弹窗）
+- CI/CD：`.github/workflows/macos.yml`（macos-latest=arm64；push main/PR/tag `v*`/手动触发。跑 typecheck + check + 核心单测 + 全量构建 + 打包；产物上传 artifact，`v*` tag 额外创建 GitHub Release 附 .dmg 与 .app.zip；宿主编译用 `Swatinem/rust-cache` 缓存）
 - 脚本化 UI 验证：宿主 flags `--mouse X,Y@T`（hover）/`--click X,Y@T`（press）/`--key [cmd+]NAME@T`/`--type TEXT@T`/`--quit-after N`；注意 **press 必须用 `--click`**（`--mouse d/u` 只发 svc 行不产生 CIRCLE），且点击前必须先 `--mouse` hover 一帧聚焦。观测用 `POCKETCOM_TRACE=1`（dump 双向 svc 行 + com.serialList/serialOpen/write）。本机真机 e2e 已验证：选端口→打开→输入→Cmd+Enter 发送→关闭全链路通畅。
 - UI 金样测试：PocketJS headless Bun host（byte-exact PNG golden，待落地）
 - MCP 集成测试：`bun test host/macos/mcp/`（待落地）
