@@ -24,6 +24,8 @@
   "homepage": "https://github.com/kaidegit/PocketCOM#readme",
   "private": "true",
   "devDependencies": {
+    "@emnapi/core": "^1.11.3",
+    "@emnapi/runtime": "^1.11.3",
     "@pocketjs/cli": "^0.11.0",
     "@pocketjs/framework": "^0.11.0",
     "bun-types": "^1.4.1",
