@@ -97,7 +97,7 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 
 ### 3.2 连接管理
 
-连接类型下拉：`串口 / TCP Client / TCP Server / UDP / WebSocket Client`。
+连接类型下拉：`串口 / TCP Client / TCP Server / UDP / WebSocket Client / 回环（Loopback）`。
 
 **串口参数**（对齐 COMTool `conn_serial`）：
 
@@ -110,7 +110,8 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 **TCP Client**：目标 `host:port`（下拉历史）、本地地址显示、自动重连开关 + 间隔秒数。  
 **TCP Server**：监听端口、客户端列表（可指定单客户端发送或广播、可踢除）。  
 **UDP**：本地 bind 端口 + 目标 `host:port`（COMTool 的 UDP 模型）。  
-**WebSocket Client**：URL（`ws://` / `wss://`）、子协议（可选）、自动重连。
+**WebSocket Client**：URL（`ws://` / `wss://`）、子协议（可选）、自动重连。  
+**回环（Loopback）**：无参数的纯核心层测试连接（不触宿主 IO），打开即 CONNECTED；发送的字节在下一帧原样回灌为一帧 RX（走与真实连接相同的合流/总线/字节计数路径），供无硬件/无网络的 e2e 与功能验证；MCP `connect` 同样支持 `type: "loopback"`。
 
 **通用行为**：
 

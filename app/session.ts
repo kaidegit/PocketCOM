@@ -258,7 +258,7 @@ function pumpMcp(): void {
 // 连接参数仓库（左面板状态；打开时快照进 session.open*，成功后写入 lastConn）
 // ---------------------------------------------------------------------------
 
-export const connType = ref<"serial" | NetOpenParams["kind"]>("serial");
+export const connType = ref<"serial" | NetOpenParams["kind"] | "loopback">("serial");
 
 // 串口
 export const portPath = ref("");
@@ -471,11 +471,25 @@ export function openNetConnection(params: NetSessionParams): boolean {
   }
 }
 
+/** 回环连接（SPEC §3.2，测试用）：无参数，打开即 CONNECTED。 */
+export function openLoopbackConnection(): boolean {
+  if (!session) return false;
+  try {
+    session.openLoopback();
+    return true;
+  } catch (err) {
+    sysMsg(`${t("sys.openFailed")}: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}
+
 /** 按当前连接类型与面板参数打开（面板打开按钮入口）。 */
 export function openCurrentConnection(): boolean {
   switch (connType.value) {
     case "serial":
       return openSerialConnection();
+    case "loopback":
+      return openLoopbackConnection();
     case "tcp":
       return openNetConnection({
         kind: "tcp",

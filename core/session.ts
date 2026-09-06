@@ -2,7 +2,8 @@
  * 统一会话（SPEC §3.2 / §4.2）：IConnection 语义的 com.* 桥接实现。
  * 纯 TS：把 bridge 的 Com 契约 + 连接状态机 + 帧合流 + 消息总线接成一条
  * 数据通路。M2 起覆盖全部连接类型——串口（同步打开）与 TCP/TCP-Server/UDP/WS
- * （异步打开：CONNECTING 等 `opened` 事件转 CONNECTED）。
+ * （异步打开：CONNECTING 等 `opened` 事件转 CONNECTED）；另有纯 TS 的回环
+ * 连接（loopback，测试用，不触宿主，见 openLoopback）。
  *
  * 数据流：
  *   宿主 → com.poll() → {t:"data",b64} → base64 解码 → FrameCoalescer.feed
@@ -27,7 +28,7 @@ export function normalizeStopBits(v: 1 | 2 | "1" | "2" | "1.5"): 1 | 2 {
   return v === 2 || v === "2" ? 2 : 1;
 }
 
-export type ConnKind = "serial" | NetOpenParams["kind"];
+export type ConnKind = "serial" | NetOpenParams["kind"] | "loopback";
 
 /** 网络打开参数 = 线路参数 + 会话侧重连策略（重连只存在于核心层）。 */
 export type NetSessionParams = NetOpenParams & {
@@ -66,6 +67,8 @@ export class ComSession {
   txBytes = 0;
   /** TCP Server 已接入客户端。 */
   private clients = new Map<number, string>();
+  /** 回环连接的本地回灌队列：write 入队，下一次 poll 原样喂回合流器。 */
+  private loopbackQueue: Uint8Array[] = [];
 
   // 自动重连（仅 tcp/ws，SPEC §3.2）：掉线后按间隔重试。
   private lastNet: { params: NetSessionParams; kind: NetOpenParams["kind"] } | null = null;
@@ -155,6 +158,25 @@ export class ComSession {
   }
 
   /**
+   * 打开回环连接（SPEC §3.2，测试用）：无线路参数、无宿主句柄，同步
+   * CONNECTED；write 的字节在下一次 poll 原样回灌为一帧 RX（走与真实连接
+   * 相同的合流/总线/计数路径），供无硬件/无网络的 e2e 与功能验证。
+   */
+  openLoopback(): void {
+    this.assertIdle("open");
+    this.sm.transition("CONNECTING");
+    this.adopt("loopback", null, "loopback");
+    this.coalescer = new FrameCoalescer({
+      mode: "network",
+      onFrame: (frame) => {
+        this.bus.append({ dir: "rx", source: "system", payload: frame, connId: this.connId });
+      },
+    });
+    this.sm.transition("CONNECTED");
+    this.sys("connected: loopback");
+  }
+
+  /**
    * 用户主动关闭：CONNECTED 时 flush 合流残余 → 关闭句柄 → DISCONNECTED + sys
    * 事件；LOST（已掉线待确认）时仅确认掉线；CONNECTING（网络连接中）取消连接。
    * tcps：只关监听句柄（宿主会一并断开全部客户端）。
@@ -177,6 +199,7 @@ export class ComSession {
     this.lastNet = null;
     this.reconnectAtMs = null;
     this.clients.clear();
+    this.loopbackQueue = [];
     this.hooks.onClientsChange?.();
     this.sm.transition("DISCONNECTED");
     this.sys("closed by user");
@@ -186,9 +209,19 @@ export class ComSession {
    * 发送字节：先写宿主（失败抛 IoError 不入总线），成功入总线（dir:"tx"）。
    * source 标记来源（手动/MCP/定时器，SPEC §3.5）。tcps：target 缺省 = 广播
    * （写监听句柄，宿主扇出），target = 指定客户端句柄。
+   * 回环：不触宿主，字节入本地队列，下一次 poll 原样回灌 RX（target 忽略）。
    */
   write(bytes: Uint8Array, source: MessageSource, target?: number): void {
-    if (this.sm.state !== "CONNECTED" || this.handle === null) {
+    if (this.sm.state !== "CONNECTED") {
+      throw new StateError("STATE_ILLEGAL_TRANSITION", `cannot write while ${this.sm.state}`);
+    }
+    if (this.kind === "loopback") {
+      this.loopbackQueue.push(bytes);
+      this.txBytes += bytes.byteLength;
+      this.bus.append({ dir: "tx", source, payload: bytes, connId: this.connId });
+      return;
+    }
+    if (this.handle === null) {
       throw new StateError("STATE_ILLEGAL_TRANSITION", `cannot write while ${this.sm.state}`);
     }
     const handle = target ?? this.handle;
@@ -222,6 +255,16 @@ export class ComSession {
   poll(events: ComEvent[], nowMs: number): void {
     for (const ev of events) {
       this.handleEvent(ev, nowMs);
+    }
+    // 回环回灌：本帧间写入的字节合并为一帧 RX（flush 保证当帧产出，确定性）。
+    if (this.loopbackQueue.length > 0) {
+      const queue = this.loopbackQueue;
+      this.loopbackQueue = [];
+      for (const bytes of queue) {
+        this.rxBytes += bytes.byteLength;
+        this.coalescer?.feed(bytes, nowMs);
+      }
+      this.coalescer?.flush();
     }
     this.coalescer?.tick(nowMs);
     if (
@@ -301,6 +344,7 @@ export class ComSession {
       this.sys(reason);
     }
     this.clients.clear();
+    this.loopbackQueue = [];
     this.hooks.onClientsChange?.();
     // DISCONNECTED 状态下的迟到 closed：忽略
   }
@@ -337,14 +381,16 @@ export class ComSession {
     this.sys("reconnecting…");
   }
 
-  /** 打开成功后的公共收尾：句柄/connId/类型/描述/客户端表复位。 */
-  private adopt(kind: ConnKind, handle: number, describe: string): void {
+  /** 打开成功后的公共收尾：句柄/connId/类型/描述/客户端表复位。
+   *  回环连接无宿主句柄（handle = null）。 */
+  private adopt(kind: ConnKind, handle: number | null, describe: string): void {
     this.connSeq += 1;
     this.connId = `${kind}-${this.connSeq}`;
     this.handle = handle;
     this.kind = kind;
     this.describe = describe;
     this.clients.clear();
+    this.loopbackQueue = [];
   }
 
   private assertIdle(op: string): void {

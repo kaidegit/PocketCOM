@@ -289,6 +289,26 @@ describe.skipIf(!READY)("MCP e2e: protocol + tools over the live host", () => {
     const stale = await rpc(h.port, h.token, { jsonrpc: "2.0", id: 30, method: "ping" }, session);
     expect(stale.status).toBe(404);
   });
+
+  test("connect loopback → send → read echoes（无外部 echo server 的全链路）", async () => {
+    const session = await initialize(h.port, h.token);
+    const conn = await tool(h.port, h.token, session, 50, "connect", { type: "loopback" });
+    expect(conn.isError).toBe(false);
+    expect(conn.text).toContain("loopback");
+
+    const sent = await tool(h.port, h.token, session, 51, "send", {
+      data: "loop-e2e", encoding: "utf8",
+    });
+    expect(sent.text).toBe("sent 8 byte(s)");
+    await sleep(500); // 回灌 → 总线 → MCP 读缓冲（逐帧 relay）
+
+    const read = await tool(h.port, h.token, session, 52, "read");
+    expect(read.isError).toBe(false);
+    expect(read.text).toContain("[RX] loop-e2e");
+
+    const disc = await tool(h.port, h.token, session, 53, "disconnect");
+    expect(disc.text).toBe("disconnected");
+  });
 });
 
 describe.skipIf(!READY)("MCP e2e: terminal-mode gate (SPEC §6.1)", () => {

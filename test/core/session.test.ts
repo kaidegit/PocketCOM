@@ -399,3 +399,71 @@ describe("ComSession TCP Server 客户端管理", () => {
     expect(session.rxBytes).toBe(0);
   });
 });
+
+describe("ComSession 回环（loopback）", () => {
+  test("openLoopback：同步 CONNECTED，不触宿主，describe/connId 就位", () => {
+    const { com, bus, session, states } = setup();
+    session.openLoopback();
+    expect(session.state).toBe("CONNECTED");
+    expect(states).toEqual(["CONNECTING", "CONNECTED"]);
+    expect(session.kind).toBe("loopback");
+    expect(session.connId).toBe("loopback-1");
+    expect(session.describe).toBe("loopback");
+    expect(com.writes).toEqual([]);
+    expect(com.closedHandles).toEqual([]);
+    const msgs = bus.buffer.drain();
+    expect(msgs.length).toBe(1);
+    expect(msgs[0]!.dir).toBe("sys");
+    expect(msgs[0]!.connId).toBe("loopback-1");
+  });
+
+  test("write → 下一帧 poll 原样回灌为一帧 RX，tx/rx 计数对称", () => {
+    const { bus, session } = setup();
+    session.openLoopback();
+    session.write(new Uint8Array([1, 2, 3]), "manual");
+    expect(session.txBytes).toBe(3);
+    session.poll([], 0);
+    let msgs = bus.buffer.drain().filter((m) => m.dir === "rx");
+    expect(msgs.length).toBe(1);
+    expect([...msgs[0]!.payload]).toEqual([1, 2, 3]);
+    expect(session.rxBytes).toBe(3);
+    // 同帧多次写合并为一帧 RX
+    session.write(new Uint8Array([4]), "manual");
+    session.write(new Uint8Array([5, 6]), "mcp");
+    session.poll([], 16);
+    msgs = bus.buffer.drain().filter((m) => m.dir === "rx");
+    expect(msgs.length).toBe(1);
+    expect([...msgs[0]!.payload]).toEqual([4, 5, 6]);
+    expect(session.rxBytes).toBe(6);
+  });
+
+  test("close：未回灌的残余丢弃，重开后不回灌旧字节", () => {
+    const { bus, session } = setup();
+    session.openLoopback();
+    session.write(new Uint8Array([9]), "manual");
+    session.close();
+    expect(session.state).toBe("DISCONNECTED");
+    session.poll([], 0);
+    expect(bus.buffer.drain().filter((m) => m.dir === "rx").length).toBe(0);
+    session.openLoopback();
+    expect(session.connId).toBe("loopback-2");
+    session.poll([], 16);
+    expect(bus.buffer.drain().filter((m) => m.dir === "rx").length).toBe(0);
+  });
+
+  test("宿主事件不误入回环连接（无宿主句柄，data 事件按未知句柄丢弃）", () => {
+    const { com, session } = setup();
+    session.openLoopback();
+    com.pushBatch([{ t: "data", h: 1, b64: encodeBase64(new Uint8Array([1])) }]);
+    session.poll(com.poll(), 0);
+    expect(session.rxBytes).toBe(0);
+  });
+
+  test("重复 open / 未连接 write 抛 StateError", () => {
+    const { session } = setup();
+    expect(() => session.write(new Uint8Array([1]), "manual")).toThrow(StateError);
+    session.openLoopback();
+    expect(() => session.openLoopback()).toThrow(StateError);
+    expect(() => session.openSerial(PARAMS)).toThrow(StateError);
+  });
+});

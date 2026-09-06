@@ -116,7 +116,7 @@ claude mcp add --transport http pocketcom http://127.0.0.1:7960/mcp \
 
 | 参数 | 适用类型 | 说明 |
 |---|---|---|
-| `type`（必填） | 全部 | `serial` / `tcp` / `tcps` / `udp` / `ws` |
+| `type`（必填） | 全部 | `serial` / `tcp` / `tcps` / `udp` / `ws` / `loopback` |
 | `path` | serial | 设备路径，如 `/dev/cu.usbserial-XXX` |
 | `baudRate` | serial | 默认 115200 |
 | `dataBits` | serial | 5–8，默认 8 |
@@ -131,11 +131,15 @@ claude mcp add --transport http pocketcom http://127.0.0.1:7960/mcp \
 | `autoReconnect` / `reconnectSec` | tcp / ws / udp / ws | 掉线自动重连（默认关/5s） |
 | `force` | 全部 | 先断开现有连接 |
 
+`type: "loopback"`（无参数）为回环测试连接（SPEC §3.2）：打开即 CONNECTED，
+`send` 的字节在下一帧原样回灌为 RX——无硬件/无网络环境下验证 send/read 全链路。
+
 示例：
 
 ```json
 {"name": "connect", "arguments": {"type": "serial", "path": "/dev/cu.usbserial-A50285BI", "baudRate": 115200}}
 {"name": "connect", "arguments": {"type": "tcp", "host": "192.168.1.50", "port": 9000}}
+{"name": "connect", "arguments": {"type": "loopback"}}
 ```
 
 返回 `connected: <人读摘要>`；打开失败透传核心层结构化 code（如

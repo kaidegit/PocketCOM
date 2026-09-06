@@ -790,12 +790,13 @@ fn tools_schema() -> Value {
             "Open a connection. Refused when a connection already exists unless force:true \
              (which disconnects first). Types: serial(path,baudRate,dataBits,parity,stopBits,\
              flowControl,dtr,rts) | tcp(host,port,autoReconnect,reconnectSec) | tcps(port) | \
-             udp(host,port,bindPort) | ws(url,autoReconnect,reconnectSec).",
+             udp(host,port,bindPort) | ws(url,autoReconnect,reconnectSec) | \
+             loopback() (echoes sent bytes back as RX; for testing).",
             json!({
                 "type": "object",
                 "required": ["type"],
                 "properties": {
-                    "type": {"type": "string", "enum": ["serial", "tcp", "tcps", "udp", "ws"]},
+                    "type": {"type": "string", "enum": ["serial", "tcp", "tcps", "udp", "ws", "loopback"]},
                     "force": {"type": "boolean", "description": "disconnect the existing connection first"},
                     "path": {"type": "string", "description": "serial device path, e.g. /dev/cu.usbserial-xxx"},
                     "baudRate": {"type": "number"},

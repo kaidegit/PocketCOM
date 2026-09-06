@@ -174,6 +174,12 @@ NAME → 按钮映射：
   client 经原生 fetch 走真实宿主+guest：401 鉴权 → initialize → tools/list →
   connect（bun TCP echo）→ send → read 前缀断言 → force → disconnect →
   config 白名单 → 会话 DELETE；门控经 `--click` 注入，见下）。
+- **回环连接类型**（SPEC §3.2，无硬件 e2e 首选）：`--click 136,91@60`（类型
+  下拉）→ `--click 136,256@120`（弹层第 6 项"回环"）→ `--click 136,594@180`
+  （页脚打开，同步 CONNECTED）→ 切终端后 `--type` 键入直发回显（Rx=Tx 计数
+  对称）。注意回环无参数块，选中后 mode SegCtrl 上移至块 top=81（控件中心
+  y=162），MCP 门控配方的 mode 坐标仅适用默认串口布局；MCP `connect` 亦支持
+  `type:"loopback"`（`bun test host/macos/mcp/` 含 send→read 回显用例）。
 
 ## MCP 门控配方（M4，SPEC §6.1）
 
@@ -199,3 +205,8 @@ NAME → 按钮映射：
    坐标命中落空。com.* 侧看 `pocketcom-trace: com.mcpStart …` 等 op trace。
 4. `--wheel` 不滚动：指针未落在目标分区（面板 x<270 / 日志 / 终端），或该区
    已在滚动边界。
+5. **`--type` 往面板字段"重复插入"：先重置 `POCKETCOM_CONFIG`**。连接参数
+   输入框启动时用 `lastConn.<kind>` 预填、光标在尾部，脚本不清空直接 type
+   就是追加；且成功连接会把字段内容快照回写配置（cfgWrite）——多轮脚本跑完
+   字段就累积成 `127.0.0.1127.0.0.…`。每次跑前 `echo '{}' > $POCKETCOM_CONFIG`
+   即可；`--type` 本身每轮只投递一次 `ch` 行（svc 队列 drain 语义，无重投）。

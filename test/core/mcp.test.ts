@@ -71,6 +71,14 @@ class FakeSession implements McpSessionLike {
     this.describe = `${params.kind}`;
   }
 
+  openLoopback(): void {
+    if (this.openError) throw this.openError;
+    this.calls.push({ op: "openLoopback" });
+    this.state = "CONNECTED";
+    this.kind = "loopback";
+    this.describe = "loopback";
+  }
+
   close(): void {
     this.calls.push({ op: "close" });
     this.state = "DISCONNECTED";
@@ -284,6 +292,16 @@ describe("mcp commands: connect / disconnect", () => {
     call(ctx, "connect", { type: "udp", host: "127.0.0.1", port: 5000 });
     const arg = session.last("openNet")!.arg as Record<string, unknown>;
     expect(arg.bindPort).toBe(5000);
+  });
+
+  test("connect loopback：无参数测试连接，打开即 CONNECTED", () => {
+    const { ctx, session } = makeCtx();
+    const r = call(ctx, "connect", { type: "loopback" });
+    expect(r.ok).toBe(true);
+    expect(session.last("openLoopback")).toBeDefined();
+    expect(session.kind).toBe("loopback");
+    expect(session.state).toBe("CONNECTED");
+    expect(r.ok && r.text).toContain("loopback");
   });
 
   test("connect：已有连接默认拒绝，force 先断开（规避静默抢占，SPEC §6.3）", () => {

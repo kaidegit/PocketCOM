@@ -174,6 +174,8 @@ export interface McpSessionLike {
       | { kind: "udp"; bindPort: number; host: string; port: number }
       | { kind: "ws"; url: string; autoReconnect?: boolean; reconnectSec?: number },
   ): void;
+  /** 回环连接（SPEC §3.2，测试用）：无参数，打开即 CONNECTED，发送原样回灌。 */
+  openLoopback(): void;
   close(): void;
   write(bytes: Uint8Array, source: MessageSource): void;
   setSignals(pins: { dtr: boolean; rts: boolean }): void;
@@ -328,8 +330,11 @@ function connectCommand(cmd: McpCommand, ctx: McpContext): McpResult {
         reconnectSec: optInt(cmd.args, "reconnectSec", 5, 1, 3600),
       });
       break;
+    case "loopback":
+      s.openLoopback();
+      break;
     default:
-      return mcpErr(cmd.id, "invalid-param", `unknown connection type: ${type} (serial|tcp|tcps|udp|ws)`);
+      return mcpErr(cmd.id, "invalid-param", `unknown connection type: ${type} (serial|tcp|tcps|udp|ws|loopback)`);
   }
   return mcpOk(cmd.id, `connected: ${s.describe}`);
 }

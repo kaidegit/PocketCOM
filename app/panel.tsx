@@ -264,6 +264,8 @@ const layoutInfo = computed(() => {
     put("wsUrl", FIELD_H, BLOCK_GAP);
     put("wsProtocols", FIELD_H, BLOCK_GAP);
     put("wsReconnect", CHECK_H, withReconnect.value ? 0 : SECTION_GAP);
+  } else if (connType.value === "loopback") {
+    // 回环：无参数块，直接落到下方通用设置区
   }
   if (withReconnect.value) {
     put("reconnectSec", CUSTOM_H, SECTION_GAP);
@@ -351,6 +353,7 @@ export function LeftPanel() {
                   { value: "tcps", label: t("conn.tcpServer") },
                   { value: "udp", label: t("conn.udp") },
                   { value: "ws", label: t("conn.wsClient") },
+                  { value: "loopback", label: t("conn.loopback") },
                 ]}
                 onPick={(v) => {
                   closePopup();

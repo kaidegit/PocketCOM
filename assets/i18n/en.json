@@ -10,6 +10,7 @@
     "tcpServer": "TCP Server",
     "udp": "UDP",
     "wsClient": "WebSocket Client",
+    "loopback": "Loopback",
     "open": "Open",
     "close": "Close",
     "ackLost": "Ack lost",
