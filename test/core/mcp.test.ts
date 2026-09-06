@@ -190,6 +190,23 @@ describe("mcp read lines", () => {
     const third = collectMcpLines(bus, lastId, LABELS);
     expect(third.lines.length).toBe(1);
   });
+
+  test("collectMcpLines：id 断档前置 [SYS] 丢帧行（真实丢帧才出现）", () => {
+    const bus = new MessageBus({ now: () => 1000, maxFrames: 2 });
+    bus.append({ dir: "rx", source: "system", payload: new TextEncoder().encode("rx1"), connId: "c" });
+    bus.append({ dir: "rx", source: "system", payload: new TextEncoder().encode("rx2"), connId: "c" });
+    bus.append({ dir: "rx", source: "system", payload: new TextEncoder().encode("rx3"), connId: "c" }); // 逐出 id 1，未喂出
+    const { lines, lastId } = collectMcpLines(bus, 0, LABELS);
+    expect(lines.length).toBe(3); // 1 丢帧行 + 2 数据行
+    expect(lines[0]!.endsWith("[SYS] buffer overflow, dropped 1 frame(s)")).toBe(true);
+    expect(lines[1]!.endsWith("[RX] rx2")).toBe(true);
+    expect(lastId).toBe(3);
+    // 后续连续流量不再出现丢帧行
+    bus.append({ dir: "rx", source: "system", payload: new TextEncoder().encode("rx4"), connId: "c" });
+    const again = collectMcpLines(bus, lastId, LABELS);
+    expect(again.lines.length).toBe(1);
+    expect(again.lines[0]!.endsWith("[RX] rx4")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

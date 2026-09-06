@@ -39,7 +39,8 @@ export const DEFAULT_MAX_BYTES = 256 * 1024;
 
 /**
  * 有界环形缓冲（SPEC §3.5：默认 1000 帧 / 256 KiB，溢出丢最旧帧）。
- * push 返回被逐出的最旧帧列表，调用方据此记 sys 溢出事件。
+ * 溢出属正常历史裁剪；push 返回被逐出的最旧帧列表供诊断，
+ * 丢帧可见性由消费端按消息 id 断档检测。
  */
 export class RingBuffer {
   private queue: Message[] = [];
@@ -91,15 +92,6 @@ export class RingBuffer {
       evicted.push(oldest);
     }
     return evicted;
-  }
-
-  /**
-   * 入帧但不触发逐出（供 sys 溢出事件等系统帧使用，
-   * 避免"记录溢出"本身级联逐出数据帧）。
-   */
-  pushUnchecked(msg: Message): void {
-    this.queue.push(msg);
-    this.byteCount += msg.payload.byteLength;
   }
 
   /** 取空缓冲（drain）。 */

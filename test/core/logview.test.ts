@@ -17,11 +17,25 @@ describe("LogView", () => {
     const bus = new MessageBus();
     const lv = new LogView(FORMAT, LABELS);
     feed(bus, { payload: strToBytes("one") });
-    expect(lv.sync(bus)).toBe(1);
-    expect(lv.sync(bus)).toBe(0);
+    expect(lv.sync(bus).added).toBe(1);
+    expect(lv.sync(bus).added).toBe(0);
     feed(bus, { payload: strToBytes("two") });
-    expect(lv.sync(bus)).toBe(1);
+    expect(lv.sync(bus).added).toBe(1);
     expect(lv.rows.map((r) => r.text)).toEqual(["<= one", "<= two"]);
+  });
+
+  test("sync 断档检测：环形缓冲裁掉未显示帧时返回 lost", () => {
+    const bus = new MessageBus({ maxFrames: 2 });
+    const lv = new LogView(FORMAT, LABELS);
+    feed(bus, { payload: strToBytes("1") });
+    feed(bus, { payload: strToBytes("2") });
+    feed(bus, { payload: strToBytes("3") }); // 逐出 id 1，未被显示
+    expect(lv.sync(bus)).toEqual({ added: 2, lost: 1 });
+    expect(lv.sync(bus)).toEqual({ added: 0, lost: 0 });
+    feed(bus, { payload: strToBytes("4") }); // 缓冲 [3,4]
+    feed(bus, { payload: strToBytes("5") }); // 缓冲 [4,5]
+    // lastMsgId=3，首条新消息 id=4 连续 → 无丢帧
+    expect(lv.sync(bus)).toEqual({ added: 2, lost: 0 });
   });
 
   test("tx 两类前缀 + sys 前缀", () => {

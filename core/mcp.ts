@@ -118,7 +118,8 @@ export function formatMcpLine(msg: { ts: number; dir: "rx" | "tx" | "sys"; sourc
 
 /**
  * 消息总线的 MCP 侧增量视图（SPEC §6.4）：peek 出 id > lastId 的可见帧
- * （RX + 非 mcp TX + sys），格式化为读行。缓冲有界，追不上即丢最旧（§3.5）。
+ * （RX + 非 mcp TX + sys），格式化为读行。缓冲有界，若裁掉尚未喂出的帧
+ * （id 断档）则前置一条 [SYS] 丢帧行（稳定英文，§6.3；时间戳取首条幸存帧）。
  */
 export function collectMcpLines(
   bus: MessageBus,
@@ -128,12 +129,20 @@ export function collectMcpLines(
 ): { lines: string[]; lastId: number } {
   const lines: string[] = [];
   let seen = lastId;
+  let first = true;
   for (const msg of bus.buffer.peek()) {
     if (msg.id <= lastId) continue;
+    if (first) {
+      first = false;
+      const lost = msg.id - lastId - 1;
+      if (lost > 0) {
+        lines.push(`[${mcpTimestamp(msg.ts)}] ${labels.sys} buffer overflow, dropped ${lost} frame(s)`);
+      }
+    }
     seen = Math.max(seen, msg.id);
     if (!isVisibleToMcp(msg)) continue;
-    lines.push(formatMcpLine(msg, labels));
     if (lines.length >= maxLines) break;
+    lines.push(formatMcpLine(msg, labels));
   }
   return { lines, lastId: seen };
 }

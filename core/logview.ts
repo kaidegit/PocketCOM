@@ -2,7 +2,7 @@
  * 接收区日志视图（SPEC §3.3）：消息总线 → 格式化显示行。
  * - 数据源是 core 消息总线（单一事实源）：每帧 sync() 从总线环形缓冲
  *   peek 出 id > lastSeenId 的新消息；暂停 = 不 sync，恢复后自然追上
- *   （缓冲有界，追不上就是丢了最旧的，符合 §3.5 溢出语义）。
+ *   （缓冲有界，追不上即丢最旧——sync 按 id 断档返回 lost，由 app 层记 sys 提示）。
  * - 显示行有界（默认 500 行），溢出丢最旧。
  * - hex/escape/timestamp 切换时用保留的最近消息全量重排版。
  * - 自动换行由注入的测量函数完成（app 侧 getOps().measureText），
@@ -73,15 +73,19 @@ export class LogView {
   }
 
   /**
-   * 从总线同步新消息（每帧调用）。返回本次新增行数。
+   * 从总线同步新消息（每帧调用）。返回本次新增行数 added 与
+   * 因环形缓冲裁剪而未能显示的帧数 lost（id 断档，如暂停期间流量
+   * 超过缓冲容量）。
    * 不清空已见 id：清屏用 clear()。
    */
-  sync(bus: MessageBus): number {
+  sync(bus: MessageBus): { added: number; lost: number } {
     const pending: Message[] = [];
     for (const msg of bus.buffer.peek()) {
       if (msg.id > this.lastMsgId) pending.push(msg);
     }
-    if (pending.length === 0) return 0;
+    if (pending.length === 0) return { added: 0, lost: 0 };
+    // 首条新消息 id 前出现断档 = 有帧在被显示前就被环形缓冲裁掉（真实丢帧）
+    const lost = Math.max(0, pending[0]!.id - this.lastMsgId - 1);
     const before = this.rows.length;
     for (const msg of pending) {
       this.lastMsgId = Math.max(this.lastMsgId, msg.id);
@@ -89,7 +93,7 @@ export class LogView {
     }
     this.trim();
     this.rebuild();
-    return this.rows.length - before;
+    return { added: this.rows.length - before, lost };
   }
 
   /** 清屏：丢全部行；upToMsgId 通常为当前 lastMsgId，防止旧消息重新出现。 */

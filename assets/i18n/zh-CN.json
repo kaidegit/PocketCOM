@@ -124,7 +124,8 @@
   },
   "sys": {
     "openFailed": "打开连接失败",
-    "closeFailed": "关闭连接失败"
+    "closeFailed": "关闭连接失败",
+    "bufferOverflow": "缓冲溢出，已丢弃 {n} 帧"
   },
   "settings": {
     "language": "语言",

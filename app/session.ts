@@ -801,8 +801,11 @@ export function pumpSession(nowMs: number): void {
     lastTermVersion = terminal.version;
     termVersion.value++;
   }
-  if (!rxPaused.value && logView.sync(bus) > 0) {
-    logVersion.value++;
+  if (!rxPaused.value) {
+    const { added, lost } = logView.sync(bus);
+    if (added > 0) logVersion.value++;
+    // 环形缓冲裁掉了尚未显示的帧（如暂停期间流量超容量）：记一条 sys 提示
+    if (lost > 0) sysMsg(t("sys.bufferOverflow", { n: lost }));
   }
 }
 

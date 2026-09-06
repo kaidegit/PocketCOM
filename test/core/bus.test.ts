@@ -53,18 +53,29 @@ describe("MessageBus", () => {
     void bus;
   });
 
-  test("缓冲溢出丢最旧帧并自动记 sys 溢出事件", () => {
+  test("缓冲溢出静默丢最旧帧，不注入 sys 事件（历史裁剪属正常行为）", () => {
+    const events: Message[] = [];
     const bus = new MessageBus({ now: () => 0, maxFrames: 2 });
+    bus.subscribe((m) => events.push(m));
     bus.append({ dir: "rx", source: "manual", payload: new Uint8Array([1]), connId: "c" });
     bus.append({ dir: "rx", source: "manual", payload: new Uint8Array([2]), connId: "c" });
     bus.append({ dir: "rx", source: "manual", payload: new Uint8Array([3]), connId: "c" });
-    const rest = bus.buffer.peek();
-    // 缓冲里应剩 [2, 3, sys(overflow)]，id 为 2,3,4
-    expect(rest.map((m) => m.id)).toEqual([2, 3, 4]);
-    const sysMsg = rest[2]!;
-    expect(sysMsg.dir).toBe("sys");
-    expect(sysMsg.source).toBe("system");
-    expect(new TextDecoder().decode(sysMsg.payload)).toContain("dropped 1");
+    expect(bus.buffer.peek().map((m) => m.id)).toEqual([2, 3]);
+    expect(events.map((m) => m.dir)).toEqual(["rx", "rx", "rx"]);
+  });
+
+  test("满缓冲稳态：持续 append 尺寸稳定在 maxFrames，无 sys 事件产生", () => {
+    const bus = new MessageBus({ now: () => 0, maxFrames: 3 });
+    const sysEvents: Message[] = [];
+    bus.subscribe((m) => {
+      if (m.dir === "sys") sysEvents.push(m);
+    });
+    for (let i = 0; i < 20; i++) {
+      bus.append({ dir: "rx", source: "manual", payload: new Uint8Array([i]), connId: "c" });
+    }
+    expect(bus.buffer.size).toBe(3);
+    expect(bus.buffer.peek().map((m) => m.id)).toEqual([18, 19, 20]);
+    expect(sysEvents.length).toBe(0);
   });
 
   test("drainForMcp：RX + 手动 TX + sys，不含 mcp 的 TX", () => {

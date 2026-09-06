@@ -1,11 +1,12 @@
 /**
  * 消息总线（SPEC §3.5 / §6.4）：单一事实源。
  * - append() 分配 id/ts、同步通知订阅者（错误隔离）、写入有界环形缓冲；
- *   缓冲溢出丢最旧帧并自动记一条 sys 溢出事件。
+ *   缓冲溢出丢最旧帧属正常历史裁剪，不注入事件——消费端按 id 连续性
+ *   自行检测真实丢帧（LogView / collectMcpLines）。
  * - drainForMcp() 为 MCP 侧视图：RX 帧 + 用户手动发送的 TX 帧 + sys 事件，
  *   不含 source=mcp 的帧（agent 读不到自己发的，SPEC §6.4）。
  */
-import type { Message, MessageSource, NewMessage } from "./message";
+import type { Message, NewMessage } from "./message";
 import { RingBuffer, type RingBufferOptions } from "./message";
 
 export type Subscriber = (msg: Message) => void;
@@ -20,14 +21,6 @@ export interface MessageBusOptions extends RingBufferOptions {
 /** MCP 读缓冲可见性（SPEC §6.4）：agent 自己 send 的帧不回灌。 */
 export function isVisibleToMcp(msg: Message): boolean {
   return msg.dir !== "tx" || msg.source !== "mcp";
-}
-
-/** sys 溢出事件 payload（ASCII 字节，编码 dropped 帧数）。 */
-function overflowPayload(dropped: number): Uint8Array {
-  const text = `buffer overflow, dropped ${dropped} frame(s)`;
-  const out = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i);
-  return out;
 }
 
 export class MessageBus {
@@ -54,7 +47,8 @@ export class MessageBus {
     };
   }
 
-  /** 追加消息：分配 id/ts → 通知订阅者（错误隔离）→ 写入环形缓冲。 */
+  /** 追加消息：分配 id/ts → 通知订阅者（错误隔离）→ 写入环形缓冲。
+   *  缓冲超限静默丢最旧帧（正常裁剪）；丢帧可见性由消费端按 id 断档判断。 */
   append(input: NewMessage): Message {
     const msg: Message = {
       id: this.nextId++,
@@ -65,20 +59,7 @@ export class MessageBus {
       connId: input.connId,
     };
     this.notify(msg);
-    const evicted = this.buffer.push(msg);
-    if (evicted.length > 0) {
-      // 溢出：记 sys 事件（不递归 append，避免级联逐出）
-      const sysMsg: Message = {
-        id: this.nextId++,
-        ts: this.now(),
-        dir: "sys",
-        source: "system" as MessageSource,
-        payload: overflowPayload(evicted.length),
-        connId: msg.connId,
-      };
-      this.notify(sysMsg);
-      this.buffer.pushUnchecked(sysMsg);
-    }
+    this.buffer.push(msg);
     return msg;
   }
 

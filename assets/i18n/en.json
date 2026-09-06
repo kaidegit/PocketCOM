@@ -124,7 +124,8 @@
   },
   "sys": {
     "openFailed": "Failed to open connection",
-    "closeFailed": "Failed to close connection"
+    "closeFailed": "Failed to close connection",
+    "bufferOverflow": "buffer overflow, dropped {n} frame(s)"
   },
   "settings": {
     "language": "Language",

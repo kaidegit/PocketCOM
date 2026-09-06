@@ -26,9 +26,11 @@ function lookup(pack: JsonObject, key: string): string | undefined {
   return typeof node === "string" ? node : undefined;
 }
 
-/** 取文案：当前语言 → en → key 本身。 */
-export function t(key: string): string {
-  return lookup(packs[locale.value], key) ?? lookup(packs.en, key) ?? key;
+/** 取文案：当前语言 → en → key 本身。params 做 {name} 占位符插值。 */
+export function t(key: string, params?: Record<string, string | number>): string {
+  const raw = lookup(packs[locale.value], key) ?? lookup(packs.en, key) ?? key;
+  if (!params) return raw;
+  return raw.replace(/\{(\w+)\}/g, (m, k: string) => (k in params ? String(params[k]) : m));
 }
 
 /** 切换语言。 */
