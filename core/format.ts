@@ -4,7 +4,7 @@
  * 前缀文案由调用方（app 侧 i18n）注入，核心层不依赖语言包。
  */
 import type { Message, MessageDir } from "./message";
-import { bytesToHex, bytesToStr } from "./codec";
+import { bytesToHex, bytesToStr, utf8Decode } from "./codec";
 
 /** 接收区显示开关（SPEC §3.3）。 */
 export interface LogFormatOptions {
@@ -60,15 +60,19 @@ export function messagePrefix(msg: Message, labels: LogLineLabels): string {
   }
 }
 
-/** 消息内容：HEX（无损）或 UTF-8 文本（解码失败字节 → U+FFFD，SPEC §3.3）。 */
+/** 消息内容：HEX（无损）或 UTF-8 文本（解码失败字节 → U+FFFD，SPEC §3.3）。
+ *  仅用于 RX/TX 数据帧；sys 消息走 formatLogText 的文本分支。 */
 export function formatContent(payload: Uint8Array, opts: LogFormatOptions): string {
   return opts.hex ? bytesToHex(payload) : bytesToStr(payload, { escape: opts.escape });
 }
 
-/** 消息 → 完整单行日志文本。 */
+/** 消息 → 完整单行日志文本。sys 为 UI 生成的可读文本（i18n 提示等，
+ *  均为 strToBytes 写入的完整 UTF-8），始终按文本渲染，不受 HEX/转义
+ *  显示开关影响（转义是面向 wire 字节的逐字节语义，会打碎 CJK 文案）。 */
 export function formatLogText(msg: Message, opts: LogFormatOptions, labels: LogLineLabels): string {
   const ts = opts.timestamp ? `[${formatTimestamp(msg.ts)}] ` : "";
-  return `${ts}${messagePrefix(msg, labels)} ${formatContent(msg.payload, opts)}`;
+  const content = msg.dir === "sys" ? utf8Decode(msg.payload) : formatContent(msg.payload, opts);
+  return `${ts}${messagePrefix(msg, labels)} ${content}`;
 }
 
 /** 行着色用的方向（渲染侧按方向取主题色）。 */

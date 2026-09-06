@@ -73,4 +73,16 @@ describe("formatLogText", () => {
     );
     expect(line).toBe("[2026-09-05 12:00:00.042] [--] connected");
   });
+  test("HEX 开关只作用于 RX/TX 数据帧", () => {
+    const hex = { ...OPTS, hex: true };
+    expect(formatLogText(msg({ dir: "rx", payload: strToBytes("AT") }), hex, LABELS)).toBe("<= 41 54");
+    expect(formatLogText(msg({ dir: "tx", source: "manual", payload: strToBytes("AT") }), hex, LABELS)).toBe(
+      "[手动发送] 41 54",
+    );
+  });
+  test("sys 消息不受 HEX/转义开关影响（始终可读文本，含 CJK）", () => {
+    const m = msg({ dir: "sys", payload: strToBytes("连接已断开") });
+    expect(formatLogText(m, { ...OPTS, hex: true }, LABELS)).toBe("[--] 连接已断开");
+    expect(formatLogText(m, { ...OPTS, hex: true, escape: true }, LABELS)).toBe("[--] 连接已断开");
+  });
 });
