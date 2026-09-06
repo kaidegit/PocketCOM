@@ -16,6 +16,7 @@ import {
   TextField,
   closePopup,
   type PopupAnchor,
+  type SelRect,
   type TextFieldHandle,
 } from "./widgets";
 import { theme, themeMode, type ThemeMode } from "./theme";
@@ -206,6 +207,25 @@ const CLIENT_ROW_H = 24;
 const CONTENT_W = PANEL_W - PAD_X * 2;
 const PAIR_W = Math.floor((CONTENT_W - PAIR_GAP) / 2);
 
+/** 面板内容滚动偏移（模块级：文本框选区命中区也要读）。 */
+const panelScroll = ref(0);
+
+/** 文本框拖动选区命中区（屏幕绝对坐标）：控件顶 = 面板内容坐标 ctlTop，
+ *  随面板滚动平移。x/w 为相对面板的偏移与宽（配对字段各占半宽）。 */
+function ctlRegion(ctlTop: number, xOff = 0, w = CONTENT_W): () => SelRect | null {
+  return () => ({
+    x: PAD_X + xOff,
+    y: PANEL_HEADER_H + 1 + ctlTop - panelScroll.value,
+    w,
+    h: CTL_H,
+  });
+}
+
+/** label + 控件的标准字段块：控件顶 = 块顶 + LABEL_H + LABEL_GAP。 */
+function fieldRegion(blockTop: number, xOff = 0, w = CONTENT_W): () => SelRect | null {
+  return ctlRegion(blockTop + LABEL_H + LABEL_GAP, xOff, w);
+}
+
 const isSerial = computed(() => connType.value === "serial");
 const withReconnect = computed(
   () =>
@@ -269,21 +289,19 @@ const layoutInfo = computed(() => {
 });
 
 export function LeftPanel() {
-  const scroll = ref(0);
-
   const viewH = () => Math.max(0, viewportSize.value.h - PANEL_HEADER_H - 1 - PANEL_FOOTER_H);
   const maxScroll = () => Math.max(0, layoutInfo.value.total - viewH());
 
   onWheel("panel", (dy) => {
     closePopup(); // 滚动使锚点失效：先收弹层
-    scroll.value = Math.max(0, Math.min(maxScroll(), scroll.value - dy));
+    panelScroll.value = Math.max(0, Math.min(maxScroll(), panelScroll.value - dy));
   });
 
   /** 控制框屏幕锚点（弹层定位用）：面板从 (0,0) 开始，头部固定高。 */
   const anchor = (blockId: string, x: number, w: number, ctlH = CTL_H): (() => PopupAnchor) => {
     return () => ({
       x,
-      y: PANEL_HEADER_H + 1 + (layoutInfo.value.top[blockId] ?? 0) + LABEL_H + LABEL_GAP - scroll.value,
+      y: PANEL_HEADER_H + 1 + (layoutInfo.value.top[blockId] ?? 0) + LABEL_H + LABEL_GAP - panelScroll.value,
       w,
       h: ctlH,
     });
@@ -314,7 +332,7 @@ export function LeftPanel() {
       <View class="relative flex-1 overflow-hidden">
         <View
           class="absolute left-0 right-0"
-          style={{ insetT: 0, height: layoutInfo.value.total, translateY: -scroll.value }}
+          style={{ insetT: 0, height: layoutInfo.value.total, translateY: -panelScroll.value }}
         >
           {/* 连接类型 */}
           <View class="absolute" style={{ insetT: top("connType"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
@@ -366,13 +384,14 @@ export function LeftPanel() {
                 <TextField
                   initial={tcpHost.value}
                   placeholder={() => "127.0.0.1"}
+                  selRegion={fieldRegion(top("tcpHost"))}
                   {...bindField("tcpHost", tcpHost)}
                 />,
               )}
               {fieldBlock(
                 top("tcpPort"),
                 () => t("conn.remotePort"),
-                <TextField initial={tcpPort.value} {...bindField("tcpPort", tcpPort)} />,
+                <TextField initial={tcpPort.value} selRegion={fieldRegion(top("tcpPort"))} {...bindField("tcpPort", tcpPort)} />,
               )}
               <View
                 class="absolute"
@@ -395,7 +414,7 @@ export function LeftPanel() {
               {fieldBlock(
                 top("tcpsPort"),
                 () => t("conn.listenPort"),
-                <TextField initial={tcpsPort.value} {...bindField("tcpsPort", tcpsPort)} />,
+                <TextField initial={tcpsPort.value} selRegion={fieldRegion(top("tcpsPort"))} {...bindField("tcpsPort", tcpsPort)} />,
               )}
               {clientList.value.length > 0 ? (
                 <View
@@ -434,6 +453,7 @@ export function LeftPanel() {
                 <TextField
                   initial={udpHost.value}
                   placeholder={() => "127.0.0.1"}
+                  selRegion={fieldRegion(top("udpHost"))}
                   {...bindField("udpHost", udpHost)}
                 />,
               )}
@@ -441,13 +461,21 @@ export function LeftPanel() {
                 <View class="absolute" style={{ insetL: 0, insetT: 0, width: PAIR_W, height: FIELD_H }}>
                   <FieldLabel text={() => t("conn.localPort")} />
                   <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
-                    <TextField initial={udpBindPort.value} {...bindField("udpBindPort", udpBindPort)} />
+                    <TextField
+                      initial={udpBindPort.value}
+                      selRegion={fieldRegion(top("udpPair"), 0, PAIR_W)}
+                      {...bindField("udpBindPort", udpBindPort)}
+                    />
                   </View>
                 </View>
                 <View class="absolute" style={{ insetL: PAIR_W + PAIR_GAP, insetT: 0, width: PAIR_W, height: FIELD_H }}>
                   <FieldLabel text={() => t("conn.remotePort")} />
                   <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
-                    <TextField initial={udpPort.value} {...bindField("udpPort", udpPort)} />
+                    <TextField
+                      initial={udpPort.value}
+                      selRegion={fieldRegion(top("udpPair"), PAIR_W + PAIR_GAP, PAIR_W)}
+                      {...bindField("udpPort", udpPort)}
+                    />
                   </View>
                 </View>
               </View>
@@ -463,13 +491,14 @@ export function LeftPanel() {
                 <TextField
                   initial={wsUrl.value}
                   placeholder={() => "ws://127.0.0.1:8080"}
+                  selRegion={fieldRegion(top("wsUrl"))}
                   {...bindField("wsUrl", wsUrl)}
                 />,
               )}
               {fieldBlock(
                 top("wsProtocols"),
                 () => t("conn.wsProtocols"),
-                <TextField initial={wsProtocols.value} {...bindField("wsProtocols", wsProtocols)} />,
+                <TextField initial={wsProtocols.value} selRegion={fieldRegion(top("wsProtocols"))} {...bindField("wsProtocols", wsProtocols)} />,
               )}
               <View
                 class="absolute"
@@ -495,6 +524,7 @@ export function LeftPanel() {
               <View class="absolute left-0 right-0" style={{ insetT: 6, height: CTL_H }}>
                 <TextField
                   initial={connType.value === "tcp" ? tcpReconnectSec.value : wsReconnectSec.value}
+                  selRegion={ctlRegion(top("reconnectSec") + 6)}
                   {...(connType.value === "tcp"
                     ? bindField("tcpReconnectSec", tcpReconnectSec)
                     : bindField("wsReconnectSec", wsReconnectSec))}
@@ -646,6 +676,7 @@ export function LeftPanel() {
             <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
               <TextField
                 initial={String(scrollbackLines.value)}
+                selRegion={fieldRegion(top("scrollback"))}
                 onEnter={(h) => {
                   const n = Number.parseInt(h.text().trim(), 10);
                   setScrollbackLines(Number.isFinite(n) ? n : 9999);
@@ -664,7 +695,7 @@ export function LeftPanel() {
             </View>
           </View>
         </View>
-        <Scrollbar scroll={() => scroll.value} total={() => layoutInfo.value.total} viewH={viewH} />
+        <Scrollbar scroll={() => panelScroll.value} total={() => layoutInfo.value.total} viewH={viewH} />
       </View>
       <Hairline />
 
@@ -773,6 +804,7 @@ function SerialBlocks(props: {
           <View class="absolute left-0 right-0" style={{ insetT: FIELD_H + 6, height: CTL_H }}>
             <TextField
               initial={props.customBaud.value}
+              selRegion={ctlRegion(props.top("baud") + FIELD_H + 6)}
               onHandle={(h) => {
                 props.setCustomBaudField(h);
                 h.focus(); // 选"自定义…"后直接可输入

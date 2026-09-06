@@ -5,7 +5,7 @@
 // 按住不连发）；控件 onPress 里自行处理"活跃文本域"借焦（见 app/fields.ts）。
 // 下拉弹层：Portal 全屏遮罩 + 屏幕绝对坐标定位（anchor 由调用方按布局
 // 常量给出），不沾父级流式布局、不被滚动视口裁剪；同屏只开一个。
-import { ref } from "vue";
+import { onScopeDispose, ref } from "vue";
 import { Portal, Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { getOps } from "@pocketjs/framework";
 import { focusNode } from "@pocketjs/framework/input";
@@ -14,6 +14,7 @@ import { virtualNow } from "@pocketjs/framework/clock";
 import { theme } from "./theme";
 import { STATUS_H, viewportSize } from "./layout";
 import { LINE_H as FONT_LINE_H, MONO_SLOTS } from "./fontsize";
+import { monoColAt } from "./textsel";
 import { activeField, setActiveField, type KeyMods, type TextField as TextFieldProto } from "./fields";
 
 /** 标准控件高（Select/SegCtrl/单行 TextField/Btn）。 */
@@ -26,7 +27,7 @@ const TRANSPARENT = "#00000000";
 
 /** 等宽字体测量：按字号档位取 mono 字形槽；缓存按 槽:文本 键。 */
 const measureCache = new Map<string, number>();
-function measureMono(text: string, slot: number): number {
+export function measureMono(text: string, slot: number): number {
   if (text === "") return 0;
   const key = `${slot}:${text}`;
   let w = measureCache.get(key);
@@ -458,6 +459,58 @@ const FIELD_PAD_X = 8;
 /** 光标闪烁半周期（秒，virtualNow 单位）：实心与隐藏各占此时长。 */
 const CARET_BLINK_S = 0.5;
 
+// ---------------------------------------------------------------------------
+// TextField 拖动选中（app.tsx 的 mouse 路由驱动）。引擎命中测试只有
+// "点 → 节点"、没有"节点 → 矩形"，命中区矩形由调用方按布局常量给出
+// （与 terminal.tsx 的 termMetrics 同一套路）；未给 selRegion 的实例不参与。
+// ---------------------------------------------------------------------------
+
+/** 屏幕绝对矩形（TextField 命中区 = 控件根盒，含 1px 边框）。 */
+export interface SelRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface FieldSelEntry {
+  region: () => SelRect | null;
+  down(x: number, y: number): void;
+  drag(x: number, y: number): void;
+  up(): void;
+}
+
+const fieldSelEntries = new Set<FieldSelEntry>();
+/** 按下沿认领的文本域：拖拽/抬起跨区仍归它（标准文本选择语义）。 */
+let fieldSelDrag: FieldSelEntry | null = null;
+
+/** app.tsx 的 mouse 路由入口。返回是否被文本域命中/接管；弹层打开时由
+ *  调用方先行屏蔽（遮罩命中优先）。 */
+export function textFieldMouse(x: number, y: number, down: boolean): boolean {
+  if (!down) {
+    const e = fieldSelDrag;
+    if (e !== null) {
+      fieldSelDrag = null;
+      e.up();
+      return true;
+    }
+    return false;
+  }
+  if (fieldSelDrag !== null) {
+    fieldSelDrag.drag(x, y);
+    return true;
+  }
+  for (const e of fieldSelEntries) {
+    const r = e.region();
+    if (r !== null && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
+      fieldSelDrag = e;
+      e.down(x, y);
+      return true;
+    }
+  }
+  return false;
+}
+
 export function TextField(props: {
   multiline?: boolean;
   initial?: string;
@@ -470,9 +523,14 @@ export function TextField(props: {
   onSubmit?: () => void;
   /** 单行 Enter（收到句柄，可读当前文本） */
   onEnter?: (h: TextFieldHandle) => void;
+  /** 控件根盒的屏幕绝对矩形（拖动选区命中区；缺省不参与鼠标选区） */
+  selRegion?: () => SelRect | null;
 }) {
   const text = ref(props.initial ?? "");
   const caret = ref((props.initial ?? "").length);
+  /** 拖动选区两端（text 字符索引；相等 = 无选区）。 */
+  const selAnchor = ref((props.initial ?? "").length);
+  const selHead = ref((props.initial ?? "").length);
   /** IME 组合串（未提交，仅显示；提交经 ch 行到达）。 */
   const preedit = ref("");
   const scrollY = ref(0);
@@ -480,6 +538,7 @@ export function TextField(props: {
 
   const bodyH = props.height ?? CTL_H;
   const lineH = FONT_LINE_H[props.monoSize ?? 14];
+  const monoSlot = MONO_SLOTS[props.monoSize ?? 14];
   const padT = props.multiline ? 6 : Math.max(0, (bodyH - lineH) / 2);
   const padB = props.multiline ? 6 : 0;
 
@@ -546,14 +605,94 @@ export function TextField(props: {
     caret.value = Math.max(0, Math.min(i, text.value.length));
   };
 
+  /** 归一化选区 [from, to)；两端相等（无选区）返回 null。 */
+  const selRange = (): [number, number] | null => {
+    const a = selAnchor.value;
+    const b = selHead.value;
+    return a === b ? null : a < b ? [a, b] : [b, a];
+  };
+  /** 选区收拢（消除；端点保持不动）。 */
+  const collapseSelection = (): void => {
+    selHead.value = selAnchor.value;
+  };
+  /** 有选区时删除并返回 true（退格/删除/输入替换共用）。 */
+  const deleteSelection = (): boolean => {
+    const r = selRange();
+    if (r === null) return false;
+    text.value = text.value.slice(0, r[0]) + text.value.slice(r[1]);
+    caret.value = r[0];
+    selAnchor.value = r[0];
+    selHead.value = r[0];
+    return true;
+  };
+
   const insert = (s: string) => {
     if (s === "") return;
+    deleteSelection();
     const t = text.value;
     const c = caret.value;
     text.value = t.slice(0, c) + s + t.slice(c);
     caret.value = c + s.length;
     caretPulse();
     revealCaret();
+  };
+
+  /** 屏幕坐标 → text 字符索引（命中区外/未给 selRegion 时保持光标原位）。
+   *  命中区是控件根盒：内容起点 = 根盒 + 1px 边框 + 内边距；行含 scrollY。 */
+  const posAt = (gx: number, gy: number): number => {
+    const r = props.selRegion?.() ?? null;
+    if (r === null) return caret.value;
+    const ls = text.value.split("\n");
+    let line = Math.floor((gy - (r.y + 1 + padT) + scrollY.value) / lineH);
+    line = Math.max(0, Math.min(ls.length - 1, line));
+    let start = 0;
+    for (let i = 0; i < line; i++) start += ls[i]!.length + 1;
+    const col = monoColAt(ls[line]!, gx - (r.x + 1 + FIELD_PAD_X), (s) => measureMono(s, monoSlot));
+    return Math.min(start + col, text.value.length);
+  };
+
+  /** 鼠标按下：清 IME、光标定位到点击处、选区锚点就位（未拖动即无选区）。 */
+  const selDown = (gx: number, gy: number): void => {
+    preedit.value = "";
+    const pos = posAt(gx, gy);
+    caret.value = pos;
+    selAnchor.value = pos;
+    selHead.value = pos;
+    setActiveField(impl);
+    caretPulse();
+  };
+
+  /** 拖动：延伸选区头部，光标跟随并滚动至可见。 */
+  const selDrag = (gx: number, gy: number): void => {
+    const pos = posAt(gx, gy);
+    if (pos === selHead.value) return;
+    selHead.value = pos;
+    caret.value = pos;
+    caretPulse();
+    revealCaret();
+  };
+
+  /** 各行选区高亮矩形（画布坐标；渲染在文字下层）。 */
+  const selRects = (): { t: number; l: number; w: number }[] => {
+    const r = selRange();
+    if (r === null) return [];
+    void text.value; // 渲染依赖
+    const ls = text.value.split("\n");
+    const out: { t: number; l: number; w: number }[] = [];
+    let start = 0;
+    for (let i = 0; i < ls.length; i++) {
+      const line = ls[i]!;
+      const ls0 = start;
+      const le0 = start + line.length;
+      start = le0 + 1;
+      const from = Math.max(r[0], ls0);
+      const to = Math.min(r[1], le0);
+      if (to <= from) continue;
+      const x0 = measureMono(line.slice(0, from - ls0), monoSlot);
+      const x1 = measureMono(line.slice(0, to - ls0), monoSlot);
+      if (x1 > x0) out.push({ t: i * lineH, l: x0, w: x1 - x0 });
+    }
+    return out;
   };
 
   const lineStartBefore = (pos: number): number => {
@@ -579,29 +718,44 @@ export function TextField(props: {
     }
     switch (k) {
       case "Backspace":
+        if (deleteSelection()) break;
         if (c > 0) {
           text.value = t.slice(0, c - 1) + t.slice(c);
           caret.value = c - 1;
         }
         break;
       case "Delete":
+        if (deleteSelection()) break;
         if (c < t.length) text.value = t.slice(0, c) + t.slice(c + 1);
         break;
-      case "Left":
-        setCaretClamped(c - 1);
+      case "Left": {
+        const r = selRange();
+        if (r !== null) {
+          caret.value = r[0];
+          collapseSelection();
+        } else setCaretClamped(c - 1);
         break;
-      case "Right":
-        setCaretClamped(c + 1);
+      }
+      case "Right": {
+        const r = selRange();
+        if (r !== null) {
+          caret.value = r[1];
+          collapseSelection();
+        } else setCaretClamped(c + 1);
         break;
+      }
       case "Home":
+        collapseSelection();
         caret.value = lineStartBefore(c);
         break;
       case "End":
+        collapseSelection();
         caret.value = lineEndAfter(c);
         break;
       case "Up":
       case "Down": {
         if (!props.multiline) break;
+        collapseSelection();
         const start = lineStartBefore(c);
         const col = c - start;
         const targetLineStart =
@@ -635,6 +789,10 @@ export function TextField(props: {
       caretPulse();
     },
     onKey: (k, mods) => handleKey(k, mods),
+    selectionText: () => {
+      const r = selRange();
+      return r === null ? null : text.value.slice(r[0], r[1]);
+    },
   };
 
   const handle: TextFieldHandle = {
@@ -642,6 +800,8 @@ export function TextField(props: {
     setText: (s) => {
       text.value = s;
       caret.value = s.length;
+      selAnchor.value = s.length;
+      selHead.value = s.length;
       preedit.value = "";
       caretPulse();
       revealCaret();
@@ -658,6 +818,17 @@ export function TextField(props: {
   };
   props.onHandle?.(handle);
 
+  // 拖动选中命中区注册（未给 selRegion 的实例不参与）；组件卸载时摘除，
+  // 防止切连接类型/切模式后残留幽灵命中区。
+  if (props.selRegion) {
+    const entry: FieldSelEntry = { region: props.selRegion, down: selDown, drag: selDrag, up: () => {} };
+    fieldSelEntries.add(entry);
+    onScopeDispose(() => {
+      fieldSelEntries.delete(entry);
+      if (fieldSelDrag === entry) fieldSelDrag = null;
+    });
+  }
+
   return (
     <View
       class="relative rounded-md w-full overflow-hidden"
@@ -673,8 +844,15 @@ export function TextField(props: {
         node = n ?? undefined;
       }}
     >
-      {/* 内容画布：行绝对定位（规避深层 flex-col 堆叠怪癖），translateY 滚动 */}
+      {/* 内容画布：行绝对定位（规避深层 flex-col 堆叠怪癖），translateY 滚动。
+          选区高亮先画（在文字下层），随后占位符与各行文本。 */}
       <View class="absolute" style={{ insetL: FIELD_PAD_X, insetR: FIELD_PAD_X, insetT: padT, translateY: -scrollY.value }}>
+        {selRects().map((r) => (
+          <View
+            class="absolute"
+            style={{ insetT: r.t, insetL: r.l, width: r.w, height: lineH, bgColor: theme.value.selection }}
+          />
+        ))}
         {dispText() === "" ? (
           <Text
             class={

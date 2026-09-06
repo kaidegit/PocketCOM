@@ -28,6 +28,8 @@ export interface ThemeTokens {
   btnBg: string;
   /** 选中行底色（下拉项高亮等） */
   activeBg: string;
+  /** 文本选区高亮（输入框/日志拖动选中） */
+  selection: string;
   /** 弹层底色 */
   popupBg: string;
   /** 滚动条 thumb */
@@ -75,6 +77,7 @@ const dark: ThemeTokens = {
   accentFg: "#ffffff",
   btnBg: "#212834",
   activeBg: "#2c3850",
+  selection: "#4c8dff40",
   popupBg: "#1a212c",
   scrollbar: "#3a4356",
   rx: "#6ee7a0",
@@ -105,6 +108,7 @@ const light: ThemeTokens = {
   accentFg: "#ffffff",
   btnBg: "#e7ebf2",
   activeBg: "#d4e2fa",
+  selection: "#2f6fdd33",
   popupBg: "#ffffff",
   scrollbar: "#c3cad6",
   rx: "#14803c",

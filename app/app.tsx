@@ -1,8 +1,9 @@
 // app/app.tsx — PocketCOM 主界面（SPEC §3.1）：左配置面板 + 右主区 + 底部状态栏。
 // 每帧（onFrame）：svc 事件分发（键盘/IME/粘贴：终端模式无活跃文本域时直发
 // 连接——按键直发无本地回显（SPEC §3.4），否则进活跃文本域；鼠标 hover 聚焦，
-// 终端区驱动选区；滚轮按区路由；弹层打开时滚轮/Escape 由弹层接管）→ 会话泵
-// （com.poll → 帧合流 → 总线 → 日志视图/终端模型 → 查询应答）→ 定时发送。
+// 终端区/文本域/日志区驱动拖动选区；滚轮按区路由；弹层打开时滚轮/Escape 由
+// 弹层接管）→ 会话泵（com.poll → 帧合流 → 总线 → 日志视图/终端模型 → 查询
+// 应答）→ 定时发送。
 import { ref, watch } from "vue";
 import { Text, View } from "@pocketjs/framework/components";
 import { resizeViewport } from "@pocketjs/framework";
@@ -14,10 +15,10 @@ import { theme } from "./theme";
 import { PANEL_W, STATUS_H, setViewport, viewportSize } from "./layout";
 import { routeWheel } from "./wheel";
 import { LeftPanel } from "./panel";
-import { ReceivePane, SendPane, pumpTimedSend } from "./transfer";
+import { ReceivePane, SendPane, logHasSelection, logMouse, logSelectionText, pumpTimedSend } from "./transfer";
 import { TerminalView, termHasSelection, termMouseMove, termScrollPage, termSelectionText } from "./terminal";
 import { StatusBar } from "./statusbar";
-import { PopupLayer, closePopup, popupOpen, popupWheel } from "./widgets";
+import { PopupLayer, closePopup, popupOpen, popupWheel, textFieldMouse } from "./widgets";
 import { pumpSession, refreshPorts, comAvailable, sendTermBytes, terminal, uiMode } from "./session";
 import { t } from "./i18n";
 import { strToBytes } from "../core/codec";
@@ -98,10 +99,22 @@ export default () => {
           setActiveField(null);
           break;
         }
-        // 选中复制：宿主 Cmd+C 以 "Copy" 键行到达，svc copy intent 写剪贴板
-        if (k === "Copy" && uiMode.value === "terminal" && termHasSelection()) {
-          svc?.send({ t: "copy", text: termSelectionText() });
-          break;
+        // 选中复制：宿主 Cmd+C 以 "Copy" 键行到达。优先级：终端选区 >
+        // 活跃文本域选区 > 接收区日志选区；都没有则原样走后续按键路由。
+        if (k === "Copy") {
+          if (uiMode.value === "terminal" && termHasSelection()) {
+            svc?.send({ t: "copy", text: termSelectionText() });
+            break;
+          }
+          const fieldSel = activeField.value?.selectionText?.() ?? null;
+          if (fieldSel !== null && fieldSel !== "") {
+            svc?.send({ t: "copy", text: fieldSel });
+            break;
+          }
+          if (uiMode.value === "transfer" && logHasSelection()) {
+            svc?.send({ t: "copy", text: logSelectionText() });
+            break;
+          }
         }
         if (termWantsKeys()) {
           // Shift+PageUp/PageDown 本地滚动回滚；其余按键直发（SPEC §3.4）
@@ -138,6 +151,18 @@ export default () => {
           termMouseMove(x, y, down);
           focusNode(hitFocusable(x, y));
           break;
+        }
+        // 文本选区路由：文本域（发送框/面板输入框）→ 接收区日志。拖拽期间
+        // 由按下时认领的一方接管（跨区不换目标）；右键与弹层打开时不参与。
+        if (!popupOpen() && ev.b !== 2) {
+          if (textFieldMouse(x, y, down)) {
+            focusNode(hitFocusable(x, y));
+            break;
+          }
+          if (uiMode.value === "transfer" && logMouse(x, y, down)) {
+            focusNode(hitFocusable(x, y));
+            break;
+          }
         }
         // 悬停聚焦始终跟随指针（点击 press 由宿主注入 CIRCLE 完成，不再
         // pressNode）。落空时必须清焦点：否则点在空白处会触发"上一次

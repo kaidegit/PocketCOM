@@ -28,13 +28,16 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 ```
 app/            # Vue Vapor 组件与页面状态（仅渲染 + 输入），pocket.json manifest 也在此
                 #   app.tsx 主界面/onFrame 分发 + 弹层挂载（终端模式下键盘/粘贴直发、
-                #   终端区鼠标选区与 Cmd+C 复制路由）；panel.tsx 左配置面板
-                #   （layoutInfo 布局表：absolute 块定位 + 弹层锚点 + 滚动总高，三合一；
-                #   块集合随连接类型/客户端列表动态伸缩）；transfer.tsx 接收区/发送区
-                #   （字号三档/发送历史/tcps 定向发送）；terminal.tsx 终端视图（M3：
-                #   字符网格按 run 合并渲染/光标/拖拽选区/滚轮回滚，几何与选区
-                #   helper 导出给 app.tsx 命中）；widgets.tsx 基础控件（Btn/CheckRow/
-                #   SegCtrl/Select+Portal 弹层/TextField（monoSize 字号档）/Scrollbar…）；
+                #   终端区/文本域/日志区鼠标选区与 Cmd+C 复制路由）；panel.tsx 左配置
+                #   面板（layoutInfo 布局表：absolute 块定位 + 弹层锚点 + 滚动总高 +
+                #   文本框选区命中区，四合一；块集合随连接类型/客户端列表动态伸缩）；
+                #   transfer.tsx 接收区/发送区（字号三档/发送历史/tcps 定向发送/
+                #   日志拖动选区）；terminal.tsx 终端视图（M3：字符网格按 run 合并
+                #   渲染/光标/拖拽选区/滚轮回滚，几何与选区 helper 导出给 app.tsx 命中）；
+                #   widgets.tsx 基础控件（Btn/CheckRow/SegCtrl/Select+Portal 弹层/
+                #   TextField（monoSize 字号档、selRegion 命中区注册的拖动选区）/
+                #   Scrollbar…）；textsel.ts 文本选区纯几何 helper（mono 前缀度量
+                #   px↔列号映射）；
                 #   session.ts 会话接线单例 + 连接参数仓库 + 设置持久化（加载/防抖回写/
                 #   导入导出）+ uiMode/终端模型装配（bus→term 持续灌入、DSR/DA 应答泵、
                 #   scrollbackLines 设置）；theme.ts 主题令牌（深色/浅色/跟随系统 +

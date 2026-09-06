@@ -19,6 +19,8 @@ export interface TextField {
   onKey(k: string, mods: KeyMods): void;
   onPaste(text: string): void;
   onIme(s: string, caret: number | null): void;
+  /** 鼠标拖动选中的文本；无选区返回 null（app.tsx 的 Copy 键路由用）。 */
+  selectionText?(): string | null;
 }
 
 /** 当前活跃文本域（响应式：TextField 用它画聚焦边框与光标）。
