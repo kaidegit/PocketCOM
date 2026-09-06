@@ -315,7 +315,7 @@ export function ReceivePane() {
           行结构：外层块只放 absolute 子层（选区高亮在下、文本层在上），
           文本层自己承担 px-2 的内边距 —— 高亮与文字共用同一坐标基准。 */}
       <View class="relative flex-1 overflow-hidden" style={{ bgColor: theme.value.inputBg }}>
-        {logView.rows.length === 0 ? (
+        {showEmpty() ? (
           <View class="absolute inset-0 flex-row items-center justify-center">
             <Text class={MONO_CLASS[fontSize.value]} style={{ textColor: theme.value.dim }}>
               {t("receive.empty")}
@@ -346,6 +346,14 @@ export function ReceivePane() {
                   {row.prefix !== "" ? (
                     <Text
                       class={MONO_CLASS[fontSize.value]}
+                      style={{ textColor: dirColor(row.dir), lineHeight: lineH(), height: lineH() }}
+                    >
+                      {row.text.slice(0, row.prefixAt)}
+                    </Text>
+                  ) : null}
+                  {row.prefix !== "" ? (
+                    <Text
+                      class={MONO_CLASS[fontSize.value]}
                       style={{ textColor: prefixColor(row.prefixKind), lineHeight: lineH(), height: lineH() }}
                     >
                       {row.prefix}
@@ -355,7 +363,7 @@ export function ReceivePane() {
                     class={MONO_CLASS[fontSize.value]}
                     style={{ textColor: dirColor(row.dir), lineHeight: lineH(), height: lineH() }}
                   >
-                    {row.prefix !== "" ? row.text.slice(row.prefix.length) : row.text}
+                    {row.prefix !== "" ? row.text.slice(row.prefixAt + row.prefix.length) : row.text}
                   </Text>
                 </View>
               </View>

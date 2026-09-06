@@ -109,7 +109,7 @@ SPEC.md         # 功能规格（权威）
 
 1. 最小改动；新功能先对齐 SPEC，SPEC 未覆盖的先补 SPEC 再写码。
 2. 核心层逻辑必须配单测；改动核心层接口时同步更新 bridge 契约与 sim host。
-3. 消息一律经消息总线并携带 `source` 标记（`manual`/`mcp`/…），UI 前缀文案只分"手动发送 / MCP发送"两类。
+3. 消息一律经消息总线并携带 `source` 标记（`manual`/`mcp`/…），UI 前缀文案只分"手动发送 / MCP发送"两类，且仅 MCP server 运行中显示；未运行时接收区只显示接收数据与系统事件（TX 行整行隐藏，RX 行无 `<=` 标记）；sys 事件标记为 i18n `[系统]`/`[SYS]`。
 4. 安全默认：MCP 监听只绑 `127.0.0.1` + token 鉴权；不引入无鉴权监听。（TCP Server 监听 `0.0.0.0` 是用户显式打开连接的行为，对齐 COMTool，属例外；配置文件权限 0600，导出配置剥离 `mcp.token`。）
 5. 提交信息：Conventional Commits，英文（如 `feat(core): add frame coalescing`）。
 6. 修改了本文件提及的结构、命令、约定时，同步更新本文件。

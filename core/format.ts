@@ -18,16 +18,19 @@ export interface LogFormatOptions {
 
 /**
  * 前缀文案（i18n 注入）：RX 方向标记、TX 两类来源前缀（SPEC §3.5 冻结为
- * 手动/MCP 两类；timer/history 归入手动类）、sys 事件标记。
+ * 手动/MCP 两类；timer/history 归入手动类）、sys 事件标记。RX/TX 前缀
+ * 均允许为 ""（MCP server 未运行时全部收发均为本地手动行为，数据行
+ * 不显示来源前缀）。
  */
 export interface LogLineLabels {
-  /** RX 方向标记，如 "<=" */
+  /** RX 方向标记，如 "<="；允许为 ""（不显示） */
   rx: string;
-  /** TX 手动来源前缀（含括号），如 "[手动发送]" */
+  /** TX 手动来源前缀（含括号），如 "[手动发送]"；允许为 ""（MCP server
+   *  未运行时全部发送均为手动，TX 行不显示来源前缀） */
   txManual: string;
   /** TX MCP 来源前缀（含括号），如 "[MCP发送]" */
   txMcp: string;
-  /** sys 事件标记（含括号），如 "[--]" */
+  /** sys 事件标记（含括号），如 "[系统]" / "[SYS]" */
   sys: string;
 }
 
@@ -48,7 +51,7 @@ export function formatTimestamp(ts: number): string {
   );
 }
 
-/** 一行消息的方向/来源前缀（SPEC §3.5）。 */
+/** 一行方向/来源前缀（SPEC §3.5）；返回 "" 表示该行不显示前缀。 */
 export function messagePrefix(msg: Message, labels: LogLineLabels): string {
   switch (msg.dir) {
     case "rx":
@@ -72,7 +75,8 @@ export function formatContent(payload: Uint8Array, opts: LogFormatOptions): stri
 export function formatLogText(msg: Message, opts: LogFormatOptions, labels: LogLineLabels): string {
   const ts = opts.timestamp ? `[${formatTimestamp(msg.ts)}] ` : "";
   const content = msg.dir === "sys" ? utf8Decode(msg.payload) : formatContent(msg.payload, opts);
-  return `${ts}${messagePrefix(msg, labels)} ${content}`;
+  const prefix = messagePrefix(msg, labels);
+  return prefix === "" ? `${ts}${content}` : `${ts}${prefix} ${content}`;
 }
 
 /** 行着色用的方向（渲染侧按方向取主题色）。 */

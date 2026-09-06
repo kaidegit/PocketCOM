@@ -5,7 +5,7 @@ import { strToBytes } from "../../core/codec";
 import type { LogFormatOptions, LogLineLabels } from "../../core/format";
 import type { NewMessage } from "../../core/message";
 
-const LABELS: LogLineLabels = { rx: "<=", txManual: "[手动发送]", txMcp: "[MCP发送]", sys: "[--]" };
+const LABELS: LogLineLabels = { rx: "<=", txManual: "[手动发送]", txMcp: "[MCP发送]", sys: "[SYS]" };
 const FORMAT: LogFormatOptions = { hex: false, escape: false, timestamp: false };
 
 function feed(bus: MessageBus, partial: Partial<NewMessage> & { payload: Uint8Array }): void {
@@ -45,10 +45,45 @@ describe("LogView", () => {
     feed(bus, { dir: "tx", source: "mcp", payload: strToBytes("b") });
     feed(bus, { dir: "sys", source: "system", payload: strToBytes("c") });
     lv.sync(bus);
-    expect(lv.rows.map((r) => r.text)).toEqual(["[手动发送] a", "[MCP发送] b", "[--] c"]);
+    expect(lv.rows.map((r) => r.text)).toEqual(["[手动发送] a", "[MCP发送] b", "[SYS] c"]);
     expect(lv.rows.map((r) => r.dir)).toEqual(["tx", "tx", "sys"]);
     expect(lv.rows.map((r) => r.prefixKind)).toEqual(["tx-manual", "tx-mcp", "sys"]);
-    expect(lv.rows.map((r) => r.prefix)).toEqual(["[手动发送]", "[MCP发送]", "[--]"]);
+    expect(lv.rows.map((r) => r.prefix)).toEqual(["[手动发送]", "[MCP发送]", "[SYS]"]);
+  });
+
+  test("MCP 未运行（rx/txManual=\"\"）：数据行无前缀，MCP 行保留标签", () => {
+    const bus = new MessageBus();
+    const lv = new LogView(FORMAT, { ...LABELS, rx: "", txManual: "" });
+    feed(bus, { payload: strToBytes("a") });
+    feed(bus, { dir: "tx", source: "manual", payload: strToBytes("b") });
+    feed(bus, { dir: "tx", source: "mcp", payload: strToBytes("c") });
+    feed(bus, { dir: "sys", source: "system", payload: strToBytes("d") });
+    lv.sync(bus);
+    expect(lv.rows.map((r) => r.text)).toEqual(["a", "b", "[MCP发送] c", "[SYS] d"]);
+    expect(lv.rows.map((r) => r.prefix)).toEqual(["", "", "[MCP发送]", "[SYS]"]);
+  });
+
+  test("showTx=false：TX 行整行隐藏，重开从 entries 恢复", () => {
+    const bus = new MessageBus();
+    const lv = new LogView(FORMAT, LABELS, { showTx: false });
+    feed(bus, { payload: strToBytes("r1") });
+    feed(bus, { dir: "tx", source: "manual", payload: strToBytes("t1") });
+    feed(bus, { dir: "sys", source: "system", payload: strToBytes("s1") });
+    lv.sync(bus);
+    expect(lv.rows.map((r) => r.text)).toEqual(["<= r1", "[SYS] s1"]);
+    lv.setShowTx(true);
+    expect(lv.rows.map((r) => r.text)).toEqual(["<= r1", "[手动发送] t1", "[SYS] s1"]);
+    lv.setShowTx(false);
+    expect(lv.rows.map((r) => r.text)).toEqual(["<= r1", "[SYS] s1"]);
+  });
+
+  test("showTx=false 期间隐藏行不占显示行数，added 只计可见行", () => {
+    const bus = new MessageBus();
+    const lv = new LogView(FORMAT, LABELS, { showTx: false });
+    feed(bus, { payload: strToBytes("r1") });
+    expect(lv.sync(bus).added).toBe(1);
+    feed(bus, { dir: "tx", source: "manual", payload: strToBytes("t1") });
+    expect(lv.sync(bus).added).toBe(0); // TX 隐藏：无可见行新增
   });
 
   test("setFormat 重排版（hex 切换）", () => {
@@ -61,6 +96,22 @@ describe("LogView", () => {
     expect(lv.rows[0]!.text).toBe("<= 41 0D");
     lv.setFormat({ ...FORMAT, timestamp: true }, LABELS);
     expect(lv.rows[0]!.text).toMatch(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] <= A\r$/);
+  });
+
+  test("时间戳开启时 prefixAt 指向前缀真实下标（时间戳段之后）", () => {
+    const bus = new MessageBus();
+    const lv = new LogView({ ...FORMAT, timestamp: true }, LABELS);
+    feed(bus, { payload: strToBytes("a") });
+    feed(bus, { dir: "tx", source: "manual", payload: strToBytes("b") });
+    lv.sync(bus);
+    const tsLen = "[2026-09-06 12:34:15.883] ".length; // 26，与 formatTimestamp 输出一致
+    expect(lv.rows[0]!.prefixAt).toBe(tsLen);
+    expect(lv.rows[0]!.text.slice(0, tsLen)).toMatch(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] $/);
+    expect(lv.rows[0]!.text.slice(tsLen, tsLen + lv.rows[0]!.prefix.length)).toBe("<=");
+    expect(lv.rows[1]!.prefixAt).toBe(tsLen);
+    expect(lv.rows[1]!.text.slice(tsLen)).toBe("[手动发送] b");
+    // 续行/无前缀行 prefixAt 归 0
+    expect(lv.rows.every((r) => r.prefix === "" || r.prefixAt === tsLen)).toBe(true);
   });
 
   test("行数上限：丢最旧", () => {

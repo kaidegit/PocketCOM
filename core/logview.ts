@@ -10,11 +10,14 @@
  */
 import type { MessageBus } from "./bus";
 import type { Message, MessageDir } from "./message";
-import { formatLogText, messagePrefix, type LogFormatOptions, type LogLineLabels } from "./format";
+import { formatLogText, formatTimestamp, messagePrefix, type LogFormatOptions, type LogLineLabels } from "./format";
 
 export interface LogViewOptions {
   /** 显示行上限，默认 500（SPEC §3.3：可视窗口，数据本体在总线/环形缓冲） */
   maxRows?: number;
+  /** 是否显示 TX 行（SPEC §3.5：MCP server 未运行时接收区只显示收与
+   *  系统事件，TX 行整行隐藏）；默认 true */
+  showTx?: boolean;
   /** 文本宽度测量（px）；缺省不换行 */
   measure?: (text: string) => number;
   /** 换行宽度（px）；<= 0 不换行。可为响应式 getter */
@@ -29,6 +32,9 @@ export interface LogRow {
   dir: MessageDir;
   /** 方向/来源前缀（首行 chunk 才有；渲染拆出来单独着色，SPEC §3.7） */
   prefix: string;
+  /** 前缀在 text 中的字符下标（时间戳开启时为时间戳段长度，否则 0；
+   *  渲染按 [0,prefixAt) / prefix / 其后 三段拆分着色） */
+  prefixAt: number;
   /** 前缀类别（前缀着色 token 选择；续行/无前缀为 ""） */
   prefixKind: "rx" | "tx-manual" | "tx-mcp" | "sys" | "";
   text: string;
@@ -41,6 +47,7 @@ export class LogView {
   private rowSeq = 0;
   private format: LogFormatOptions;
   private labels: LogLineLabels;
+  private showTx: boolean;
   private readonly maxRows: number;
   private readonly measure?: (text: string) => number;
   private readonly wrapWidth?: () => number;
@@ -49,6 +56,7 @@ export class LogView {
   constructor(format: LogFormatOptions, labels: LogLineLabels, opts: LogViewOptions = {}) {
     this.format = format;
     this.labels = labels;
+    this.showTx = opts.showTx ?? true;
     this.maxRows = opts.maxRows ?? 500;
     this.measure = opts.measure;
     this.wrapWidth = opts.wrapWidth;
@@ -58,6 +66,14 @@ export class LogView {
   setFormat(format: LogFormatOptions, labels: LogLineLabels): void {
     this.format = format;
     this.labels = labels;
+    this.rebuild();
+  }
+
+  /** TX 行显隐切换（MCP server 启停联动，SPEC §3.5）：全量重排版；
+   *  隐藏期间消息仍进 entries，重开即恢复。 */
+  setShowTx(show: boolean): void {
+    if (show === this.showTx) return;
+    this.showTx = show;
     this.rebuild();
   }
 
@@ -115,10 +131,14 @@ export class LogView {
   private rebuild(): void {
     const rows: LogRow[] = [];
     for (const msg of this.entries) {
+      if (!this.showTx && msg.dir === "tx") continue;
       const prefix = messagePrefix(msg, this.labels);
       const prefixKind: LogRow["prefixKind"] =
         msg.dir === "rx" ? "rx" : msg.dir === "sys" ? "sys" : msg.source === "mcp" ? "tx-mcp" : "tx-manual";
       const line = formatLogText(msg, this.format, this.labels);
+      // 前缀在行内的真实下标：时间戳段 `[YYYY-MM-DD HH:MM:SS.mmm] ` 恒为
+      // formatTimestamp 长度 + 3（左右括号 + 分隔空格），与 formatLogText 拼接一致
+      const prefixAt = this.format.timestamp && prefix !== "" ? formatTimestamp(msg.ts).length + 3 : 0;
       let first = true;
       for (const chunk of this.wrap(line)) {
         rows.push({
@@ -126,6 +146,7 @@ export class LogView {
           msgId: msg.id,
           dir: msg.dir,
           prefix: first ? prefix : "",
+          prefixAt: first ? prefixAt : 0,
           prefixKind: first ? prefixKind : "",
           text: chunk,
         });

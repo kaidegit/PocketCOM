@@ -379,13 +379,17 @@ const MONO_SLOTS: Record<ConfigFontSize, number> = { 12: 16, 14: 17, 16: 18 };
 /** 字号 → 行高（1.3×，与 text-xs/sm/base 默认行高一致）。 */
 export const LINE_H: Record<ConfigFontSize, number> = { 12: 16, 14: 18, 16: 21 };
 
-/** i18n 前缀文案快照（标签随语言切换重新取，见 applyLogFormat）。 */
+/** i18n 前缀文案快照（标签随语言切换重新取，见 applyLogFormat）。
+ *  RX/TX 来源前缀仅在 MCP server 运行中时显示（SPEC §3.5）：全部收发
+ *  均为本地手动行为时，来源/方向标记是冗余噪音；sys 标记 i18n（旧 [--]
+ *  易被误读为坏时间戳）。 */
 export function logLabels(): LogLineLabels {
+  const showSource = mcpState.value.on;
   return {
-    rx: "<=",
-    txManual: `[${t("source.manual")}]`,
+    rx: showSource ? "<=" : "",
+    txManual: showSource ? `[${t("source.manual")}]` : "",
     txMcp: `[${t("source.mcp")}]`,
-    sys: "[--]",
+    sys: `[${t("source.sys")}]`,
   };
 }
 
@@ -394,20 +398,30 @@ export const logView = new LogView(
   logLabels(),
   {
     maxRows: 500,
+    showTx: mcpState.value.on,
     measure: (s) => getOps().measureText(s, MONO_SLOTS[fontSize.value]),
     wrapWidth: () => (rxWrap.value ? rxWidth.value - 12 : 0),
   },
 );
 
-/** 显示开关/语言/字号变化：全量重排版并通知渲染。 */
+/** 显示开关/语言/字号变化：全量重排版并通知渲染。TX 行显隐随 MCP server
+ *  运行态（SPEC §3.5：未运行时接收区只显示收与系统事件）。 */
 export function applyLogFormat(): void {
   logView.remeasure();
+  logView.setShowTx(mcpState.value.on);
   logView.setFormat(
     { hex: rxHex.value, escape: rxEscape.value, timestamp: rxTimestamp.value },
     logLabels(),
   );
   logVersion.value++;
 }
+
+// MCP server 运行态变化 → TX 来源前缀显隐（logLabels 依赖 mcpState.on）。
+// 注册在启动配置加载之前，首启随配置开启 MCP 时也能触发重排版。
+watch(
+  () => mcpState.value.on,
+  () => applyLogFormat(),
+);
 
 /** 清屏：显示行清空 + Rx/Tx 计数归零（SPEC §3.3）。 */
 export function clearLog(): void {

@@ -77,7 +77,8 @@
   },
   "source": {
     "manual": "Manual TX",
-    "mcp": "MCP TX"
+    "mcp": "MCP TX",
+    "sys": "SYS"
   },
   "mcp": {
     "toggle": "MCP Share",

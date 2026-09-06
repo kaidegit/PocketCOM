@@ -4,7 +4,9 @@ import { strToBytes } from "../../core/codec";
 import type { Message } from "../../core/message";
 import type { LogFormatOptions, LogLineLabels } from "../../core/format";
 
-const LABELS: LogLineLabels = { rx: "<=", txManual: "[手动发送]", txMcp: "[MCP发送]", sys: "[--]" };
+const LABELS: LogLineLabels = { rx: "<=", txManual: "[手动发送]", txMcp: "[MCP发送]", sys: "[SYS]" };
+/** MCP server 未运行（SPEC §3.5）：RX/TX 来源前缀均隐藏为 ""。 */
+const NO_MCP_LABELS: LogLineLabels = { ...LABELS, rx: "", txManual: "" };
 
 const OPTS: LogFormatOptions = { hex: false, escape: false, timestamp: false };
 
@@ -35,8 +37,13 @@ describe("messagePrefix", () => {
     expect(messagePrefix(msg({ dir: "tx", source: "history" }), LABELS)).toBe("[手动发送]");
     expect(messagePrefix(msg({ dir: "tx", source: "mcp" }), LABELS)).toBe("[MCP发送]");
   });
-  test("sys → [--]", () => {
-    expect(messagePrefix(msg({ dir: "sys", source: "system" }), LABELS)).toBe("[--]");
+  test("MCP 未运行：rx/txManual 为空 → 数据行前缀为 \"\"，MCP/sys 不受影响", () => {
+    expect(messagePrefix(msg({ dir: "rx" }), NO_MCP_LABELS)).toBe("");
+    expect(messagePrefix(msg({ dir: "tx", source: "manual" }), NO_MCP_LABELS)).toBe("");
+    expect(messagePrefix(msg({ dir: "tx", source: "mcp" }), NO_MCP_LABELS)).toBe("[MCP发送]");
+  });
+  test("sys → [SYS]", () => {
+    expect(messagePrefix(msg({ dir: "sys", source: "system" }), LABELS)).toBe("[SYS]");
   });
 });
 
@@ -71,7 +78,27 @@ describe("formatLogText", () => {
       { ...OPTS, timestamp: true },
       LABELS,
     );
-    expect(line).toBe("[2026-09-05 12:00:00.042] [--] connected");
+    expect(line).toBe("[2026-09-05 12:00:00.042] [SYS] connected");
+  });
+  test("MCP 未运行：TX 行无前缀且不留多余空格", () => {
+    expect(formatLogText(msg({ dir: "tx", source: "manual", payload: strToBytes("hi") }), OPTS, NO_MCP_LABELS)).toBe(
+      "hi",
+    );
+    const d = new Date(2026, 8, 5, 12, 0, 0, 42);
+    expect(
+      formatLogText(
+        msg({ dir: "tx", source: "manual", payload: strToBytes("hi"), ts: d.getTime() }),
+        { ...OPTS, timestamp: true },
+        NO_MCP_LABELS,
+      ),
+    ).toBe("[2026-09-05 12:00:00.042] hi");
+    expect(
+      formatLogText(
+        msg({ dir: "rx", payload: strToBytes("yo"), ts: d.getTime() }),
+        { ...OPTS, timestamp: true },
+        NO_MCP_LABELS,
+      ),
+    ).toBe("[2026-09-05 12:00:00.042] yo");
   });
   test("HEX 开关只作用于 RX/TX 数据帧", () => {
     const hex = { ...OPTS, hex: true };
@@ -82,7 +109,7 @@ describe("formatLogText", () => {
   });
   test("sys 消息不受 HEX/转义开关影响（始终可读文本，含 CJK）", () => {
     const m = msg({ dir: "sys", payload: strToBytes("连接已断开") });
-    expect(formatLogText(m, { ...OPTS, hex: true }, LABELS)).toBe("[--] 连接已断开");
-    expect(formatLogText(m, { ...OPTS, hex: true, escape: true }, LABELS)).toBe("[--] 连接已断开");
+    expect(formatLogText(m, { ...OPTS, hex: true }, LABELS)).toBe("[SYS] 连接已断开");
+    expect(formatLogText(m, { ...OPTS, hex: true, escape: true }, LABELS)).toBe("[SYS] 连接已断开");
   });
 });

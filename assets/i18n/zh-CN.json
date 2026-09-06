@@ -77,7 +77,8 @@
   },
   "source": {
     "manual": "手动发送",
-    "mcp": "MCP发送"
+    "mcp": "MCP发送",
+    "sys": "系统"
   },
   "mcp": {
     "toggle": "MCP 共享",
