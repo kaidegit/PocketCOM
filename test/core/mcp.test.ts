@@ -278,6 +278,13 @@ describe("mcp commands: connect / disconnect", () => {
     expect(arg.rts).toBe(false);
   });
 
+  test("connect serial：未传 dtr/rts 也显式去使能（与 UI 打开一致，SPEC §6.3）", () => {
+    const { ctx, session } = makeCtx();
+    call(ctx, "connect", { type: "serial", path: "/dev/cu.x" });
+    const arg = session.last("setSignals")!.arg as Record<string, unknown>;
+    expect(arg).toEqual({ dtr: false, rts: false });
+  });
+
   test("connect tcp：host/port/autoReconnect", () => {
     const { ctx, session } = makeCtx();
     call(ctx, "connect", { type: "tcp", host: "127.0.0.1", port: 9000, autoReconnect: true });

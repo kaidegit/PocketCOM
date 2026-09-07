@@ -296,7 +296,7 @@ MCP server 实现于**宿主层**（fork 的桌面宿主 crate 内的原生线�
 |---|---|---|
 | `status` | — | 连接状态、类型、参数、Rx/Tx 计数、MCP 客户端数 |
 | `list_serial_ports` | — | 枚举串口（`设备 - 描述` 每行一条） |
-| `connect` | `type, params…`（与 §3.2 参数一致） | 建立连接。已有连接时**默认拒绝**，`force: true` 才断开旧连接（规避 umeko 静默抢占） |
+| `connect` | `type, params…`（与 §3.2 参数一致） | 建立连接。已有连接时**默认拒绝**，`force: true` 才断开旧连接（规避 umeko 静默抢占）。serial 打开后应用 DTR/RTS：未传 `dtr`/`rts` 参数也显式去使能（deassert，TTL 侧拉高），与 UI 打开一致——ESP32 USB Serial/JTAG 等设备依赖该电平跳变边沿复位并开始输出 |
 | `disconnect` | — | 断开当前连接 |
 | `send` | `data: string, encoding: "utf8"\|"hex"\|"base64"`, `appendNewline?: boolean` | 发送字节。**不隐式追加 `\r\n`**（规避 umeko 缺陷），换行由参数显式控制。消息入总线，`source: "mcp"` |
 | `read` | `maxBytes?: number, clear?: boolean = true` | 拉取读缓冲（read-and-drain）。返回带 `[ts] [来源] 内容` 的多行文本；空返回"无数据" |

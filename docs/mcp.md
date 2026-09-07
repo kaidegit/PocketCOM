@@ -123,7 +123,7 @@ claude mcp add --transport http pocketcom http://127.0.0.1:7960/mcp \
 | `parity` | serial | `none`（默认）/ `odd` / `even`（mark/space 宿主不支持） |
 | `stopBits` | serial | 1（默认）/ 2 |
 | `flowControl` | serial | `none`（默认）/ `xonxoff` / `rtscts` / `dsrdtr` |
-| `dtr` / `rts` | serial | 打开后设置信号电平 |
+| `dtr` / `rts` | serial | 打开后设置信号电平（true = 使能/assert，TTL 侧拉低）；**缺省两者皆显式去使能**（拉高），与 UI 打开一致 |
 | `host` / `port` | tcp / udp | 远端地址 |
 | `bindPort` | udp | 本地绑定端口，默认 = `port` |
 | `port` | tcps | 监听端口 |

@@ -295,9 +295,10 @@ function connectCommand(cmd: McpCommand, ctx: McpContext): McpResult {
         stopBits: optInt(cmd.args, "stopBits", 1, 1, 2) as 1 | 2,
         flowControl: flowArg(cmd.args),
       });
-      if (typeof cmd.args.dtr === "boolean" || typeof cmd.args.rts === "boolean") {
-        s.setSignals({ dtr: optBool(cmd.args, "dtr", false), rts: optBool(cmd.args, "rts", false) });
-      }
+      // DTR/RTS 与 UI 打开对齐（SPEC §6.3 与 §3.2 参数一致）：未显式传参也
+      // 显式去使能（deassert，TTL 侧拉高）。部分设备（ESP32 USB Serial/JTAG
+      // 等）靠 open 后的电平跳变边沿复位并开始输出，只开不断信号会收不到数据。
+      s.setSignals({ dtr: optBool(cmd.args, "dtr", false), rts: optBool(cmd.args, "rts", false) });
       break;
     }
     case "tcp":
