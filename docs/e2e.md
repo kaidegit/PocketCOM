@@ -210,3 +210,9 @@ NAME → 按钮映射：
    就是追加；且成功连接会把字段内容快照回写配置（cfgWrite）——多轮脚本跑完
    字段就累积成 `127.0.0.1127.0.0.…`。每次跑前 `echo '{}' > $POCKETCOM_CONFIG`
    即可；`--type` 本身每轮只投递一次 `ch` 行（svc 队列 drain 语义，无重投）。
+6. **`screencapture` 报 `could not create image from window` / 全屏截图只剩
+   壁纸**：运行会话的 TCC 责任进程（终端 app、Lody.app、sshd 等）没有
+   "屏幕录制"权限，或显示器休眠/锁屏。TCC 按**拉起进程树的责任 app** 授权，
+   与"自进程窗口免授权"不冲突的前提是从已授权的终端直接跑；远程 agent 会话
+   需在系统设置给对应 app 授权（或唤醒屏幕），否则 -l 必败、窗口全程不绘制
+   （退出收据 frames rendered 接近 0）。`flood.test.ts` 对此降级为警告跳过。
