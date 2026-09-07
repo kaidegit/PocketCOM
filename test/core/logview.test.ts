@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { LogView } from "../../core/logview";
+import { LogView, splitHardLines } from "../../core/logview";
 import { MessageBus } from "../../core/bus";
 import { strToBytes } from "../../core/codec";
 import type { LogFormatOptions, LogLineLabels } from "../../core/format";
@@ -91,11 +91,12 @@ describe("LogView", () => {
     const lv = new LogView(FORMAT, LABELS);
     feed(bus, { payload: new Uint8Array([0x41, 0x0d]) });
     lv.sync(bus);
-    expect(lv.rows[0]!.text).toBe("<= A\r");
+    // ASCII 非转义：帧末 \r 按硬换行拆分，不产多余空行（SPEC §3.3）
+    expect(lv.rows.map((r) => r.text)).toEqual(["<= A"]);
     lv.setFormat({ ...FORMAT, hex: true }, LABELS);
-    expect(lv.rows[0]!.text).toBe("<= 41 0D");
+    expect(lv.rows[0]!.text).toBe("<= 41 0D"); // HEX 下换行字节原样可见
     lv.setFormat({ ...FORMAT, timestamp: true }, LABELS);
-    expect(lv.rows[0]!.text).toMatch(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] <= A\r$/);
+    expect(lv.rows[0]!.text).toMatch(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] <= A$/);
   });
 
   test("时间戳开启时 prefixAt 指向前缀真实下标（时间戳段之后）", () => {
@@ -182,5 +183,43 @@ describe("LogView", () => {
     feed(bus, { payload: strToBytes("bbbb") });
     lv.sync(bus);
     expect(lv.rows.length).toBe(4);
+  });
+
+  test("帧内硬换行拆分为独立显示行，后续行无前缀（SPEC §3.3）", () => {
+    const bus = new MessageBus();
+    const lv = new LogView(FORMAT, LABELS);
+    feed(bus, { payload: strToBytes("ESP-ROM:esp32s3\r\nBuild:Mar 27 2021\nwaiting\n") });
+    lv.sync(bus);
+    expect(lv.rows.map((r) => r.text)).toEqual(["<= ESP-ROM:esp32s3", "Build:Mar 27 2021", "waiting"]);
+    expect(lv.rows.map((r) => r.prefix)).toEqual(["<=", "", ""]);
+    expect(lv.rows.map((r) => r.msgId)).toEqual([1, 1, 1]);
+  });
+
+  test("硬换行：中间空行保留、帧末换行不多空行、行内无残留控制符", () => {
+    const bus = new MessageBus();
+    const lv = new LogView(FORMAT, LABELS);
+    feed(bus, { payload: strToBytes("a\n\nb") }); // 中间空行应显示为空行
+    feed(bus, { payload: strToBytes("c\r") });    //  lone \r 也是硬换行
+    feed(bus, { payload: strToBytes("\n") });     // 仅换行 → 该帧占一个空前缀行
+    lv.sync(bus);
+    expect(lv.rows.map((r) => r.text)).toEqual(["<= a", "", "b", "<= c", "<= "]);
+    expect(lv.rows.every((r) => !/[\r\n]/.test(r.text))).toBe(true);
+  });
+
+  test("硬换行与宽度折行组合：先拆行再折行", () => {
+    const lv = new LogView(FORMAT, LABELS, { measure: () => 10, wrapWidth: () => 25 });
+    const bus = new MessageBus();
+    feed(bus, { payload: strToBytes("ab\ncde") });
+    lv.sync(bus);
+    // 前缀计入折行宽度：<= ab 50px 在 25px 宽下折成 "<=" " a" "b"
+    expect(lv.rows.map((r) => r.text)).toEqual(["<=", " a", "b", "cd", "e"]);
+  });
+
+  test("splitHardLines 边界：空串 / 仅换行 / 混合换行符", () => {
+    expect(splitHardLines("")).toEqual([""]);
+    expect(splitHardLines("\n")).toEqual([""]);
+    expect(splitHardLines("a\r\nb\rc\nd")).toEqual(["a", "b", "c", "d"]);
+    expect(splitHardLines("a\n")).toEqual(["a"]);
+    expect(splitHardLines("\n\n")).toEqual(["", ""]);
   });
 });

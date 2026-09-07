@@ -83,7 +83,7 @@ SPEC.md         # 功能规格（权威）
 
 前置：bun（`~/.bun/bin` 需在 PATH）；首次克隆后执行 `git submodule update --init --depth 1 && cd vendor/pocketjs && bun install`。wasm32 target 仅浏览器宿主/金样测试需要，桌面开发不必装。
 
-- 核心层单测：`bun test test/`（当前 213 例；源码在 `test/core/`、`test/bridge/` 与 `test/app/`，与源码分层分离）
+- 核心层单测：`bun test test/`（当前 223 例；源码在 `test/core/`、`test/bridge/` 与 `test/app/`，与源码分层分离）
 - 类型检查：`npm run typecheck`（tsc --noEmit，tsconfig 严格度对齐上游，不要私自加严 flags——构建会用同一份 tsconfig 编译上游框架源码）
 - Manifest 校验：`npm run check`（= `bun vendor/pocketjs/tools/pocket.ts check --target macos-app --manifest app/pocket.json --project-root .`）
 - 构建 app bundle：`npm run build`（输出 `dist/pocketcom-main.js` + `.pak`）

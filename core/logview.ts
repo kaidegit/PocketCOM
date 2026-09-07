@@ -40,6 +40,17 @@ export interface LogRow {
   text: string;
 }
 
+/**
+ * 按硬换行拆分（`\r\n` / `\n` / `\r`，SPEC §3.3）：数据帧内嵌换行符必须拆成
+ * 独立显示行——固定行高的行内直接渲染多行文本会溢出，与后续行重叠。
+ * 帧末换行不产生多余空行；空串仍返回 [""]（保留该帧的空行占位）。
+ */
+export function splitHardLines(text: string): string[] {
+  const lines = text.split(/\r\n|\r|\n/);
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
+
 export class LogView {
   rows: LogRow[] = [];
   private entries: Message[] = [];
@@ -140,17 +151,21 @@ export class LogView {
       // formatTimestamp 长度 + 3（左右括号 + 分隔空格），与 formatLogText 拼接一致
       const prefixAt = this.format.timestamp && prefix !== "" ? formatTimestamp(msg.ts).length + 3 : 0;
       let first = true;
-      for (const chunk of this.wrap(line)) {
-        rows.push({
-          key: this.rowSeq++,
-          msgId: msg.id,
-          dir: msg.dir,
-          prefix: first ? prefix : "",
-          prefixAt: first ? prefixAt : 0,
-          prefixKind: first ? prefixKind : "",
-          text: chunk,
-        });
-        first = false;
+      // 先按硬换行拆行（帧内嵌 \r\n/\n/\r），再对每条逻辑行做宽度折行；
+      // 拆分/折行出的后续行均无方向前缀（SPEC §3.3/§3.7）
+      for (const piece of splitHardLines(line)) {
+        for (const chunk of this.wrap(piece)) {
+          rows.push({
+            key: this.rowSeq++,
+            msgId: msg.id,
+            dir: msg.dir,
+            prefix: first ? prefix : "",
+            prefixAt: first ? prefixAt : 0,
+            prefixKind: first ? prefixKind : "",
+            text: chunk,
+          });
+          first = false;
+        }
       }
     }
     // 行数上限兜底（换行可能使行数超过消息数上限）
