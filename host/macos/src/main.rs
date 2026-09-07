@@ -586,14 +586,17 @@ fn resolve_asset(explicit: Option<PathBuf>, app: &str, ext: &str) -> Result<Path
     ))
 }
 
-/// Register the repo's Inter faces so native text shapes the same family the
-/// portable backend bakes (system fallback covers everything else).
+/// Register the repo's MiSans faces (UI 首选字体) + JetBrains Mono（mono 槽）
+/// so native text shapes the same families the build bakes from (system
+/// fallback covers everything else, e.g. CJK in mono runs).
 fn register_fonts(cx: &App) {
     let fonts_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/fonts");
     let mut faces = Vec::new();
     for name in [
-        "Inter-Regular.ttf",
-        "Inter-Bold.ttf",
+        "MiSans-Regular.ttf",
+        "MiSans-Medium.ttf",
+        "MiSans-Semibold.ttf",
+        "MiSans-Bold.ttf",
         "JetBrainsMono-Regular.ttf",
     ] {
         if let Ok(bytes) = std::fs::read(fonts_dir.join(name)) {
@@ -740,7 +743,7 @@ impl AppSupervisor {
         );
         surface.set_identity(&plan.target.id, plan.target.host_abi);
         surface.set_tick_rate(TICK_HZ as u32);
-        let cfg = TextConfig::new("Inter");
+        let cfg = TextConfig::new("MiSans");
         if plan
             .features
             .get("text.layout.native")
@@ -1046,7 +1049,7 @@ impl PocketRoot {
             &surface,
         )?));
         let text_system = window.text_system().clone();
-        let cfg = TextConfig::new("Inter");
+        let cfg = TextConfig::new("MiSans");
         if args.native_text {
             // BEFORE mount: measurement feeds layout, and the guest must
             // never observe a provider swap (engine/core/src/lib.rs).

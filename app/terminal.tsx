@@ -38,7 +38,7 @@ export const TERM_PAD_Y = 6;
 
 const cellWCache = new Map<ConfigFontSize, number>();
 
-/** mono 槽宽（MiSans mono 槽内 ASCII 等宽，取 "M" 度量）。 */
+/** mono 槽宽（JetBrains Mono 严格等宽，ASCII 任取一格度量，取 "M"）。 */
 export function termCellW(size: ConfigFontSize): number {
   let w = cellWCache.get(size);
   if (w === undefined) {

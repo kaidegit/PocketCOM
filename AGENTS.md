@@ -18,7 +18,7 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
   - **焦点必须跟随指针**：mouse 事件分发时 `focusNode(hitFocusable(x, y))` 无条件调用（落空也要清焦点）——否则点空白处会把 CIRCLE press 发到上一次聚焦的控件上（"点空白触发了别处的选中"）。
   - **Vue Vapor 的 `Portal` host 固定为规格屏 480×272**（`components-vue-vapor.ts` 的 `createPortalRoot` 用静态 `SCREEN_W/H`，不读实时视口）→ 全屏遮罩等"铺满窗口"的弹层内容不能 `inset 0` 寄生于 portal host 盒子，必须按 `viewportSize` 显式给 width/height 自撑（见 `app/widgets.tsx` 的 `PopupLayer` 遮罩），否则视口超出 480×272 的区域点空白收不掉弹层。
 - **无 DOM、无运行时 CSS**：只用 `View/Text/Image` 原语；动态样式用 `style={{…}}` 或整体 class 字面量三元，**禁止拼接 class 片段**（编译错误）。
-- **字体**：统一使用 MiSans（Regular/Medium/Semibold/Bold，vendor 在 `assets/fonts/`）。桌面端经 `text.layout.native`（pocket.json 已声明）走 CoreText 运行时排版，任意 Unicode 可显示；**烘焙字形约束只对嵌入式目标成立**——嵌入式视图只允许使用已烘焙字符集，未知字形回退替换符并保证 HEX 视图无损（SPEC §5.4）。
+- **字体**：UI 统一使用 MiSans（Regular/Medium/Semibold/Bold，vendor 在 `assets/fonts/`）；**mono 槽（接收区/终端网格）用 JetBrains Mono**（同目录 vendor，OFL）——MiSans 非等宽，终端网格必须严格等宽。桌面端经 `text.layout.native`（pocket.json 已声明）走 CoreText 运行时排版，任意 Unicode 可显示；**烘焙字形约束只对嵌入式目标成立**——嵌入式视图只允许使用已烘焙字符集，未知字形回退替换符并保证 HEX 视图无损（SPEC §5.4）。
 - **无内置串口/WebSocket/raw socket**：所有 IO 走 `bridge/` 的 `com.*` HostOps 契约，核心层不得直接 import 任何平台 API。
 - 宿主事件只能在 **tick 边界**投递进 JS（FIFO 队列 drain），不得直接回调。
 - i18n：所有用户可见文案必须走 `assets/i18n/` 语言包 key，禁止硬编码。当前语言：`zh-CN`、`en`。**同一 key 不得既是字符串又是嵌套对象**（JSON 重复 key 后者覆盖前者，label 会退化成显示原始 key，如 `conn.parity` vs `conn.parityOpt.*`）。
@@ -71,7 +71,7 @@ host/macos/     # macOS 宿主：串口/TCP/UDP/WS 原生 IO、设置持久化+�
                 #   保留 Option 组合字符的 insertText 输入）
 host/rtthread/  # RT-Thread 宿主（预留）：UART/lwIP 适配 bridge 契约
 assets/i18n/    # 语言包
-assets/fonts/   # MiSans 字体文件（vendor，构建期烘焙字形）
+assets/fonts/   # MiSans（UI）+ JetBrains Mono（mono 槽）字体文件（vendor，构建期烘焙字形）
 docs/           # 调研、移植与脚本化 UI 验证文档（e2e.md）、MCP 服务手册（mcp.md）
 vendor/pocketjs # PocketJS 上游（git submodule；引擎 crates 与桌面宿主来源）
 SPEC.md         # 功能规格（权威）
