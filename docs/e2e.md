@@ -48,6 +48,9 @@ plan 派生 flags（`--app/--title/--viewport/--density/--fixed/--native-text/
   默认 2x 下标题栏高 56 物理像素（28pt），即 `(px - 56) / 2`。
 - 控件坐标以 `app/panel.tsx` / `app/transfer.tsx` 的布局表（`layoutInfo`）为
   权威：块顶 = 头部高 + 累计块高，控件在块内 `LABEL_H+LABEL_GAP` 偏移处。
+- **各按钮/勾选框/弹层项的实测点击坐标速查表见 [coords.md](coords.md)**
+  （含弹层翻转、面板滚动、MCP 布局、en 语言差异与复验工具
+  `tools/coords-probe.py`）。
 
 ## 输入 flags
 

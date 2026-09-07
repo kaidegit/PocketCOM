@@ -73,7 +73,9 @@ host/macos/     # macOS 宿主：串口/TCP/UDP/WS 原生 IO、设置持久化+�
 host/rtthread/  # RT-Thread 宿主（预留）：UART/lwIP 适配 bridge 契约
 assets/i18n/    # 语言包
 assets/fonts/   # MiSans（UI）+ JetBrains Mono（mono 槽）字体文件（vendor，构建期烘焙字形）
-docs/           # 调研、移植与脚本化 UI 验证文档（e2e.md）、MCP 服务手册（mcp.md）
+docs/           # 调研、移植与脚本化 UI 验证文档（e2e.md）、e2e 控件坐标速查
+                #   （coords.md：各按钮/勾选框/弹层项实测点击坐标，配复验工具
+                #   tools/coords-probe.py；改布局后重测）、MCP 服务手册（mcp.md）
 vendor/pocketjs # PocketJS 上游（git submodule；引擎 crates 与桌面宿主来源）
 SPEC.md         # 功能规格（权威）
 ```
