@@ -37,7 +37,8 @@ app/            # Vue Vapor 组件与页面状态（仅渲染 + 输入），pock
                 #   widgets.tsx 基础控件（Btn/CheckRow/SegCtrl/Select+Portal 弹层/
                 #   TextField（monoSize 字号档、selRegion 命中区注册的拖动选区）/
                 #   Scrollbar…）；textsel.ts 文本选区纯几何 helper（mono 前缀度量
-                #   px↔列号映射）；
+                #   px↔列号映射）；sendlayout.ts 发送区选项行流式几何（Select
+                #   弹层锚点 x 按标签实测宽累计，防弹层与控件脱节）；
                 #   session.ts 会话接线单例 + 连接参数仓库 + 设置持久化（加载/防抖回写/
                 #   导入导出）+ uiMode/终端模型装配（bus→term 持续灌入、DSR/DA 应答泵、
                 #   scrollbackLines 设置）；theme.ts 主题令牌（深色/浅色/跟随系统 +
@@ -83,7 +84,7 @@ SPEC.md         # 功能规格（权威）
 
 前置：bun（`~/.bun/bin` 需在 PATH）；首次克隆后执行 `git submodule update --init --depth 1 && cd vendor/pocketjs && bun install`。wasm32 target 仅浏览器宿主/金样测试需要，桌面开发不必装。
 
-- 核心层单测：`bun test test/`（当前 223 例；源码在 `test/core/`、`test/bridge/` 与 `test/app/`，与源码分层分离）
+- 核心层单测：`bun test test/`（当前 229 例；源码在 `test/core/`、`test/bridge/` 与 `test/app/`，与源码分层分离）
 - 类型检查：`npm run typecheck`（tsc --noEmit，tsconfig 严格度对齐上游，不要私自加严 flags——构建会用同一份 tsconfig 编译上游框架源码）
 - Manifest 校验：`npm run check`（= `bun vendor/pocketjs/tools/pocket.ts check --target macos-app --manifest app/pocket.json --project-root .`）
 - 构建 app bundle：`npm run build`（输出 `dist/pocketcom-main.js` + `.pak`）

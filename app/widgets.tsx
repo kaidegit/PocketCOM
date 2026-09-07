@@ -39,6 +39,19 @@ export function measureMono(text: string, slot: number): number {
   return w;
 }
 
+/** UI 字体（text-xs = 12px regular，font slot 0）宽度测量：缓存按文本键。
+ *  CheckRow 等 flex 行内控件的占位宽随标签文字变化，弹层锚点须按此累计。 */
+export function measureUi(text: string): number {
+  if (text === "") return 0;
+  let w = measureCache.get(`0:${text}`);
+  if (w === undefined) {
+    w = getOps().measureText(text, 0);
+    if (measureCache.size > 4096) measureCache.clear();
+    measureCache.set(`0:${text}`, w);
+  }
+  return w;
+}
+
 // ---------------------------------------------------------------------------
 // Hairline（1px 分隔线；无运行时 CSS，用 View 画）
 // ---------------------------------------------------------------------------

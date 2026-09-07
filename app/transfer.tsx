@@ -15,10 +15,12 @@ import {
   Select,
   TextField,
   measureMono,
+  measureUi,
   type SelRect,
   type TextFieldHandle,
 } from "./widgets";
 import { LINE_H as FONT_LINE_H, MONO_CLASS, MONO_SLOTS } from "./fontsize";
+import { SELECT_HISTORY_W, SELECT_TARGET_W, sendOptSelectX } from "./sendlayout";
 import { monoColAt, monoXAt } from "./textsel";
 import { theme } from "./theme";
 import { t } from "./i18n";
@@ -464,15 +466,23 @@ export function SendPane() {
 
   const showTarget = () => isTcpServer() && clientList.value.length > 0;
   const showHistory = () => sendHistory.value.length > 0;
-  /** 选项行内下拉锚点：y 固定（发送区顶部行），x 按固定宽度前缀累计。 */
+  /** 选项行内下拉锚点：y 固定（发送区顶部行）；x 按 flex 流式累计
+   *  （sendlayout.ts——SegCtrl + 前序 CheckRow 实测标签宽 + gap），与控件
+   *  本体同位，弹层不再脱节。 */
   const anchorAt = (x: number, w: number) => (): PopupAnchor => ({
     x,
     y: viewportSize.value.h - STATUS_H - SEND_PANE_H + 1 + 8,
     w,
     h: TOOLBAR_CTL_H,
   });
-  const targetAnchor = () => anchorAt(PANEL_W + 108, 150);
-  const historyAnchor = () => anchorAt(PANEL_W + 108 + (showTarget() ? 158 : 0), 120);
+  const selectX = () =>
+    sendOptSelectX(
+      { escape: t("send.escape"), crlf: t("send.crlf"), appendNewline: t("send.appendNewline") },
+      measureUi,
+      showTarget(),
+    );
+  const targetAnchor = () => anchorAt(PANEL_W + 8 + selectX().targetX, SELECT_TARGET_W);
+  const historyAnchor = () => anchorAt(PANEL_W + 8 + selectX().historyX, SELECT_HISTORY_W);
 
   /** 发送输入框命中区（拖动选区）：布局 1 分隔线 + 8 paddingT + 22 选项行 +
    *  6 间距 → 输入行；flex-1 宽 = 行宽 - 发送按钮 64 - gap 8。 */
