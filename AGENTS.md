@@ -17,6 +17,7 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
   - **Vue Vapor 组件不得返回 null**（宿主 JSX 运行时 anchor 崩溃）；空态用 0 尺寸占位 View，条件渲染放在父级的表达式子节点里。
   - **焦点必须跟随指针**：mouse 事件分发时 `focusNode(hitFocusable(x, y))` 无条件调用（落空也要清焦点）——否则点空白处会把 CIRCLE press 发到上一次聚焦的控件上（"点空白触发了别处的选中"）。
   - **Vue Vapor 的 `Portal` host 固定为规格屏 480×272**（`components-vue-vapor.ts` 的 `createPortalRoot` 用静态 `SCREEN_W/H`，不读实时视口）→ 全屏遮罩等"铺满窗口"的弹层内容不能 `inset 0` 寄生于 portal host 盒子，必须按 `viewportSize` 显式给 width/height 自撑（见 `app/widgets.tsx` 的 `PopupLayer` 遮罩），否则视口超出 480×272 的区域点空白收不掉弹层。
+  - **条件读取 getter 会漏注册响应式依赖**：`style` 里 `show() ? top() : 0` 这类写法，若 `top()` 仅在 show 为 true 时才执行，其内部读到的 ref 在 show=false 的首帧不被追踪，后续数据源变化不再触发重跑（实测：Scrollbar 因此 0 宽永不渲染）。数据源为非响应式宿主对象（logView.rows、terminal.totalLines）的纯指示组件，用 **onFrame 轮询 + 本地 ref**（TextField 光标闪烁同款模式；值不变不写 ref，重绘不空转），见 `app/widgets.tsx` 的 `Scrollbar`。
 - **无 DOM、无运行时 CSS**：只用 `View/Text/Image` 原语；动态样式用 `style={{…}}` 或整体 class 字面量三元，**禁止拼接 class 片段**（编译错误）。
 - **字体**：UI 统一使用 MiSans（Regular/Medium/Semibold/Bold，vendor 在 `assets/fonts/`）；**mono 槽（接收区/终端网格）用 JetBrains Mono**（同目录 vendor，OFL）——MiSans 非等宽，终端网格必须严格等宽。桌面端经 `text.layout.native`（pocket.json 已声明）走 CoreText 运行时排版，任意 Unicode 可显示；**烘焙字形约束只对嵌入式目标成立**——嵌入式视图只允许使用已烘焙字符集，未知字形回退替换符并保证 HEX 视图无损（SPEC §5.4）。
 - **无内置串口/WebSocket/raw socket**：所有 IO 走 `bridge/` 的 `com.*` HostOps 契约，核心层不得直接 import 任何平台 API。
@@ -28,7 +29,8 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 ```
 app/            # Vue Vapor 组件与页面状态（仅渲染 + 输入），pocket.json manifest 也在此
                 #   app.tsx 主界面/onFrame 分发 + 弹层挂载（终端模式下键盘/粘贴直发、
-                #   终端区/文本域/日志区鼠标选区与 Cmd+C 复制路由）；panel.tsx 左配置
+                #   终端区/文本域/日志区鼠标选区与 Cmd+C 复制路由；右键路由——终端有
+                #   选区时按下即复制、收发模式接收区弹复制/全选菜单）；panel.tsx 左配置
                 #   面板（layoutInfo 布局表：absolute 块定位 + 弹层锚点 + 滚动总高 +
                 #   文本框选区命中区，四合一；块集合随连接类型/客户端列表动态伸缩）；
                 #   transfer.tsx 接收区/发送区（字号三档/发送历史/tcps 定向发送/
@@ -69,7 +71,9 @@ host/macos/     # macOS 宿主：串口/TCP/UDP/WS 原生 IO、设置持久化+�
                 #   {t:"mcp",on,clients} 事件回推 UI）。fork 差异：on_key_down
                 #   把 Ctrl 修饰的单字符键以 key 行（ctl 标志）转发给 guest（上游只会发
                 #   命名键/纯文本，终端模式的控制码如 Ctrl+C 依赖此路径；Alt 不转发，
-                #   保留 Option 组合字符的 insertText 输入）
+                #   保留 Option 组合字符的 insertText 输入）；右键鼠标事件（b:2 行）
+                #   对 pocketcom companion 放行（上游仅 system-ui；接收区右键菜单与
+                #   终端选中右键复制依赖此路径）
 host/rtthread/  # RT-Thread 宿主（预留）：UART/lwIP 适配 bridge 契约
 assets/i18n/    # 语言包
 assets/fonts/   # MiSans（UI）+ JetBrains Mono（mono 槽）字体文件（vendor，构建期烘焙字形）

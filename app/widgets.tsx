@@ -65,23 +65,34 @@ export function Hairline() {
 // ---------------------------------------------------------------------------
 
 export function Scrollbar(props: { scroll: () => number; total: () => number; viewH: () => number }) {
-  const show = () => props.total() > props.viewH() && props.viewH() > 0;
-  const thumbH = () => Math.max(24, (props.viewH() * props.viewH()) / props.total());
-  const top = () => {
-    const range = props.total() - props.viewH();
-    return 4 + (range > 0 ? (props.scroll() / range) * (props.viewH() - thumbH() - 8) : 0);
-  };
+  // 不用渲染期响应式：三个 props getter 读的多半是非响应式源（logView.rows、
+  // terminal.totalLines），条件读取还会漏注册依赖（2026-09 实测：show 首帧
+  // 为 false 时 top() 不执行 → scroll 依赖丢失 → 滚动条保持 0 宽永不出现）。
+  // 改为 onFrame 轮询 + 本地 ref（TextField 光标闪烁同款已验证模式），值不变
+  // 不写 ref，demand-driven 重绘不空转。
+  const w = ref(0);
+  const t = ref(0);
+  const h = ref(0);
+  onFrame(() => {
+    const total = props.total();
+    const viewH = props.viewH();
+    const scroll = props.scroll();
+    const show = total > viewH && viewH > 0;
+    const thumbH = Math.max(24, (viewH * viewH) / Math.max(1, total));
+    const range = total - viewH;
+    const top = 4 + (range > 0 ? (scroll / range) * (viewH - thumbH - 8) : 0);
+    const nw = show ? 3 : 0;
+    const nt = show ? top : 0;
+    const nh = show ? thumbH : 0;
+    if (nw !== w.value) w.value = nw;
+    if (nt !== t.value) t.value = nt;
+    if (nh !== h.value) h.value = nh;
+  });
   // 隐藏 = 0 宽（Vue Vapor 组件不得返回 null，宿主 JSX 运行时会崩）
   return (
     <View
       class="absolute rounded-sm"
-      style={{
-        width: show() ? 3 : 0,
-        insetR: 3,
-        insetT: show() ? top() : 0,
-        height: show() ? thumbH() : 0,
-        bgColor: theme.value.scrollbar,
-      }}
+      style={{ width: w.value, insetR: 3, insetT: t.value, height: h.value, bgColor: theme.value.scrollbar }}
     />
   );
 }
@@ -288,6 +299,25 @@ export function popupWheel(dy: number): void {
   const boxH = Math.min(contentH, POPUP_MAX_VISIBLE * OPTION_H);
   const max = Math.max(0, contentH - boxH);
   popupScroll.value = Math.max(0, Math.min(max, popupScroll.value - dy));
+}
+
+/** 右键上下文菜单：复用 Select 弹层机制，锚点 = 指针位置（h=0，弹层贴指针
+ *  下方，不够高则翻上）；宽按最长标签实测（mono 12px + 左右 padding），
+ *  右缘不溢出视口。 */
+export function openContextMenu(
+  x: number,
+  y: number,
+  options: SelectOption[],
+  onPick: (v: string) => void,
+): void {
+  const w = Math.max(96, ...options.map((o) => Math.ceil(measureMono(o.label, MONO_SLOTS[12])) + 28));
+  popup.value = {
+    id: nextSelectId++,
+    options,
+    anchor: { x: Math.max(0, Math.min(x, viewportSize.value.w - w - 4)), y, w, h: 0 },
+    onPick,
+  };
+  popupScroll.value = 0;
 }
 
 /** 应用根部挂载一次：弹层 + 全屏遮罩（点击空白关闭）。

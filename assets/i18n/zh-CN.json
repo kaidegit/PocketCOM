@@ -94,6 +94,10 @@
   "terminal": {
     "hint": "终端就绪 —— 按键直接发送到当前连接（无本地回显）"
   },
+  "menu": {
+    "copy": "复制",
+    "selectAll": "全选"
+  },
   "receive": {
     "clear": "清屏",
     "pause": "暂停",

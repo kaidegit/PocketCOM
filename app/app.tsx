@@ -15,7 +15,7 @@ import { theme } from "./theme";
 import { PANEL_W, STATUS_H, setViewport, viewportSize } from "./layout";
 import { routeWheel } from "./wheel";
 import { LeftPanel } from "./panel";
-import { ReceivePane, SendPane, logHasSelection, logMouse, logSelectionText, pumpTimedSend } from "./transfer";
+import { ReceivePane, SendPane, logContextMenu, logHasSelection, logMouse, logSelectionText, pumpTimedSend } from "./transfer";
 import { TerminalView, termHasSelection, termMouseMove, termScrollPage, termSelectionText } from "./terminal";
 import { StatusBar } from "./statusbar";
 import { PopupLayer, closePopup, popupOpen, popupWheel, textFieldMouse } from "./widgets";
@@ -144,6 +144,18 @@ export default () => {
           !popupOpen() &&
           x >= PANEL_W &&
           y < viewportSize.value.h - STATUS_H;
+        // 右键：不参与选区/焦点路由。终端模式 = 有选区时按下即复制；收发
+        // 模式 = 接收区弹上下文菜单（复制/全选）。弹层打开时忽略。
+        if (ev.b === 2) {
+          if (down && !popupOpen()) {
+            if (inTermArea) {
+              if (termHasSelection()) svc?.send({ t: "copy", text: termSelectionText() });
+            } else if (uiMode.value === "transfer") {
+              logContextMenu(x, y);
+            }
+          }
+          break;
+        }
         if (inTermArea) {
           // 终端区：按下/拖动/抬起驱动选区与借焦；hover 聚焦照常——网格根
           // View 是 focusable 命中体，CIRCLE press 落到它（借焦清文本域），
@@ -153,8 +165,8 @@ export default () => {
           break;
         }
         // 文本选区路由：文本域（发送框/面板输入框）→ 接收区日志。拖拽期间
-        // 由按下时认领的一方接管（跨区不换目标）；右键与弹层打开时不参与。
-        if (!popupOpen() && ev.b !== 2) {
+        // 由按下时认领的一方接管（跨区不换目标）；弹层打开时不参与。
+        if (!popupOpen()) {
           if (textFieldMouse(x, y, down)) {
             focusNode(hitFocusable(x, y));
             break;

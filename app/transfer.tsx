@@ -5,6 +5,7 @@
 // TCP Server 多客户端定向/广播发送（M2）。
 import { onUnmounted, ref, watch } from "vue";
 import { Text, View } from "@pocketjs/framework/components";
+import { onFrame } from "@pocketjs/framework/lifecycle";
 import { virtualNow } from "@pocketjs/framework/clock";
 import {
   Btn,
@@ -16,6 +17,7 @@ import {
   TextField,
   measureMono,
   measureUi,
+  openContextMenu,
   type SelRect,
   type TextFieldHandle,
 } from "./widgets";
@@ -27,6 +29,7 @@ import { t } from "./i18n";
 import { PANEL_W, STATUS_H, viewportSize } from "./layout";
 import { onWheel } from "./wheel";
 import { setActiveField } from "./fields";
+import { getSvc } from "./svc";
 import { convertInputText, type SendOptions } from "../core/send";
 import type { PopupAnchor } from "./widgets";
 import type { LogRow } from "../core/logview";
@@ -105,6 +108,8 @@ const logSelA = ref<LogSelCell | null>(null);
 const logSelB = ref<LogSelCell | null>(null);
 let logDragging = false;
 let logDragMoved = false;
+/** 拖拽中最近指针位置（越界自动滚动的帧泵用；抬起清空）。 */
+let logDragPos: { x: number; y: number } | null = null;
 
 /** 屏幕坐标 → 日志格（行 = logView.rows 下标，列 = 字符下标；越界钳位）。 */
 function logCellAt(x: number, y: number): LogSelCell {
@@ -119,6 +124,7 @@ function logMouseDown(x: number, y: number): void {
   setActiveField(null); // 借焦：日志选区起手后键盘不再进文本域
   logDragging = true;
   logDragMoved = false;
+  logDragPos = { x, y };
   const cell = logCellAt(x, y);
   logSelA.value = cell;
   logSelB.value = cell;
@@ -126,6 +132,7 @@ function logMouseDown(x: number, y: number): void {
 
 function logMouseDrag(x: number, y: number): void {
   if (!logDragging) return;
+  logDragPos = { x, y };
   const cell = logCellAt(x, y);
   const a = logSelA.value;
   if (a !== null && (cell.row !== a.row || cell.col !== a.col)) {
@@ -137,6 +144,7 @@ function logMouseDrag(x: number, y: number): void {
 function logMouseUp(): void {
   if (!logDragging) return;
   logDragging = false;
+  logDragPos = null;
   if (!logDragMoved) {
     logSelA.value = null;
     logSelB.value = null;
@@ -187,6 +195,33 @@ export function logSelectionText(): string {
     out.push(text.slice(from, to));
   }
   return out.join("\n");
+}
+
+/** 全选日志（右键菜单）。 */
+export function logSelectAll(): void {
+  const n = logView.rows.length;
+  if (n === 0) return;
+  logSelA.value = { row: 0, col: 0 };
+  logSelB.value = { row: n - 1, col: logView.rows[n - 1]!.text.length };
+}
+
+/** 接收区右键菜单（复制/全选，app.tsx 的 b:2 路由调用）；返回是否命中日志区。 */
+export function logContextMenu(x: number, y: number): boolean {
+  const m = logMetrics();
+  if (x < m.x0 || x >= m.x0 + m.w || y < m.y0 || y >= m.y0 + m.h) return false;
+  openContextMenu(
+    x,
+    y,
+    [
+      { value: "copy", label: t("menu.copy"), disabled: !logHasSelection() },
+      { value: "selectAll", label: t("menu.selectAll"), disabled: logView.rows.length === 0 },
+    ],
+    (v) => {
+      if (v === "copy") getSvc()?.send({ t: "copy", text: logSelectionText() });
+      else if (v === "selectAll") logSelectAll();
+    },
+  );
+  return true;
 }
 
 /** 第 index 行的选区高亮矩形（行内 px；无交叠返回 null）。 */
@@ -241,6 +276,23 @@ export function ReceivePane() {
   onWheel("log", (dy) => {
     logScroll.value = Math.max(0, Math.min(maxScroll(), logScroll.value - dy));
     logStickBottom.value = logScroll.value >= maxScroll() - 1;
+  });
+
+  // 拖拽选区越界自动滚动：指针停在日志区上/下沿外时按帧持续滚动并延伸选区
+  // （指针不动时宿主不再发 mouse 事件，必须帧泵驱动；随组件卸载自动注销）。
+  onFrame(() => {
+    if (!logDragging || logDragPos === null) return;
+    const m = logMetrics();
+    const { x, y } = logDragPos;
+    let dPx = 0;
+    if (y < m.y0) dPx = -m.lineH * Math.max(1, Math.min(10, Math.ceil((m.y0 - y) / m.lineH)));
+    else if (y >= m.y0 + m.h) {
+      dPx = m.lineH * Math.max(1, Math.min(10, Math.ceil((y - m.y0 - m.h) / m.lineH)));
+    }
+    if (dPx === 0) return;
+    logScroll.value = Math.max(0, Math.min(maxScroll(), logScroll.value + dPx));
+    logStickBottom.value = logScroll.value >= maxScroll() - 1;
+    logMouseDrag(x, y);
   });
 
   // 空态切换（rows 非响应式，需显式依赖 logVersion，否则数据到达后空态不消失）

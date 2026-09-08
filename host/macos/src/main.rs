@@ -34,6 +34,8 @@
 //!   (extra fields ignored). A resolved Pocket System may also bind installed
 //!   packages as compositor surfaces. AppSupervisor owns every independent
 //!   AppInstance and schedules them on this one process/thread.
+//!   POCKETCOM fork: right-button b:2 lines are also forwarded when the
+//!   `pocketcom` companion is wired (context menu / copy-on-right-click).
 
 use std::cell::{Cell, RefCell};
 use std::cmp::Reverse;
@@ -1002,6 +1004,10 @@ struct PocketRoot {
     // editor/System UI shell input
     /// The generic System UI companion is in the resolved package plan.
     system_ui_input: bool,
+    /// POCKETCOM: the pocketcom companion is wired — its guest dialect
+    /// understands b:2 right-button lines (context menu / copy-on-right-click),
+    /// so right-button events are forwarded to it as well.
+    pocketcom_input: bool,
     /// Pointer shape requested by the guest ({t:"cursor"} intent).
     cursor_style: CursorStyle,
     mouse_down: bool,
@@ -1085,6 +1091,7 @@ impl PocketRoot {
         let viewport = args.viewport;
         let script = args.script.clone();
         let system_ui_input = args.companions.iter().any(|c| c == "system-ui");
+        let pocketcom_input = args.companions.iter().any(|c| c == "pocketcom");
         let root = PocketRoot {
             surface,
             guest,
@@ -1105,6 +1112,7 @@ impl PocketRoot {
             script_buttons: 0,
             script_mouse: false,
             system_ui_input,
+            pocketcom_input,
             cursor_style: CursorStyle::Arrow,
             mouse_down: false,
             click_edge: false,
@@ -1629,9 +1637,9 @@ impl PocketRoot {
                     self.push_mouse(x, y, true, e.modifiers.shift);
                 }
             }
-            // Right button is System UI-only (b:2 lines would read as
-            // primary presses to the note protocol).
-            MouseButton::Right if self.system_ui_input => {
+            // Right button: System UI or PocketCOM guests only (b:2 lines
+            // would read as primary presses to the note protocol).
+            MouseButton::Right if self.system_ui_input || self.pocketcom_input => {
                 let (x, y) = self.logical_pos(e.position);
                 self.svc(serde_json::json!(
                     {"t": "mouse", "x": x, "y": y, "d": true, "b": 2, "sh": e.modifiers.shift}
@@ -1650,7 +1658,7 @@ impl PocketRoot {
                     self.push_mouse(x, y, false, e.modifiers.shift);
                 }
             }
-            MouseButton::Right if self.system_ui_input => {
+            MouseButton::Right if self.system_ui_input || self.pocketcom_input => {
                 let (x, y) = self.logical_pos(e.position);
                 self.svc(serde_json::json!(
                     {"t": "mouse", "x": x, "y": y, "d": false, "b": 2, "sh": e.modifiers.shift}

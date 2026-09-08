@@ -9,6 +9,7 @@
 import { ref, watch } from "vue";
 import { Text, View } from "@pocketjs/framework/components";
 import { getOps } from "@pocketjs/framework";
+import { onFrame } from "@pocketjs/framework/lifecycle";
 import { Scrollbar } from "./widgets";
 import { setActiveField } from "./fields";
 import { LINE_H, MONO_CLASS, MONO_SLOTS } from "./fontsize";
@@ -96,6 +97,8 @@ const selAnchor = ref<TermCellRef | null>(null);
 const selHead = ref<TermCellRef | null>(null);
 let dragging = false;
 let dragMoved = false;
+/** 拖拽中最近指针位置（越界自动滚动的帧泵用；抬起清空）。 */
+let dragPos: { x: number; y: number } | null = null;
 
 function normSelection(): { a: TermCellRef; b: TermCellRef } | null {
   const a = selAnchor.value;
@@ -122,6 +125,7 @@ function termMouseDown(x: number, y: number): void {
   setActiveField(null);
   dragging = true;
   dragMoved = false;
+  dragPos = { x, y };
   const cell = termCellAt(x, y);
   selAnchor.value = cell;
   selHead.value = cell;
@@ -130,6 +134,7 @@ function termMouseDown(x: number, y: number): void {
 /** 拖拽延伸选区。 */
 export function termMouseDrag(x: number, y: number): void {
   if (!dragging) return;
+  dragPos = { x, y };
   const cell = termCellAt(x, y);
   const a = selAnchor.value;
   if (a && (cell.line !== a.line || cell.col !== a.col)) {
@@ -142,6 +147,7 @@ export function termMouseDrag(x: number, y: number): void {
 export function termMouseUp(): void {
   if (!dragging) return;
   dragging = false;
+  dragPos = null;
   if (!dragMoved) {
     selAnchor.value = null;
     selHead.value = null;
@@ -308,6 +314,22 @@ export function TerminalView() {
     stickBottom.value = termScroll.value >= termMaxScroll();
   });
 
+  // 拖拽选区越界自动滚动：指针停在网格上/下沿外时按帧持续滚动并延伸选区
+  // （指针不动时宿主不再发 mouse 事件，必须帧泵驱动；随组件卸载自动注销）。
+  onFrame(() => {
+    if (!dragging || dragPos === null) return;
+    const m = termMetrics();
+    const { x, y } = dragPos;
+    const bottom = m.y0 + m.rows * m.lineH;
+    let step = 0;
+    if (y < m.y0) step = -Math.max(1, Math.min(10, Math.ceil((m.y0 - y) / m.lineH)));
+    else if (y >= bottom) step = Math.max(1, Math.min(10, Math.ceil((y - bottom) / m.lineH)));
+    if (step === 0) return;
+    termScroll.value = Math.max(0, Math.min(termMaxScroll(), termScroll.value + step));
+    stickBottom.value = termScroll.value >= termMaxScroll();
+    termMouseDrag(x, y);
+  });
+
   // 新数据：贴底跟随，否则锁定（滚动锁定，SPEC §3.3 同语义）
   watch(termVersion, () => {
     if (stickBottom.value) termScroll.value = termMaxScroll();
@@ -434,7 +456,7 @@ export function TerminalView() {
       ) : null}
       {visibleLines().map(({ abs, y }) => renderLine(abs, y))}
       <Scrollbar
-        scroll={() => topLine()}
+        scroll={() => topLine() * LINE_H[fontSize.value]}
         total={() => terminal.totalLines * LINE_H[fontSize.value]}
         viewH={() => termMetrics().rows * LINE_H[fontSize.value]}
       />
