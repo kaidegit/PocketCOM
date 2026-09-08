@@ -401,7 +401,7 @@ describe("mcp config whitelist", () => {
       theme: "dark",
       fontSize: 12,
       terminal: { scrollbackLines: 500 },
-      receive: { hex: true, wrap: false },
+      receive: { hex: true, wrap: false, color: true },
       send: { crlf: true },
       mcp: { enabled: true, port: 8000 },
     });
@@ -410,7 +410,7 @@ describe("mcp config whitelist", () => {
       theme: "dark",
       fontSize: 12,
       scrollbackLines: 500,
-      receive: { hex: true, wrap: false },
+      receive: { hex: true, wrap: false, color: true },
       send: { crlf: true },
       mcp: { enabled: true, port: 8000 },
     });
@@ -423,6 +423,7 @@ describe("mcp config whitelist", () => {
     expect(() => validateConfigPatch({ fontSize: 13 })).toThrow(ParamError);
     expect(() => validateConfigPatch({ terminal: { scrollbackLines: -1 } })).toThrow(ParamError);
     expect(() => validateConfigPatch({ mcp: { port: 0 } })).toThrow(ParamError);
+    expect(() => validateConfigPatch({ receive: { color: "yes" } })).toThrow(ParamError);
     expect(() => validateConfigPatch({})).toThrow(ParamError);
   });
 

@@ -48,7 +48,9 @@ app/            # Vue Vapor 组件与页面状态（仅渲染 + 输入），pock
                 #   （mono 槽 12/14/16px）；fields.ts 活跃文本域路由；wheel.ts 滚轮分区
                 #   路由；layout.ts 布局常量；statusbar.tsx 状态栏；svc.ts 宿主事件行封装
 core/           # 纯 TS：连接状态机(connection)、帧合流(framing)、消息总线(bus)、编解码(codec)、
-                #   格式化(format)、日志视图(logview)、发送组装(send)、base64、统一会话
+                #   格式化(format)、日志视图(logview)、ANSI 前景色扫描（ansicolor：接收区
+                #   颜色转义的 SGR 解析/剥离，跨包续接截断序列，色编码复用 term）、
+                #   发送组装(send)、base64、统一会话
                 #   （session：串口+四类网络+回环+tcps 客户端表+自动重连）、设置持久化
                 #   （config：schema/归一化/历史封顶 50）、headless 终端模型
                 #   （term：VT100/xterm 解析 + 网格/光标/属性/滚动区域/alt 屏/回滚 +
@@ -90,7 +92,7 @@ SPEC.md         # 功能规格（权威）
 
 前置：bun（`~/.bun/bin` 需在 PATH）；首次克隆后执行 `git submodule update --init --depth 1 && cd vendor/pocketjs && bun install`。wasm32 target 仅浏览器宿主/金样测试需要，桌面开发不必装。
 
-- 核心层单测：`bun test test/`（当前 229 例；源码在 `test/core/`、`test/bridge/` 与 `test/app/`，与源码分层分离）
+- 核心层单测：`bun test test/`（当前 247 例；源码在 `test/core/`、`test/bridge/` 与 `test/app/`，与源码分层分离）
 - 类型检查：`npm run typecheck`（tsc --noEmit，tsconfig 严格度对齐上游，不要私自加严 flags——构建会用同一份 tsconfig 编译上游框架源码）
 - Manifest 校验：`npm run check`（= `bun vendor/pocketjs/tools/pocket.ts check --target macos-app --manifest app/pocket.json --project-root .`）
 - 构建 app bundle：`npm run build`（输出 `dist/pocketcom-main.js` + `.pak`）

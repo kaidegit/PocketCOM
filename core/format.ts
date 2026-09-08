@@ -14,6 +14,10 @@ export interface LogFormatOptions {
   escape: boolean;
   /** 行首时间戳 [YYYY-MM-DD HH:MM:SS.mmm]（开启则强制自动换行） */
   timestamp: boolean;
+  /** ANSI 颜色转义（SPEC §3.3）：开启后数据行默认色为主题正文色
+   *  （深色白/浅色黑），内容由 LogView 解析 SGR 序列按前景色渲染。
+   *  HEX/转义显示下无原始 ESC 可解析（颜色不生效，仅默认色生效）。 */
+  color: boolean;
 }
 
 /**
@@ -69,13 +73,24 @@ export function formatContent(payload: Uint8Array, opts: LogFormatOptions): stri
   return opts.hex ? bytesToHex(payload) : bytesToStr(payload, { escape: opts.escape });
 }
 
+/** 消息 → 行的三段结构（formatLogText 的分解形式）：LogView 需要单独拿到
+ *  内容段做 ANSI 颜色解析后再拼行，两者必须保持一致。 */
+export function formatLogParts(
+  msg: Message,
+  opts: LogFormatOptions,
+  labels: LogLineLabels,
+): { ts: string; prefix: string; content: string } {
+  const ts = opts.timestamp ? `[${formatTimestamp(msg.ts)}] ` : "";
+  const prefix = messagePrefix(msg, labels);
+  const content = msg.dir === "sys" ? utf8Decode(msg.payload) : formatContent(msg.payload, opts);
+  return { ts, prefix, content };
+}
+
 /** 消息 → 完整单行日志文本。sys 为 UI 生成的可读文本（i18n 提示等，
  *  均为 strToBytes 写入的完整 UTF-8），始终按文本渲染，不受 HEX/转义
  *  显示开关影响（转义是面向 wire 字节的逐字节语义，会打碎 CJK 文案）。 */
 export function formatLogText(msg: Message, opts: LogFormatOptions, labels: LogLineLabels): string {
-  const ts = opts.timestamp ? `[${formatTimestamp(msg.ts)}] ` : "";
-  const content = msg.dir === "sys" ? utf8Decode(msg.payload) : formatContent(msg.payload, opts);
-  const prefix = messagePrefix(msg, labels);
+  const { ts, prefix, content } = formatLogParts(msg, opts, labels);
   return prefix === "" ? `${ts}${content}` : `${ts}${prefix} ${content}`;
 }
 

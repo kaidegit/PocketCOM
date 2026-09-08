@@ -105,6 +105,7 @@
     "timestamp": "Timestamp",
     "wrap": "Auto wrap",
     "escape": "Escapes",
+    "color": "ANSI color",
     "hex": "HEX",
     "ascii": "ASCII",
     "empty": "(no data)",

@@ -185,6 +185,7 @@ function buildMcpConfigSnapshot(): Record<string, unknown> {
       escape: rxEscape.value,
       timestamp: rxTimestamp.value,
       wrap: rxWrap.value,
+      color: rxColor.value,
     },
     send: {
       escape: sendEscape.value,
@@ -213,6 +214,7 @@ function applyMcpConfigPatch(patch: McpConfigPatch): void {
     if (patch.receive.escape !== undefined) rxEscape.value = patch.receive.escape;
     if (patch.receive.timestamp !== undefined) rxTimestamp.value = patch.receive.timestamp;
     if (patch.receive.wrap !== undefined) rxWrap.value = patch.receive.wrap;
+    if (patch.receive.color !== undefined) rxColor.value = patch.receive.color;
     needFormat = true;
   }
   if (patch.send) {
@@ -360,6 +362,9 @@ export const rxHex = ref(false);
 export const rxEscape = ref(false);
 export const rxTimestamp = ref(false);
 export const rxWrap = ref(true);
+/** ANSI 颜色转义（SPEC §3.3）：开启后数据行默认色为主题正文色（深色白/
+ *  浅色黑），内容按 SGR 序列前景色渲染。 */
+export const rxColor = ref(false);
 export const rxPaused = ref(false);
 /** 接口区字号档位（12/14/16，受框架 mono 字形槽约束，SPEC §3.8）。 */
 export const fontSize = ref<ConfigFontSize>(14);
@@ -394,7 +399,7 @@ export function logLabels(): LogLineLabels {
 }
 
 export const logView = new LogView(
-  { hex: rxHex.value, escape: rxEscape.value, timestamp: rxTimestamp.value },
+  { hex: rxHex.value, escape: rxEscape.value, timestamp: rxTimestamp.value, color: rxColor.value },
   logLabels(),
   {
     maxRows: 500,
@@ -410,7 +415,7 @@ export function applyLogFormat(): void {
   logView.remeasure();
   logView.setShowTx(mcpState.value.on);
   logView.setFormat(
-    { hex: rxHex.value, escape: rxEscape.value, timestamp: rxTimestamp.value },
+    { hex: rxHex.value, escape: rxEscape.value, timestamp: rxTimestamp.value, color: rxColor.value },
     logLabels(),
   );
   logVersion.value++;
@@ -609,6 +614,7 @@ function buildConfigJson(): string {
       escape: rxEscape.value,
       timestamp: rxTimestamp.value,
       wrap: rxWrap.value,
+      color: rxColor.value,
     },
     send: {
       escape: sendEscape.value,
@@ -697,6 +703,7 @@ function applyConfig(cfg: AppConfig): void {
   rxEscape.value = cfg.receive.escape;
   rxTimestamp.value = cfg.receive.timestamp;
   rxWrap.value = cfg.receive.wrap;
+  rxColor.value = cfg.receive.color;
   sendEscape.value = cfg.send.escape;
   sendCrlf.value = cfg.send.crlf;
   sendAppendNl.value = cfg.send.appendNewline;
@@ -766,6 +773,7 @@ for (const source of [
   rxEscape,
   rxTimestamp,
   rxWrap,
+  rxColor,
   sendEscape,
   sendCrlf,
   sendAppendNl,

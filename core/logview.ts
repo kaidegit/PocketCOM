@@ -4,13 +4,17 @@
  *   peek 出 id > lastSeenId 的新消息；暂停 = 不 sync，恢复后自然追上
  *   （缓冲有界，追不上即丢最旧——sync 按 id 断档返回 lost，由 app 层记 sys 提示）。
  * - 显示行有界（默认 500 行），溢出丢最旧。
- * - hex/escape/timestamp 切换时用保留的最近消息全量重排版。
+ * - hex/escape/timestamp/color 切换时用保留的最近消息全量重排版；
+ *   color（ANSI 颜色转义）开启时内容剥离 SGR 序列并产出逐字符前景色
+ *   （row.fg，编码同 core/term.ts），扫描状态从 entries 头部重放。
  * - 自动换行由注入的测量函数完成（app 侧 getOps().measureText），
  *   核心层保持纯 TS：无测量函数 = 不换行。
  */
 import type { MessageBus } from "./bus";
 import type { Message, MessageDir } from "./message";
-import { formatLogText, formatTimestamp, messagePrefix, type LogFormatOptions, type LogLineLabels } from "./format";
+import { TERM_DEFAULT_COLOR } from "./term";
+import { AnsiFgScanner } from "./ansicolor";
+import { formatLogParts, formatTimestamp, type LogFormatOptions, type LogLineLabels } from "./format";
 
 export interface LogViewOptions {
   /** 显示行上限，默认 500（SPEC §3.3：可视窗口，数据本体在总线/环形缓冲） */
@@ -38,6 +42,39 @@ export interface LogRow {
   /** 前缀类别（前缀着色 token 选择；续行/无前缀为 ""） */
   prefixKind: "rx" | "tx-manual" | "tx-mcp" | "sys" | "";
   text: string;
+  /** 颜色转义开启时的逐字符前景色（与 text 等长，编码同 core/term.ts；
+   *  TERM_DEFAULT_COLOR = 默认，渲染层取主题正文色——深色白/浅色黑）。
+   *  null = 未开启颜色转义或 sys 行（渲染按方向色）。前缀区恒为默认色
+   *  （渲染层按前缀类别着色）。 */
+  fg: Uint32Array | null;
+}
+
+/** 带前景色的一段文本（拆行/折行的切片单位）。 */
+interface FgPiece {
+  text: string;
+  fg: Uint32Array | null;
+}
+
+/**
+ * 按硬换行拆分（`\r\n` / `\n` / `\r`，SPEC §3.3）并同步切片前景色数组：
+ * 数据帧内嵌换行符必须拆成独立显示行——固定行高的行内直接渲染多行文本
+ * 会溢出，与后续行重叠。帧末换行不产生多余空行；空串仍返回 [""]（保留
+ * 该帧的空行占位）。
+ */
+function splitFgLines(text: string, fg: Uint32Array | null): FgPiece[] {
+  const out: FgPiece[] = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "\n" && text[i] !== "\r") continue;
+    const end = i + (text[i] === "\r" && text[i + 1] === "\n" ? 2 : 1);
+    out.push({ text: text.slice(start, i), fg: fg === null ? null : fg.subarray(start, i) });
+    i = end - 1;
+    start = end;
+  }
+  if (start < text.length || out.length === 0) {
+    out.push({ text: text.slice(start), fg: fg === null ? null : fg.subarray(start) });
+  }
+  return out;
 }
 
 /**
@@ -46,9 +83,7 @@ export interface LogRow {
  * 帧末换行不产生多余空行；空串仍返回 [""]（保留该帧的空行占位）。
  */
 export function splitHardLines(text: string): string[] {
-  const lines = text.split(/\r\n|\r|\n/);
-  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
-  return lines;
+  return splitFgLines(text, null).map((p) => p.text);
 }
 
 export class LogView {
@@ -141,20 +176,31 @@ export class LogView {
 
   private rebuild(): void {
     const rows: LogRow[] = [];
+    // 颜色转义（SPEC §3.3）：扫描器状态（当前前景色 + 帧尾截断序列）从
+    // entries 头部重放，重排版确定性一致；sys 行不参与（UI 生成文本）。
+    const colorize = this.format.color ? new AnsiFgScanner() : null;
     for (const msg of this.entries) {
       if (!this.showTx && msg.dir === "tx") continue;
-      const prefix = messagePrefix(msg, this.labels);
+      const { ts, prefix, content } = formatLogParts(msg, this.format, this.labels);
       const prefixKind: LogRow["prefixKind"] =
         msg.dir === "rx" ? "rx" : msg.dir === "sys" ? "sys" : msg.source === "mcp" ? "tx-mcp" : "tx-manual";
-      const line = formatLogText(msg, this.format, this.labels);
+      const head = prefix === "" ? ts : `${ts}${prefix} `;
       // 前缀在行内的真实下标：时间戳段 `[YYYY-MM-DD HH:MM:SS.mmm] ` 恒为
-      // formatTimestamp 长度 + 3（左右括号 + 分隔空格），与 formatLogText 拼接一致
+      // formatTimestamp 长度 + 3（左右括号 + 分隔空格），与拼行一致
       const prefixAt = this.format.timestamp && prefix !== "" ? formatTimestamp(msg.ts).length + 3 : 0;
+      const parse = colorize !== null && msg.dir !== "sys" ? colorize.feed(content) : null;
+      const line = head + (parse !== null ? parse.plain : content);
+      let fg: Uint32Array | null = null;
+      if (parse !== null) {
+        // 时间戳/前缀区恒默认色（渲染层按前缀类别着色），内容区用解析结果
+        fg = new Uint32Array(line.length).fill(TERM_DEFAULT_COLOR);
+        fg.set(parse.fg, head.length);
+      }
       let first = true;
       // 先按硬换行拆行（帧内嵌 \r\n/\n/\r），再对每条逻辑行做宽度折行；
       // 拆分/折行出的后续行均无方向前缀（SPEC §3.3/§3.7）
-      for (const piece of splitHardLines(line)) {
-        for (const chunk of this.wrap(piece)) {
+      for (const piece of splitFgLines(line, fg)) {
+        for (const chunk of this.wrap(piece.text, piece.fg)) {
           rows.push({
             key: this.rowSeq++,
             msgId: msg.id,
@@ -162,7 +208,8 @@ export class LogView {
             prefix: first ? prefix : "",
             prefixAt: first ? prefixAt : 0,
             prefixKind: first ? prefixKind : "",
-            text: chunk,
+            text: chunk.text,
+            fg: chunk.fg,
           });
           first = false;
         }
@@ -173,13 +220,15 @@ export class LogView {
     this.rows = rows;
   }
 
-  /** 贪心按字符折行；无测量或宽度非法时不折行。宽度缓存按字符。 */
-  private wrap(text: string): string[] {
+  /** 贪心按字符折行；无测量或宽度非法时不折行。宽度缓存按字符；
+   *  前景色数组随切片同步切分（子数组共享底层缓冲，不拷贝）。 */
+  private wrap(text: string, fg: Uint32Array | null): FgPiece[] {
     const width = this.wrapWidth?.() ?? 0;
-    if (!this.measure || width <= 0) return [text];
-    const out: string[] = [];
+    if (!this.measure || width <= 0) return [{ text, fg }];
+    const out: FgPiece[] = [];
     let current = "";
     let currentW = 0;
+    let start = 0;
     for (let i = 0; i < text.length; i++) {
       const ch = text.charAt(i);
       let w = this.widthCache.get(ch);
@@ -188,15 +237,16 @@ export class LogView {
         this.widthCache.set(ch, w);
       }
       if (currentW + w > width && current !== "") {
-        out.push(current);
+        out.push({ text: current, fg: fg === null ? null : fg.subarray(start, i) });
         current = ch;
         currentW = w;
+        start = i;
       } else {
         current += ch;
         currentW += w;
       }
     }
-    out.push(current);
+    out.push({ text: current, fg: fg === null ? null : fg.subarray(start) });
     return out;
   }
 }

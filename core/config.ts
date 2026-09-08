@@ -67,7 +67,7 @@ export interface AppConfig {
   theme: ConfigTheme;
   fontSize: ConfigFontSize;
   terminal: { scrollbackLines: number };
-  receive: { hex: boolean; escape: boolean; timestamp: boolean; wrap: boolean };
+  receive: { hex: boolean; escape: boolean; timestamp: boolean; wrap: boolean; color: boolean };
   send: { escape: boolean; crlf: boolean; appendNewline: boolean };
   lastConn: LastConnConfig;
   /** 发送历史：去重置顶、最旧在后，上限 50（SPEC §3.3/§3.8）。 */
@@ -84,7 +84,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   theme: "dark",
   fontSize: 14,
   terminal: { scrollbackLines: 9999 },
-  receive: { hex: false, escape: false, timestamp: false, wrap: true },
+  receive: { hex: false, escape: false, timestamp: false, wrap: true, color: false },
   send: { escape: false, crlf: false, appendNewline: false },
   lastConn: {},
   sendHistory: [],
@@ -214,6 +214,7 @@ export function normalizeConfig(raw: unknown): AppConfig {
       escape: asBool(asRecord(r.receive).escape, DEFAULT_CONFIG.receive.escape),
       timestamp: asBool(asRecord(r.receive).timestamp, DEFAULT_CONFIG.receive.timestamp),
       wrap: asBool(asRecord(r.receive).wrap, DEFAULT_CONFIG.receive.wrap),
+      color: asBool(asRecord(r.receive).color, DEFAULT_CONFIG.receive.color),
     },
     send: {
       escape: asBool(asRecord(r.send).escape, DEFAULT_CONFIG.send.escape),

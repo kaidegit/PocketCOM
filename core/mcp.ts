@@ -417,7 +417,7 @@ export type McpConfigPatch = {
   theme?: "light" | "dark" | "system";
   fontSize?: 12 | 14 | 16;
   scrollbackLines?: number;
-  receive?: { hex?: boolean; escape?: boolean; timestamp?: boolean; wrap?: boolean };
+  receive?: { hex?: boolean; escape?: boolean; timestamp?: boolean; wrap?: boolean; color?: boolean };
   send?: { escape?: boolean; crlf?: boolean; appendNewline?: boolean };
   mcp?: { enabled?: boolean; port?: number };
 };
@@ -484,9 +484,9 @@ export function validateConfigPatch(raw: unknown): McpConfigPatch {
   }
   if (top.receive !== undefined) {
     const rec = asRecord(top.receive);
-    rejectUnknown("receive.", rec, ["hex", "escape", "timestamp", "wrap"]);
+    rejectUnknown("receive.", rec, ["hex", "escape", "timestamp", "wrap", "color"]);
     const sub: McpConfigPatch["receive"] = {};
-    for (const key of ["hex", "escape", "timestamp", "wrap"] as const) {
+    for (const key of ["hex", "escape", "timestamp", "wrap", "color"] as const) {
       const v = boolField(rec, key);
       if (v !== undefined) sub[key] = v;
     }

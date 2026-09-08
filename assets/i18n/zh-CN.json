@@ -105,6 +105,7 @@
     "timestamp": "时间戳",
     "wrap": "自动换行",
     "escape": "转义",
+    "color": "颜色转义",
     "hex": "HEX",
     "ascii": "ASCII",
     "empty": "（暂无数据）",

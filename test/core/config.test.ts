@@ -19,7 +19,7 @@ describe("normalizeConfig", () => {
       theme: "system",
       fontSize: 16,
       terminal: { scrollbackLines: 5000 },
-      receive: { hex: true, escape: true, timestamp: true, wrap: false },
+      receive: { hex: true, escape: true, timestamp: true, wrap: false, color: true },
       send: { escape: true, crlf: true, appendNewline: true },
       logPath: "/tmp/log.txt",
       mcp: { enabled: true, port: 8000, token: "t" },
@@ -28,7 +28,7 @@ describe("normalizeConfig", () => {
     expect(cfg.theme).toBe("system");
     expect(cfg.fontSize).toBe(16);
     expect(cfg.terminal).toEqual({ scrollbackLines: 5000 });
-    expect(cfg.receive).toEqual({ hex: true, escape: true, timestamp: true, wrap: false });
+    expect(cfg.receive).toEqual({ hex: true, escape: true, timestamp: true, wrap: false, color: true });
     expect(cfg.send).toEqual({ escape: true, crlf: true, appendNewline: true });
     expect(cfg.logPath).toBe("/tmp/log.txt");
     expect(cfg.mcp).toEqual({ enabled: true, port: 8000, token: "t" });

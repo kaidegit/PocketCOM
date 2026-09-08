@@ -128,7 +128,7 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 - 自动换行开关：按帧合流边界换行，间隔 ms 可配（默认 200ms）
 - 转义显示开关：不可见字节显示为 `\x01` 形式
 - 帧内换行符拆分：ASCII 非转义显示下，数据帧内嵌的 `\r\n` / `\n` / `\r` 按硬换行拆成独立显示行（拆分出的后续行与折行续行一致：无方向前缀）；帧末换行不产生多余空行。HEX / 转义显示下换行字节以 `\x0A` 等形式可见，不受影响。行内禁止出现控制字符直接渲染（多行文本会在固定行高内溢出，与后续行重叠）
-- ANSI 颜色开关：解析 `\x1b[31m` 等 SGR 序列着色（跨包缓冲不完整序列）
+- ANSI 颜色开关：勾选后数据行默认色切换为主题正文色（深色白/浅色黑），内容解析 `\x1b[31m` 等 SGR 序列按前景色着色（30–37 / 90–97 / 38;5 与 38:5 的 256 色 / 38;2 与 38:2 的 24-bit RGB，`0`/`39`/`ESC[m` 复位；仅前景，背景与加粗等属性忽略；调色板与终端视图共用 §3.7 token）；行尾被截断的不完整序列跨包缓冲，与后续帧续接；状态跨行/跨帧持续，sys 行不参与解析；HEX / 转义显示下无原始 ESC 可解析（序列以 `\x1B` 字节可见），仅默认色生效
 - 方向标记：记录发送时 `=>` 发送 / `<=` 接收（开启则强制自动换行）
 - 暂停显示（数据继续入缓冲）、清屏、滚动锁定（用户上翻时不强制贴底）
 - Rx / Tx 字节计数（状态栏，清屏归零）
@@ -304,7 +304,7 @@ MCP server 实现于**宿主层**（fork 的桌面宿主 crate 内的原生线�
 
 无 resources / prompts（与 umeko 一致，后续按需扩）。
 
-约定：tool 输出为面向 agent 的稳定英文短句（不随 UI 语言切换）；`read` 行的来源标签除外（随 i18n，与 UI 前缀同源，见 §6.4）。tool 执行失败返回 `isError: true` + `content[{type:"text"}]`（`code: msg` 格式），协议层错误（未知 tool、参数缺失）走 JSON-RPC error。`send` 的 `appendNewline` 追加 `\r\n`。`config_read`/`config_write` 白名单：`language / theme / fontSize / terminal.scrollbackLines / receive.{hex,escape,timestamp,wrap} / send.{escape,crlf,appendNewline} / mcp.{enabled,port}`（token 不可读出亦不可写入）。
+约定：tool 输出为面向 agent 的稳定英文短句（不随 UI 语言切换）；`read` 行的来源标签除外（随 i18n，与 UI 前缀同源，见 §6.4）。tool 执行失败返回 `isError: true` + `content[{type:"text"}]`（`code: msg` 格式），协议层错误（未知 tool、参数缺失）走 JSON-RPC error。`send` 的 `appendNewline` 追加 `\r\n`。`config_read`/`config_write` 白名单：`language / theme / fontSize / terminal.scrollbackLines / receive.{hex,escape,timestamp,wrap,color} / send.{escape,crlf,appendNewline} / mcp.{enabled,port}`（token 不可读出亦不可写入）。
 
 ### 6.4 读缓冲与来源可见性
 

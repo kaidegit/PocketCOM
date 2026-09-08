@@ -24,7 +24,7 @@ import {
 import { LINE_H as FONT_LINE_H, MONO_CLASS, MONO_SLOTS } from "./fontsize";
 import { SELECT_HISTORY_W, SELECT_TARGET_W, sendOptSelectX } from "./sendlayout";
 import { monoColAt, monoXAt } from "./textsel";
-import { theme } from "./theme";
+import { theme, termColorCss } from "./theme";
 import { t } from "./i18n";
 import { PANEL_W, STATUS_H, viewportSize } from "./layout";
 import { onWheel } from "./wheel";
@@ -43,6 +43,7 @@ import {
   logView,
   logVersion,
   rxEscape,
+  rxColor,
   rxHex,
   rxPaused,
   rxTimestamp,
@@ -77,6 +78,28 @@ function prefixColor(kind: LogRow["prefixKind"]): string {
     default:
       return theme.value.prefixSys;
   }
+}
+
+/** 行内容段（去掉时间戳/前缀后的部分）。 */
+function rowContent(row: LogRow): string {
+  return row.prefix !== "" ? row.text.slice(row.prefixAt + row.prefix.length) : row.text;
+}
+
+/** 颜色转义开启时的内容分段渲染：相邻同色字符合并成一段，默认色段取
+ *  主题正文色（深色白/浅色黑，SPEC §3.3），其余按 SGR 解析色（term 调色板）。
+ *  row.fg 与整行 text 对齐（前缀区恒默认色），内容段从前缀之后开始切。 */
+function contentRuns(row: LogRow): { text: string; color: string }[] {
+  const fg = row.fg!;
+  const at = row.prefix !== "" ? row.prefixAt + row.prefix.length : 0;
+  const runs: { text: string; color: string }[] = [];
+  let start = at;
+  for (let i = at + 1; i <= fg.length; i++) {
+    if (i === fg.length || fg[i] !== fg[start]) {
+      runs.push({ text: row.text.slice(start, i), color: termColorCss(fg[start]!, theme.value.fg) });
+      start = i;
+    }
+  }
+  return runs;
 }
 
 // ---------------------------------------------------------------------------
@@ -352,6 +375,14 @@ export function ReceivePane() {
             applyLogFormat();
           }}
         />
+        <CheckRow
+          label={() => t("receive.color")}
+          checked={() => rxColor.value}
+          onToggle={() => {
+            rxColor.value = !rxColor.value;
+            applyLogFormat();
+          }}
+        />
         <View class="flex-1" />
         <Btn
           width={48}
@@ -413,12 +444,23 @@ export function ReceivePane() {
                       {row.prefix}
                     </Text>
                   ) : null}
-                  <Text
-                    class={MONO_CLASS[fontSize.value]}
-                    style={{ textColor: dirColor(row.dir), lineHeight: lineH(), height: lineH() }}
-                  >
-                    {row.prefix !== "" ? row.text.slice(row.prefixAt + row.prefix.length) : row.text}
-                  </Text>
+                  {row.fg === null ? (
+                    <Text
+                      class={MONO_CLASS[fontSize.value]}
+                      style={{ textColor: dirColor(row.dir), lineHeight: lineH(), height: lineH() }}
+                    >
+                      {rowContent(row)}
+                    </Text>
+                  ) : (
+                    contentRuns(row).map((run, i) => (
+                      <Text
+                        class={MONO_CLASS[fontSize.value]}
+                        style={{ textColor: run.color, lineHeight: lineH(), height: lineH() }}
+                      >
+                        {run.text}
+                      </Text>
+                    ))
+                  )}
                 </View>
               </View>
             );

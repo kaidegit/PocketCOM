@@ -13,7 +13,7 @@ import { onFrame } from "@pocketjs/framework/lifecycle";
 import { Scrollbar } from "./widgets";
 import { setActiveField } from "./fields";
 import { LINE_H, MONO_CLASS, MONO_SLOTS } from "./fontsize";
-import { theme } from "./theme";
+import { theme, termColorCss } from "./theme";
 import { t } from "./i18n";
 import { PANEL_W, STATUS_H, viewportSize } from "./layout";
 import { onWheel } from "./wheel";
@@ -24,7 +24,6 @@ import {
   CELL_UNDERLINE,
   CELL_WIDE,
   TERM_DEFAULT_COLOR,
-  isTermRgb,
   type TermLine,
 } from "../core/term";
 import { fontSize, terminal, termScroll, termVersion } from "./session";
@@ -201,31 +200,8 @@ export function termScrollPage(pages: number): void {
 
 const TRANSPARENT = "#00000000";
 
-/** 单元格颜色值 → CSS 色（DEFAULT → 主题终端色；调色板/RGB 见 core/term.ts）。 */
-function cellColor(c: number, fallback: string): string {
-  if (c === TERM_DEFAULT_COLOR) return fallback;
-  if (isTermRgb(c)) {
-    const r = (c >> 16) & 0xff;
-    const g = (c >> 8) & 0xff;
-    const b = c & 0xff;
-    return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
-  }
-  const pal = theme.value.termPalette;
-  if (c < 16) return pal[c] ?? fallback;
-  if (c < 232) {
-    // 6×6×6 色立方（16–231，xterm 公式）
-    const n = c - 16;
-    const comp = (v: number): number => (v === 0 ? 0 : 55 + v * 40);
-    const r = comp(Math.floor(n / 36));
-    const g = comp(Math.floor((n % 36) / 6));
-    const b = comp(n % 6);
-    return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
-  }
-  // 灰阶（232–255）
-  const gray = 8 + (c - 232) * 10;
-  const hex = gray.toString(16).padStart(2, "0");
-  return `#${hex}${hex}${hex}`;
-}
+// 单元格颜色值 → CSS 色：映射逻辑在 theme.ts 的 termColorCss（与接收区
+// 颜色转义共用）；DEFAULT → 主题终端色，调色板/RGB 见 core/term.ts。
 
 interface TermRun {
   /** x（px，相对行左缘）。 */
@@ -263,11 +239,11 @@ function rowRuns(line: TermLine, limit: number, cellW: number): TermRun[] {
       x: start * cellW,
       w: (end - start) * cellW,
       text,
-      fg: cellColor(fg, reverse ? theme.value.termBg : theme.value.termFg),
+      fg: termColorCss(fg, reverse ? theme.value.termBg : theme.value.termFg),
       bg:
         bg === TERM_DEFAULT_COLOR && !reverse
           ? TRANSPARENT
-          : cellColor(bg, reverse ? theme.value.termFg : theme.value.termBg),
+          : termColorCss(bg, reverse ? theme.value.termFg : theme.value.termBg),
       underline: (flags & CELL_UNDERLINE) !== 0,
     });
     start = -1;

@@ -8,7 +8,7 @@ const LABELS: LogLineLabels = { rx: "<=", txManual: "[手动发送]", txMcp: "[M
 /** MCP server 未运行（SPEC §3.5）：RX/TX 来源前缀均隐藏为 ""。 */
 const NO_MCP_LABELS: LogLineLabels = { ...LABELS, rx: "", txManual: "" };
 
-const OPTS: LogFormatOptions = { hex: false, escape: false, timestamp: false };
+const OPTS: LogFormatOptions = { hex: false, escape: false, timestamp: false, color: false };
 
 function msg(partial: Partial<Message> & { payload?: Uint8Array }): Message {
   return { id: 1, ts: 0, dir: "rx", source: "system", connId: "c", payload: new Uint8Array(0), ...partial };

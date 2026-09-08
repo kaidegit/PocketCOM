@@ -1,12 +1,29 @@
 import { describe, expect, test } from "bun:test";
-import { LogView, splitHardLines } from "../../core/logview";
+import { LogView, splitHardLines, type LogRow } from "../../core/logview";
+import { TERM_DEFAULT_COLOR } from "../../core/term";
 import { MessageBus } from "../../core/bus";
 import { strToBytes } from "../../core/codec";
 import type { LogFormatOptions, LogLineLabels } from "../../core/format";
 import type { NewMessage } from "../../core/message";
 
 const LABELS: LogLineLabels = { rx: "<=", txManual: "[手动发送]", txMcp: "[MCP发送]", sys: "[SYS]" };
-const FORMAT: LogFormatOptions = { hex: false, escape: false, timestamp: false };
+const FORMAT: LogFormatOptions = { hex: false, escape: false, timestamp: false, color: false };
+
+/** 行内容的前景色分段压缩（[色, 文本] 序列；null → null）。fg 与整行 text
+ *  对齐（前缀区恒默认色），内容段从前缀之后开始切（同 app 渲染侧）。 */
+function fgRuns(row: LogRow): [number, string][] | null {
+  if (row.fg === null) return null;
+  const at = row.prefix !== "" ? row.prefixAt + row.prefix.length : 0;
+  const out: [number, string][] = [];
+  let start = at;
+  for (let i = at + 1; i <= row.fg.length; i++) {
+    if (i === row.fg.length || row.fg[i] !== row.fg[start]) {
+      out.push([row.fg[start]!, row.text.slice(start, i)]);
+      start = i;
+    }
+  }
+  return out;
+}
 
 function feed(bus: MessageBus, partial: Partial<NewMessage> & { payload: Uint8Array }): void {
   bus.append({ dir: "rx", source: "system", connId: "c", ...partial });
@@ -221,5 +238,91 @@ describe("LogView", () => {
     expect(splitHardLines("a\r\nb\rc\nd")).toEqual(["a", "b", "c", "d"]);
     expect(splitHardLines("a\n")).toEqual(["a"]);
     expect(splitHardLines("\n\n")).toEqual(["", ""]);
+  });
+
+  test("颜色转义关闭：fg 全 null，SGR 序列按原样显示", () => {
+    const bus = new MessageBus();
+    const lv = new LogView(FORMAT, LABELS);
+    feed(bus, { payload: strToBytes("\x1b[31mred") });
+    lv.sync(bus);
+    expect(lv.rows[0]!.text).toBe("<= \x1b[31mred");
+    expect(lv.rows.every((r) => r.fg === null)).toBe(true);
+  });
+
+  test("颜色转义：SGR 剥离，内容默认色段为 DEFAULT 哨兵（渲染取黑/白正文色）", () => {
+    const bus = new MessageBus();
+    const lv = new LogView({ ...FORMAT, color: true }, LABELS);
+    feed(bus, { payload: strToBytes("plain\x1b[31mred") });
+    lv.sync(bus);
+    expect(lv.rows[0]!.text).toBe("<= plainred");
+    // 前缀 "<= " 区恒默认（渲染层按前缀类别着色）；内容默认段 = DEFAULT
+    // （渲染层映射为主题正文色），分隔空格随内容段渲染
+    expect(fgRuns(lv.rows[0]!)).toEqual([
+      [TERM_DEFAULT_COLOR, " plain"],
+      [1, "red"],
+    ]);
+  });
+
+  test("颜色转义：SGR 状态跨行、跨消息持续", () => {
+    const bus = new MessageBus();
+    const lv = new LogView({ ...FORMAT, color: true }, LABELS);
+    feed(bus, { payload: strToBytes("\x1b[32ma\nb") }); // 同帧跨硬换行
+    feed(bus, { payload: strToBytes("c") }); // 跨帧仍持绿
+    lv.sync(bus);
+    expect(lv.rows.map((r) => r.text)).toEqual(["<= a", "b", "<= c"]);
+    expect(fgRuns(lv.rows[1]!)).toEqual([[2, "b"]]);
+    expect(fgRuns(lv.rows[2]!)).toEqual([
+      [TERM_DEFAULT_COLOR, " "],
+      [2, "c"],
+    ]);
+  });
+
+  test("颜色转义：帧尾截断序列缓存，下一帧续接着色", () => {
+    const bus = new MessageBus();
+    const lv = new LogView({ ...FORMAT, color: true }, LABELS);
+    feed(bus, { payload: strToBytes("ok\x1b[3") });
+    feed(bus, { payload: strToBytes("1mred") });
+    lv.sync(bus);
+    expect(lv.rows.map((r) => r.text)).toEqual(["<= ok", "<= red"]);
+    expect(fgRuns(lv.rows[0]!)).toEqual([[TERM_DEFAULT_COLOR, " ok"]]);
+    expect(fgRuns(lv.rows[1]!)).toEqual([
+      [TERM_DEFAULT_COLOR, " "],
+      [1, "red"],
+    ]);
+  });
+
+  test("颜色转义：折行切片与 fg 对齐", () => {
+    const bus = new MessageBus();
+    const lv = new LogView({ ...FORMAT, color: true }, LABELS, {
+      measure: () => 10,
+      wrapWidth: () => 25,
+    });
+    feed(bus, { payload: strToBytes("aa\x1b[31mbb") }); // "<= aabb" 7 字符 → 25px 每行 2 字符
+    lv.sync(bus);
+    const texts = lv.rows.map((r) => r.text);
+    expect(texts.join("|")).toBe("<=| a|ab|b");
+    // 每段切片的 fg 与文本等长，颜色随切片保持；首段只剩前缀（内容段为空），
+    // "ab" 段恰跨默认色/红色边界 → 两段
+    expect(lv.rows.map((r) => fgRuns(r))).toEqual([
+      [],
+      [[TERM_DEFAULT_COLOR, " a"]],
+      [
+        [TERM_DEFAULT_COLOR, "a"],
+        [1, "b"],
+      ],
+      [[1, "b"]],
+    ]);
+  });
+
+  test("颜色转义：sys 行不参与解析不附 fg；开关切换重排版恢复", () => {
+    const bus = new MessageBus();
+    const lv = new LogView({ ...FORMAT, color: true }, LABELS);
+    feed(bus, { payload: strToBytes("\x1b[31mr") });
+    feed(bus, { dir: "sys", source: "system", payload: strToBytes("boom") });
+    lv.sync(bus);
+    expect(lv.rows.map((r) => r.fg === null)).toEqual([false, true]);
+    lv.setFormat({ ...FORMAT, color: false }, LABELS);
+    expect(lv.rows[0]!.text).toBe("<= \x1b[31mr");
+    expect(lv.rows.every((r) => r.fg === null)).toBe(true);
   });
 });

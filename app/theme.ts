@@ -3,6 +3,7 @@
 // appearance 事件经 app/session 注入，见 setSystemAppearance）；样式一律经
 // theme token 的 style 绑定，禁止拼接 class 片段。
 import { computed, ref } from "vue";
+import { isTermRgb, TERM_DEFAULT_COLOR } from "../core/term";
 
 export type ThemeMode = "dark" | "light" | "system";
 
@@ -148,3 +149,31 @@ export const theme = computed<ThemeTokens>(() => {
   if (mode === "dark") return THEMES.dark;
   return THEMES[systemAppearance.value];
 });
+
+/** 终端色编码 → CSS 色（编码见 core/term.ts：默认哨兵回退 fallback；
+ *  调色板 0–15 取主题终端调色板，16–231 六立方 / 232–255 灰阶按 xterm
+ *  公式映射）。终端网格与接收区颜色转义共用。 */
+export function termColorCss(c: number, fallback: string): string {
+  if (c === TERM_DEFAULT_COLOR) return fallback;
+  if (isTermRgb(c)) {
+    const r = (c >> 16) & 0xff;
+    const g = (c >> 8) & 0xff;
+    const b = c & 0xff;
+    return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
+  }
+  const pal = theme.value.termPalette;
+  if (c < 16) return pal[c] ?? fallback;
+  if (c < 232) {
+    // 6×6×6 色立方（16–231，xterm 公式）
+    const n = c - 16;
+    const comp = (v: number): number => (v === 0 ? 0 : 55 + v * 40);
+    const r = comp(Math.floor(n / 36));
+    const g = comp(Math.floor((n % 36) / 6));
+    const b = comp(n % 6);
+    return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
+  }
+  // 灰阶（232–255）
+  const gray = 8 + (c - 232) * 10;
+  const hex = gray.toString(16).padStart(2, "0");
+  return `#${hex}${hex}${hex}`;
+}
