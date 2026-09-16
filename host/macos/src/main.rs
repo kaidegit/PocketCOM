@@ -327,6 +327,11 @@ struct Args {
     /// Benchmark typing storm: (chars/sec, start tick, duration ticks) —
     /// svc `ch` lines through the same edit path real typing takes.
     storm: Option<(u32, u64, u64)>,
+    /// Drop native mouse/scroll/keyboard events entirely (e2e
+    /// `--no-native-mouse-keyboard`): only script-injected
+    /// `--mouse/--click/--wheel/--key/--type` lines reach the guest, so a
+    /// physical mouse or keyboard cannot perturb a scripted run.
+    no_native_mouse_keyboard: bool,
     /// Print "READY <epoch_ms>" on the first painted frame — the desktop
     /// benchmark runner's cold-start marker (PR #294). Off by default.
     announce_ready: bool,
@@ -354,6 +359,7 @@ fn parse_args_from<I: Iterator<Item = String>>(mut it: I) -> Result<Args> {
         quit_after_ticks: None,
         screenshots: Vec::new(),
         storm: None,
+        no_native_mouse_keyboard: false,
         announce_ready: false,
     };
     let mut system_plan_path = None;
@@ -485,6 +491,7 @@ fn parse_args_from<I: Iterator<Item = String>>(mut it: I) -> Result<Args> {
             }
             "--quit-after" => args.quit_after_ticks = Some(val("--quit-after")?.parse()?),
             "--announce-ready" => args.announce_ready = true,
+            "--no-native-mouse-keyboard" => args.no_native_mouse_keyboard = true,
             "--press" => {
                 // --press NAME@TICK (console button script: up/down/left/
                 // right/cross/circle/square/triangle/l/r/start/select)
@@ -1461,6 +1468,13 @@ impl PocketRoot {
     // ---- editor input → svc lines ------------------------------------------
 
     fn on_key_down(&mut self, e: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
+        if self.args.no_native_mouse_keyboard {
+            // e2e input mute: physical keys (named keys, cmd chords, ctrl
+            // chords) produce no svc lines; plain typing that falls through
+            // to the input handler is gated there too. Script `--key/--type`
+            // bypasses native handlers entirely.
+            return;
+        }
         let ks = &e.keystroke;
         if !ks.modifiers.platform
             && !ks.modifiers.alt
@@ -1594,6 +1608,9 @@ impl PocketRoot {
     }
 
     fn on_key_up(&mut self, e: &KeyUpEvent, _w: &mut Window, cx: &mut Context<Self>) {
+        if self.args.no_native_mouse_keyboard {
+            return;
+        }
         if let Some(button) = button_for(&e.keystroke.key)
             && self
                 .app_supervisor
@@ -1627,6 +1644,9 @@ impl PocketRoot {
     }
 
     fn on_mouse_down(&mut self, e: &MouseDownEvent, w: &mut Window, _cx: &mut Context<Self>) {
+        if self.args.no_native_mouse_keyboard {
+            return;
+        }
         self.focus.focus(w);
         match e.button {
             MouseButton::Left => {
@@ -1650,6 +1670,9 @@ impl PocketRoot {
     }
 
     fn on_mouse_up(&mut self, e: &MouseUpEvent, _w: &mut Window, _cx: &mut Context<Self>) {
+        if self.args.no_native_mouse_keyboard {
+            return;
+        }
         match e.button {
             MouseButton::Left => {
                 self.mouse_down = false;
@@ -1669,6 +1692,9 @@ impl PocketRoot {
     }
 
     fn on_mouse_move(&mut self, e: &MouseMoveEvent, _w: &mut Window, _cx: &mut Context<Self>) {
+        if self.args.no_native_mouse_keyboard {
+            return;
+        }
         if self.forward_input() {
             let (x, y) = self.logical_pos(e.position);
             self.push_mouse(x, y, self.mouse_down, e.modifiers.shift);
@@ -1676,6 +1702,9 @@ impl PocketRoot {
     }
 
     fn on_scroll(&mut self, e: &ScrollWheelEvent, w: &mut Window, _cx: &mut Context<Self>) {
+        if self.args.no_native_mouse_keyboard {
+            return;
+        }
         if self.forward_input() {
             let dy = f32::from(e.delta.pixel_delta(w.line_height()).y);
             if dy != 0.0 {
@@ -1808,6 +1837,9 @@ impl EntityInputHandler for PocketRoot {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) {
+        if self.args.no_native_mouse_keyboard {
+            return;
+        }
         // A commit ends the composition; the text lands as plain typing.
         if self.marked.take().is_some() {
             self.svc(serde_json::json!({"t": "ime", "s": "", "c": null}));
@@ -1825,6 +1857,9 @@ impl EntityInputHandler for PocketRoot {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) {
+        if self.args.no_native_mouse_keyboard {
+            return;
+        }
         let caret_utf16 =
             new_selected_range.map_or_else(|| new_text.encode_utf16().count(), |r| r.start);
         // The guest protocol wants a CHAR index into the preedit.

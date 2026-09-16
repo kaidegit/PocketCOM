@@ -63,6 +63,16 @@ fn screenshot_flag_rejects_malformed_specs() {
 }
 
 #[test]
+fn no_native_mouse_keyboard_flag_defaults_off_and_parses_bare() {
+    let a = args_from(&[]).unwrap();
+    assert!(!a.no_native_mouse_keyboard);
+    let a = args_from(&["--no-native-mouse-keyboard", "--click", "10,20@5"]).unwrap();
+    assert!(a.no_native_mouse_keyboard);
+    // Scripted clicks still parse alongside the mute flag.
+    assert!(matches!(a.script.as_slice(), [ScriptEvent::Click(5, x, y)] if *x == 10.0 && *y == 20.0));
+}
+
+#[test]
 fn key_flag_parses_modifier_chords() {
     let a = args_from(&["--key", "cmd+sh+pageup@60"]).unwrap();
     assert!(

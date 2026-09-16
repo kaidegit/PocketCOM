@@ -19,6 +19,7 @@ import { ReceivePane, SendPane, logContextMenu, logHasSelection, logMouse, logSe
 import { TerminalView, termHasSelection, termMouseMove, termScrollPage, termSelectionText } from "./terminal";
 import { StatusBar } from "./statusbar";
 import { PopupLayer, closePopup, popupOpen, popupWheel, textFieldMouse } from "./widgets";
+import { SettingsModal, closeSettingsModal, modalWheel, settingsFieldMouse, settingsOpen } from "./settings-modal";
 import { pumpSession, refreshPorts, comAvailable, sendTermBytes, terminal, uiMode } from "./session";
 import { t } from "./i18n";
 import { strToBytes } from "../core/codec";
@@ -42,19 +43,22 @@ const KEY_ALIAS: Record<string, string> = {
   tab: "Tab",
 };
 
+/** 任一浮层打开（下拉弹层 / 设置模态弹窗）：键盘/鼠标/滚轮路由的总门控。 */
+const overlayOpen = (): boolean => popupOpen() || settingsOpen();
+
 export default () => {
   const svc = connectSvc();
   /** 最近指针位置（滚轮按 x 分区路由：左面板 or 右区）。 */
   const lastMouse = { x: -1, y: -1 };
   /** 弹层关闭后下一帧重新 hover 聚焦（弹层节点已卸载，焦点悬空）。 */
   const rehover = ref(false);
-  watch(popupOpen, (open) => {
+  watch(overlayOpen, (open) => {
     if (!open) rehover.value = true;
   });
 
   /** 终端模式且键盘/粘贴应直发（无活跃文本域 = 终端持有键盘）。 */
   const termWantsKeys = (): boolean =>
-    uiMode.value === "terminal" && !popupOpen() && activeField.value === null;
+    uiMode.value === "terminal" && !overlayOpen() && activeField.value === null;
 
   const dispatch = (ev: HostEvent): void => {
     switch (ev.t) {
@@ -86,9 +90,14 @@ export default () => {
         // on_key_down 路径才做 Pascal 化）；svc 是 app 级协议，统一在这里收敛。
         const k = KEY_ALIAS[(ev.k ?? "").toLowerCase()] ?? ev.k;
         if (k === "Escape") {
-          // Escape：先收弹层；终端直发态发给远端；否则清 IME preedit 并借焦
+          // Escape：先收下拉弹层，再收设置弹窗（丢弃草稿）；终端直发态发给
+          // 远端；否则清 IME preedit 并借焦
           if (popupOpen()) {
             closePopup();
+            break;
+          }
+          if (settingsOpen()) {
+            closeSettingsModal();
             break;
           }
           if (termWantsKeys()) {
@@ -141,13 +150,13 @@ export default () => {
         const down = ev.d ?? false;
         const inTermArea =
           uiMode.value === "terminal" &&
-          !popupOpen() &&
+          !overlayOpen() &&
           x >= PANEL_W &&
           y < viewportSize.value.h - STATUS_H;
         // 右键：不参与选区/焦点路由。终端模式 = 有选区时按下即复制；收发
-        // 模式 = 接收区弹上下文菜单（复制/全选）。弹层打开时忽略。
+        // 模式 = 接收区弹上下文菜单（复制/全选）。浮层打开时忽略。
         if (ev.b === 2) {
-          if (down && !popupOpen()) {
+          if (down && !overlayOpen()) {
             if (inTermArea) {
               if (termHasSelection()) svc?.send({ t: "copy", text: termSelectionText() });
             } else if (uiMode.value === "transfer") {
@@ -165,15 +174,24 @@ export default () => {
           break;
         }
         // 文本选区路由：文本域（发送框/面板输入框）→ 接收区日志。拖拽期间
-        // 由按下时认领的一方接管（跨区不换目标）；弹层打开时不参与。
+        // 由按下时认领的一方接管（跨区不换目标）；下拉弹层打开时不参与。
+        // 设置弹窗打开时只认弹窗内的回滚行数输入框——textFieldMouse 是纯
+        // 几何命中，会把遮罩下方的输入框也认领走。
         if (!popupOpen()) {
-          if (textFieldMouse(x, y, down)) {
-            focusNode(hitFocusable(x, y));
-            break;
-          }
-          if (uiMode.value === "transfer" && logMouse(x, y, down)) {
-            focusNode(hitFocusable(x, y));
-            break;
+          if (settingsOpen()) {
+            if (settingsFieldMouse(x, y, down)) {
+              focusNode(hitFocusable(x, y));
+              break;
+            }
+          } else {
+            if (textFieldMouse(x, y, down)) {
+              focusNode(hitFocusable(x, y));
+              break;
+            }
+            if (uiMode.value === "transfer" && logMouse(x, y, down)) {
+              focusNode(hitFocusable(x, y));
+              break;
+            }
           }
         }
         // 悬停聚焦始终跟随指针（点击 press 由宿主注入 CIRCLE 完成，不再
@@ -185,6 +203,10 @@ export default () => {
       case "scroll": {
         if (popupOpen()) {
           popupWheel(ev.dy ?? 0);
+          break;
+        }
+        if (settingsOpen()) {
+          modalWheel(ev.dy ?? 0);
           break;
         }
         const region =
@@ -242,6 +264,8 @@ export default () => {
       </View>
       {/* 下拉弹层（Portal 全屏遮罩，同屏只开一个） */}
       <PopupLayer />
+      {/* "应用配置"设置模态弹窗（Portal 全屏遮罩，草稿模式） */}
+      <SettingsModal />
     </View>
   );
 };

@@ -649,22 +649,25 @@ export function exportConfig(): void {
   reportCfgResult(raw, "settings.exportDone", "settings.exportCanceled");
 }
 
-/** 配置导入（原生打开面板）→ 归一化 → 灌入 → 立即回写。 */
-export function importConfig(): void {
-  if (!comAvailable) return;
+/** 配置导入（原生打开面板）→ 归一化 → 灌入 → 立即回写。
+ *  返回是否导入成功（"应用配置"弹窗据此重同步草稿，SPEC §3.8）。 */
+export function importConfig(): boolean {
+  if (!comAvailable) return false;
   const raw = com!.cfgImport();
   const parsed = parseCfgResult(raw);
   if (!parsed.ok) {
     if (!parsed.canceled) sysMsg(`${t("settings.importFailed")}: ${parsed.msg ?? ""}`);
     else sysMsg(t("settings.importCanceled"));
-    return;
+    return false;
   }
   try {
     applyConfig(normalizeConfig(JSON.parse(parsed.json ?? "{}")));
     persistNow();
     sysMsg(t("settings.importDone"));
+    return true;
   } catch (err) {
     sysMsg(`${t("settings.importFailed")}: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
   }
 }
 

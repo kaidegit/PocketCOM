@@ -19,13 +19,13 @@ import {
   type SelRect,
   type TextFieldHandle,
 } from "./widgets";
-import { theme, themeMode, type ThemeMode } from "./theme";
-import { locale, t, type Locale } from "./i18n";
+import { theme } from "./theme";
+import { t } from "./i18n";
 import { PANEL_FOOTER_H, PANEL_HEADER_H, PANEL_W, viewportSize } from "./layout";
 import { onWheel } from "./wheel";
 import { setActiveField } from "./fields";
+import { openSettingsModal } from "./settings-modal";
 import {
-  applyLogFormat,
   baud,
   clientList,
   closeConnection,
@@ -33,10 +33,7 @@ import {
   connType,
   dataBits,
   dtr,
-  exportConfig,
-  fontSize,
   flowControl,
-  importConfig,
   kickClient,
   mcpEnabled,
   mcpState,
@@ -48,10 +45,8 @@ import {
   ports,
   refreshPorts,
   rts,
-  scrollbackLines,
   session,
   setConnType,
-  setScrollbackLines,
   setUiMode,
   stopBits,
   tcpAutoReconnect,
@@ -68,7 +63,6 @@ import {
   wsUrl,
   comAvailable,
 } from "./session";
-import { applyLocale } from "./locale";
 import { getSvc } from "./svc";
 
 // ---------------------------------------------------------------------------
@@ -265,7 +259,7 @@ const layoutInfo = computed(() => {
     put("wsProtocols", FIELD_H, BLOCK_GAP);
     put("wsReconnect", CHECK_H, withReconnect.value ? 0 : SECTION_GAP);
   } else if (connType.value === "loopback") {
-    // 回环：无参数块，直接落到下方通用设置区
+    // 回环：无参数块，直接落到模式开关区
   }
   if (withReconnect.value) {
     put("reconnectSec", CUSTOM_H, SECTION_GAP);
@@ -281,12 +275,6 @@ const layoutInfo = computed(() => {
       put("mcpHint", 16, SECTION_GAP);
     }
   }
-  put("div3", 1, SECTION_GAP);
-  put("language", FIELD_H, BLOCK_GAP);
-  put("theme", FIELD_H, BLOCK_GAP);
-  put("fontSize", FIELD_H, BLOCK_GAP);
-  put("scrollback", FIELD_H, BLOCK_GAP);
-  put("cfgBtns", 30, 0);
   return { top, total: y + PAD_BOTTOM };
 });
 
@@ -596,113 +584,14 @@ export function LeftPanel() {
             </View>
           ) : null}
 
-          {/* 分隔线 */}
-          <View class="absolute" style={{ insetT: top("div3"), insetL: PAD_X, width: CONTENT_W, height: 1 }}>
-            <Hairline />
-          </View>
-
-          {/* 语言 */}
-          <View class="absolute" style={{ insetT: top("language"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
-            <FieldLabel text={() => t("settings.language")} />
-            <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
-              <Select
-                display={() => t(`settings.langName.${locale.value}`)}
-                value={() => locale.value}
-                options={() => [
-                  { value: "zh-CN", label: t("settings.langName.zh-CN") },
-                  { value: "en", label: t("settings.langName.en") },
-                ]}
-                onPick={(v) => {
-                  applyLocale(v as Locale);
-                }}
-                anchor={anchor("language", PAD_X, CONTENT_W)}
-              />
-            </View>
-          </View>
-
-          {/* 主题（三态，跟随系统经宿主 appearance 事件） */}
-          <View class="absolute" style={{ insetT: top("theme"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
-            <FieldLabel text={() => t("settings.theme")} />
-            <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
-              <Select
-                display={() =>
-                  themeMode.value === "light"
-                    ? t("settings.themeLight")
-                    : themeMode.value === "system"
-                      ? t("settings.themeSystem")
-                      : t("settings.themeDark")
-                }
-                value={() => themeMode.value}
-                options={() => [
-                  { value: "light", label: t("settings.themeLight") },
-                  { value: "dark", label: t("settings.themeDark") },
-                  { value: "system", label: t("settings.themeSystem") },
-                ]}
-                onPick={(v) => {
-                  themeMode.value = v as ThemeMode;
-                }}
-                anchor={anchor("theme", PAD_X, CONTENT_W)}
-              />
-            </View>
-          </View>
-
-          {/* 字号（收发区 mono 字号，三档） */}
-          <View class="absolute" style={{ insetT: top("fontSize"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
-            <FieldLabel text={() => t("settings.fontSize")} />
-            <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
-              <Select
-                display={() =>
-                  fontSize.value === 12
-                    ? t("settings.fontSizeSmall")
-                    : fontSize.value === 16
-                      ? t("settings.fontSizeLarge")
-                      : t("settings.fontSizeMedium")
-                }
-                value={() => String(fontSize.value)}
-                options={() => [
-                  { value: "12", label: t("settings.fontSizeSmall") },
-                  { value: "14", label: t("settings.fontSizeMedium") },
-                  { value: "16", label: t("settings.fontSizeLarge") },
-                ]}
-                onPick={(v) => {
-                  fontSize.value = Number(v) as 12 | 14 | 16;
-                  applyLogFormat();
-                }}
-                anchor={anchor("fontSize", PAD_X, CONTENT_W)}
-              />
-            </View>
-          </View>
-
-          {/* 终端回滚行数（0–100000，修改即时生效，SPEC §3.4） */}
-          <View class="absolute" style={{ insetT: top("scrollback"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
-            <FieldLabel text={() => t("settings.scrollbackLines")} />
-            <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
-              <TextField
-                initial={String(scrollbackLines.value)}
-                selRegion={fieldRegion(top("scrollback"))}
-                onEnter={(h) => {
-                  const n = Number.parseInt(h.text().trim(), 10);
-                  setScrollbackLines(Number.isFinite(n) ? n : 9999);
-                }}
-              />
-            </View>
-          </View>
-
-          {/* 配置导出 / 导入 */}
-          <View class="absolute flex-row gap-2" style={{ insetT: top("cfgBtns"), insetL: PAD_X, width: CONTENT_W, height: 30 }}>
-            <View class="flex-1" style={{ height: 30 }}>
-              <Btn width={PAIR_W} height={30} label={() => t("settings.export")} onPress={exportConfig} />
-            </View>
-            <View style={{ width: PAIR_W, height: 30 }}>
-              <Btn width={PAIR_W} height={30} label={() => t("settings.import")} onPress={importConfig} />
-            </View>
-          </View>
+          {/* 通用设置（语言/主题/字号/回滚行数/导入导出）在"应用配置"模态弹窗
+              （app/settings-modal.tsx），入口为页脚按钮，SPEC §3.1/§3.8 */}
         </View>
         <Scrollbar scroll={() => panelScroll.value} total={() => layoutInfo.value.total} viewH={viewH} />
       </View>
       <Hairline />
 
-      {/* 页脚（固定）：打开/关闭 + 状态灯 */}
+      {/* 页脚（固定）：打开/关闭 + 应用配置（设置弹窗入口）+ 状态灯 */}
       <View class="relative" style={{ height: PANEL_FOOTER_H - 1 }}>
         <View class="absolute" style={{ insetL: PAD_X, insetR: PAD_X, insetT: 10, height: 30 }}>
           <Btn
@@ -722,7 +611,10 @@ export function LeftPanel() {
             onPress={toggleOpen}
           />
         </View>
-        <View class="absolute flex-row items-center gap-2" style={{ insetL: PAD_X, insetT: 48, height: 16 }}>
+        <View class="absolute" style={{ insetL: PAD_X, insetR: PAD_X, insetT: 44, height: 30 }}>
+          <Btn width={CONTENT_W} height={30} label={() => t("settings.open")} onPress={openSettingsModal} />
+        </View>
+        <View class="absolute flex-row items-center gap-2" style={{ insetL: PAD_X, insetT: 82, height: 16 }}>
           <StatusDot color={stateColor} size={8} />
           <Text class="text-xs" style={{ textColor: stateColor(), lineHeight: 16 }}>
             {t(`conn.status.${connState.value.toLowerCase()}`)}

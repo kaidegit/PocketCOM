@@ -66,6 +66,7 @@ plan 派生 flags（`--app/--title/--viewport/--density/--fixed/--native-text/
 | `--screenshot` | `PATH@T` | 第 T tick 导出窗口 PNG（可重复） |
 | `--quit-after` | `N` | `ticks >= N` 后退出并打印收据 |
 | `--announce-ready` | （无值） | 首个绘制帧打印 `READY <epoch_ms>`（冷启动基准） |
+| `--no-native-mouse-keyboard` | （无值） | 丢弃原生鼠标/滚轮/键盘事件（不发 svc 行），仅脚本 `--mouse/--click/--wheel/--key/--type` 可注入输入 |
 
 ### --mouse 与拖拽
 
@@ -96,6 +97,16 @@ plan 派生 flags（`--app/--title/--viewport/--density/--fixed/--native-text/
 app 按最近指针位置把 DY 路由到 面板/日志/终端 三区之一，弹层打开时滚弹层），
 再发 `{"t":"scroll","dy":DY}`。DY 单位逻辑像素；面板/日志区公式为
 `scroll -= dy`，即 **DY 为负 = 内容向下滚**，与真实滚轮的像素增量同号。
+
+### --no-native-mouse-keyboard
+
+脚本化 e2e **必加**：丢弃全部原生输入事件——鼠标 down/up/move/scroll 与键盘
+（命名键、cmd 和弦、Ctrl 和弦、物理键入 insertText、IME、cmd+v 粘贴）均不
+产生 svc 行，输入只剩脚本注入通道。不加时，窗口上方的物理鼠标会持续 hover
+抢焦、真实点击会开关弹层、敲键盘会打进正在编辑的字段——脚本事件与真实事件
+走同一条 svc FIFO，无法区分，实测发生过"脚本刚打开的弹窗被真实点击关掉"的
+污染（svc trace 里混入 `x:637.5…` 一类小数坐标的 mouse 行即物理鼠标）。
+脚本 `--mouse/--click/--wheel/--key/--type/--storm` 直发 svc 行，不经此门控。
 
 ### --key（组合键/和弦）
 
@@ -178,11 +189,13 @@ NAME → 按钮映射：
   connect（bun TCP echo）→ send → read 前缀断言 → force → disconnect →
   config 白名单 → 会话 DELETE；门控经 `--click` 注入，见下）。
 - **回环连接类型**（SPEC §3.2，无硬件 e2e 首选）：`--click 136,91@60`（类型
-  下拉）→ `--click 136,256@120`（弹层第 6 项"回环"）→ `--click 136,594@180`
+  下拉）→ `--click 136,256@120`（弹层第 6 项"回环"）→ `--click 136,559@180`
   （页脚打开，同步 CONNECTED）→ 切终端后 `--type` 键入直发回显（Rx=Tx 计数
   对称）。注意回环无参数块，选中后 mode SegCtrl 上移至块 top=81（控件中心
   y=162），MCP 门控配方的 mode 坐标仅适用默认串口布局；MCP `connect` 亦支持
   `type:"loopback"`（`bun test host/macos/mcp/` 含 send→read 回显用例）。
+  页脚"打开"在 2026-09 设置弹窗重构后位于 (136,559)（"应用配置"按钮占
+  (136,593)，见 coords.md §4）。
 
 ## MCP 门控配方（M4，SPEC §6.1）
 
@@ -213,7 +226,12 @@ NAME → 按钮映射：
    就是追加；且成功连接会把字段内容快照回写配置（cfgWrite）——多轮脚本跑完
    字段就累积成 `127.0.0.1127.0.0.…`。每次跑前 `echo '{}' > $POCKETCOM_CONFIG`
    即可；`--type` 本身每轮只投递一次 `ch` 行（svc 队列 drain 语义，无重投）。
-6. **`screencapture` 报 `could not create image from window` / 全屏截图只剩
+6. **物理鼠标/键盘污染脚本运行**：svc trace 里出现小数坐标的 mouse 行
+   （如 `x:637.53`）即物理鼠标（脚本注入全是整数）。轻则 hover 抢焦把脚本
+   点击的目标焦点偷走，重则真实点击/按键把脚本刚打开的弹层关掉、往正在
+   编辑的字段里打入字符。e2e 一律加 `--no-native-mouse-keyboard`（见输入
+   flags 节）。
+7. **`screencapture` 报 `could not create image from window` / 全屏截图只剩
    壁纸**：运行会话的 TCC 责任进程（终端 app、Lody.app、sshd 等）没有
    "屏幕录制"权限，或显示器休眠/锁屏。TCC 按**拉起进程树的责任 app** 授权，
    与"自进程窗口免授权"不冲突的前提是从已授权的终端直接跑；远程 agent 会话

@@ -135,6 +135,10 @@
     "bufferOverflow": "缓冲溢出，已丢弃 {n} 帧"
   },
   "settings": {
+    "open": "应用配置",
+    "title": "应用配置",
+    "apply": "应用",
+    "cancel": "取消",
     "language": "语言",
     "theme": "主题",
     "fontSize": "字号",

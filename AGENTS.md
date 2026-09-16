@@ -28,11 +28,16 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 
 ```
 app/            # Vue Vapor 组件与页面状态（仅渲染 + 输入），pocket.json manifest 也在此
-                #   app.tsx 主界面/onFrame 分发 + 弹层挂载（终端模式下键盘/粘贴直发、
+                #   app.tsx 主界面/onFrame 分发 + 弹层/设置弹窗挂载（终端模式下键盘/粘贴直发、
                 #   终端区/文本域/日志区鼠标选区与 Cmd+C 复制路由；右键路由——终端有
-                #   选区时按下即复制、收发模式接收区弹复制/全选菜单）；panel.tsx 左配置
+                #   选区时按下即复制、收发模式接收区弹复制/全选菜单；浮层门控
+                #   overlayOpen = 下拉弹层 ∪ 设置弹窗）；panel.tsx 左配置
                 #   面板（layoutInfo 布局表：absolute 块定位 + 弹层锚点 + 滚动总高 +
-                #   文本框选区命中区，四合一；块集合随连接类型/客户端列表动态伸缩）；
+                #   文本框选区命中区，四合一；块集合随连接类型/客户端列表动态伸缩；
+                #   页脚"应用配置"按钮 = 设置弹窗入口）；settings-modal.tsx "应用配置"
+                #   模态弹窗（草稿模式：打开快照、应用一次性写回、取消/遮罩/Escape
+                #   丢弃；语言/主题/字号/回滚行数/导入导出，导入成功重同步草稿；
+                #   settings-modal-layout.ts 为其纯几何，headless 可测）；
                 #   transfer.tsx 接收区/发送区（字号三档/发送历史/tcps 定向发送/
                 #   日志拖动选区）；terminal.tsx 终端视图（M3：字符网格按 run 合并
                 #   渲染/光标/拖拽选区/滚轮回滚，几何与选区 helper 导出给 app.tsx 命中）；
@@ -81,7 +86,8 @@ assets/i18n/    # 语言包
 assets/fonts/   # MiSans（UI）+ JetBrains Mono（mono 槽）字体文件（vendor，构建期烘焙字形）
 docs/           # 调研、移植与脚本化 UI 验证文档（e2e.md）、e2e 控件坐标速查
                 #   （coords.md：各按钮/勾选框/弹层项实测点击坐标，配复验工具
-                #   tools/coords-probe.py；改布局后重测）、MCP 服务手册（mcp.md）
+                #   tools/coords-probe.py；改布局后重测）、MCP 服务手册（mcp.md）、
+                #   D12x RT-Thread 移植方案（rtthread-d12x.md，M5 预研）
 vendor/pocketjs # PocketJS 上游（git submodule；引擎 crates 与桌面宿主来源）
 SPEC.md         # 功能规格（权威）
 ```
@@ -92,19 +98,19 @@ SPEC.md         # 功能规格（权威）
 
 前置：bun（`~/.bun/bin` 需在 PATH）；首次克隆后执行 `git submodule update --init --depth 1 && cd vendor/pocketjs && bun install`。wasm32 target 仅浏览器宿主/金样测试需要，桌面开发不必装。
 
-- 核心层单测：`bun test test/`（当前 247 例；源码在 `test/core/`、`test/bridge/` 与 `test/app/`，与源码分层分离）
+- 核心层单测：`bun test test/`（源码在 `test/core/`、`test/bridge/` 与 `test/app/`，与源码分层分离）
 - 类型检查：`npm run typecheck`（tsc --noEmit，tsconfig 严格度对齐上游，不要私自加严 flags——构建会用同一份 tsconfig 编译上游框架源码）
 - Manifest 校验：`npm run check`（= `bun vendor/pocketjs/tools/pocket.ts check --target macos-app --manifest app/pocket.json --project-root .`）
 - 构建 app bundle：`npm run build`（输出 `dist/pocketcom-main.js` + `.pak`）
 - 构建桌面宿主（fork 自 `vendor/pocketjs/hosts/desktop` + 自研 `com.*` 串口/网络/配置桥）：`cargo build --release --manifest-path host/macos/Cargo.toml`（输出 `host/macos/target/release/pocketcom-host`；首次全量编译 15–25 分钟；网络桥依赖 tungstenite(rustls)）
-- 宿主桥接单测：`cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host`（当前 47 例，测试源在 `test/host/macos/`：serial_tests.rs 参数校验/事件格式/端口过滤、tcp_tests.rs 参数校验 + 127.0.0.1 TCP 回环（监听/接入/定向/广播/踢除/关停级联）、udp_tests.rs UDP 回环、ws_tests.rs 参数校验/握手失败/子协议头、env_tests.rs 配置原子写 0600/导出剥 token（`POCKETCOM_CONFIG` 重定向路径）、main_tests.rs 调度/repaint hash/脚本 flags 解析、shot_tests.rs PNG 头校验、mcp_tests.rs HTTP 解析/401 鉴权/JSON-RPC 分发/读缓冲有界/命令往返/mcpStop 语义等，经 `#[path]` 编入宿主 crate；`--release` 复用既有 release 产物免 15–25 分钟全量重编）
+- 宿主桥接单测：`cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host`（测试源在 `test/host/macos/`：serial_tests.rs 参数校验/事件格式/端口过滤、tcp_tests.rs 参数校验 + 127.0.0.1 TCP 回环（监听/接入/定向/广播/踢除/关停级联）、udp_tests.rs UDP 回环、ws_tests.rs 参数校验/握手失败/子协议头、env_tests.rs 配置原子写 0600/导出剥 token（`POCKETCOM_CONFIG` 重定向路径）、main_tests.rs 调度/repaint hash/脚本 flags 解析（含 `--no-native-mouse-keyboard`）、shot_tests.rs PNG 头校验、mcp_tests.rs HTTP 解析/401 鉴权/JSON-RPC 分发/读缓冲有界/命令往返/mcpStop 语义等，经 `#[path]` 编入宿主 crate；`--release` 复用既有 release 产物免 15–25 分钟全量重编）
 - 宿主串口硬件回环测试（需 TX↔RX 短接的真实串口；未设 `POCKETCOM_LOOPBACK_PORT` 时自动跳过）：
   `POCKETCOM_LOOPBACK_PORT=/dev/cu.xxx POCKETCOM_LOOPBACK_BAUD=3000000 cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host com_serial::loopback -- --nocapture`
   （校验 serialList 枚举/打开/信号冒烟/回环逐字节（512B ramp、2048B 全字节域、64KiB 分块突发）/空闲 poll=None/close 语义/立即重开；波特率缺省 115200）
 - 桌面运行：`node tools/dev.mjs`（默认用 fork 产物 `host/macos/target/release/pocketcom-host`，未构建时回退 vendor 的 `pocket-desktop-host` 并警告 `com.*` 不可用；flags 取自 `.pocket/macos-app/plan.json`）
 - 打包分发：`tools/package-macos.sh`（前置 `npm run build` + `cargo build` 产物；组装 `dist/PocketCOM.app` 并打 `dist/PocketCOM-<版本>-macos-arm64.dmg`。launcher 设 `POCKETJS_DIST` 指向 `Resources/dist` 后 exec 宿主二进制，flags 从 `.pocket/macos-app/plan.json` 推导（同 dev.mjs）；`VERSION=x.y.z` 覆盖版本号。**仅 ad-hoc 签名**（未公证）：首次打开需右键→打开或 `xattr -cr`。不启用沙盒故无 entitlement；`NSLocalNetworkUsageDescription`（含 zh/en InfoPlist.strings）为未来 TCP/UDP/WS 连局域网设备的授权弹窗预留，监听 `127.0.0.1` 不触发该弹窗）
 - CI/CD：`.github/workflows/macos.yml`（macos-latest=arm64；push main/PR/tag `v*`/手动触发。跑 typecheck + check + 核心单测 + 全量构建 + 打包；产物上传 artifact，`v*` tag 额外创建 GitHub Release 附 .dmg 与 .app.zip；宿主编译用 `Swatinem/rust-cache` 缓存）
-- 脚本化 UI 验证：宿主脚本 flags（`--mouse` `--click` `--wheel` `--key` `--type` `--press` `--storm` `--screenshot` `--quit-after` `--announce-ready`；`@T` 为 60Hz 虚拟时钟 tick 序号）经 `node tools/dev.mjs -- <flags…>` 原样转发给宿主二进制（不带 `--` 行为不变）。**各参数详解、tick/坐标系、拖拽与组合键配方、截图机制与坑位见 [docs/e2e.md](docs/e2e.md)**；观测用 `POCKETCOM_TRACE=1`。本机真机 e2e 已验证：串口全链路（M1）、TCP Client 回环（M2）、`--screenshot`/`--wheel`/`--key cmd+enter`、终端模式（M3，滚轮/拖拽选区/Ctrl 控制码均可脚本注入）、MCP 全链路含终端模式门控（M4，见上）；截图为 opt-in flag，CI 不触发。
+- 脚本化 UI 验证：宿主脚本 flags（`--mouse` `--click` `--wheel` `--key` `--type` `--press` `--storm` `--screenshot` `--quit-after` `--announce-ready` `--no-native-mouse-keyboard`（丢弃原生鼠标/滚轮/键盘事件，e2e 必加以防物理输入污染）；`@T` 为 60Hz 虚拟时钟 tick 序号）经 `node tools/dev.mjs -- <flags…>` 原样转发给宿主二进制（不带 `--` 行为不变）。**各参数详解、tick/坐标系、拖拽与组合键配方、截图机制与坑位见 [docs/e2e.md](docs/e2e.md)**；观测用 `POCKETCOM_TRACE=1`。本机真机 e2e 已验证：串口全链路（M1）、TCP Client 回环（M2）、`--screenshot`/`--wheel`/`--key cmd+enter`、终端模式（M3，滚轮/拖拽选区/Ctrl 控制码均可脚本注入）、MCP 全链路含终端模式门控（M4，见上）、"应用配置"设置弹窗全链路（打开→草稿→应用/Escape/遮罩关闭，coords.md §3）；截图为 opt-in flag，CI 不触发。
 - UI 金样测试：PocketJS headless Bun host（byte-exact PNG golden，待落地）
 - MCP 集成测试：`bun test host/macos/mcp/`（前置 `npm run build` + `cargo build --release`；脚本化 MCP client 经原生 fetch 走真实宿主+guest 全链路：401 鉴权 → initialize 会话 → tools/list → connect（bun TCP echo + loopback 回环）→ send → read 前缀断言（`[RX]`/`[SYS]`/i18n 手动前缀）→ force 语义 → disconnect → config 白名单（token 不可触）→ 会话 DELETE；终端模式门控（SPEC §6.1）经 `--click` 脚本切模式验证停服/重启。产物缺失自动跳过，CI 在前置步骤产出两者）。同目录 `flood.test.ts` 为大流量 e2e：loopback + MCP 灌入 400 条小帧 + 6×48KiB 突发（超环形缓冲 256KiB 触发逐出），断言收/发字节对称、洪峰后连接与 MCP 存活、渲染收据出帧，并落 3 张窗口截图供检查接收框（无屏幕录制权限的会话里截图断言降级为警告跳过，见 docs/e2e.md 常见坑 6）
 - RT-Thread 固件构建（预留）：`host/rtthread/` 按 RT-Thread package 规范组织（`SConscript` + `Kconfig`），在固件工程中经 `scons` 编译；前期可用 QEMU（如 `qemu-vexpress-a9` BSP）验证，命令落地后更新本节。
