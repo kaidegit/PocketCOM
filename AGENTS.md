@@ -87,7 +87,8 @@ assets/fonts/   # MiSans（UI）+ JetBrains Mono（mono 槽）字体文件（ven
 docs/           # 调研、移植与脚本化 UI 验证文档（e2e.md）、e2e 控件坐标速查
                 #   （coords.md：各按钮/勾选框/弹层项实测点击坐标，配复验工具
                 #   tools/coords-probe.py；改布局后重测）、MCP 服务手册（mcp.md）、
-                #   D12x RT-Thread 移植方案（rtthread-d12x.md，M5 预研）
+                #   D12x RT-Thread 移植方案（rtthread-d12x.md，M5 预研）、性能审阅
+                #   （performance-review-2026-09-17.md；performance/ 保存原始基准数据）
 vendor/pocketjs # PocketJS 上游（git submodule；引擎 crates 与桌面宿主来源）
 SPEC.md         # 功能规格（权威）
 ```
@@ -99,6 +100,7 @@ SPEC.md         # 功能规格（权威）
 前置：bun（`~/.bun/bin` 需在 PATH）；首次克隆后执行 `git submodule update --init --depth 1 && cd vendor/pocketjs && bun install`。wasm32 target 仅浏览器宿主/金样测试需要，桌面开发不必装。
 
 - 核心层单测：`bun test test/`（源码在 `test/core/`、`test/bridge/` 与 `test/app/`，与源码分层分离）
+- 核心性能复测：`bun tools/perf-audit.ts`；桌面 QuickJS 基准用 `tools/perf-quickjs.c` 链接既有 release 引擎库，命令与测量边界见 [性能审阅](docs/performance-review-2026-09-17.md)。只测核心层，不代表完整 UI 帧耗时。
 - 类型检查：`npm run typecheck`（tsc --noEmit，tsconfig 严格度对齐上游，不要私自加严 flags——构建会用同一份 tsconfig 编译上游框架源码）
 - Manifest 校验：`npm run check`（= `bun vendor/pocketjs/tools/pocket.ts check --target macos-app --manifest app/pocket.json --project-root .`）
 - 构建 app bundle：`npm run build`（输出 `dist/pocketcom-main.js` + `.pak`）
