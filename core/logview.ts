@@ -3,15 +3,17 @@
  * - 数据源是 core 消息总线（单一事实源）：每帧 sync() 从总线环形缓冲
  *   peek 出 id > lastSeenId 的新消息；暂停 = 不 sync，恢复后自然追上
  *   （缓冲有界，追不上即丢最旧——sync 按 id 断档返回 lost，由 app 层记 sys 提示）。
- * - 显示行有界（默认 500 行），溢出丢最旧。
+ * - 显示行有界（默认 500 行），原始历史另受 256 KiB 预算限制。
  * - hex/escape/timestamp/color 切换时用保留的最近消息全量重排版；
  *   color（ANSI 颜色转义）开启时内容剥离 SGR 序列并产出逐字符前景色
- *   （row.fg，编码同 core/term.ts），扫描状态从 entries 头部重放。
+ *   （row.fg，编码同 core/term.ts），扫描状态从历史头检查点重放。
  * - 自动换行由注入的测量函数完成（app 侧 getOps().measureText），
  *   核心层保持纯 TS：无测量函数 = 不换行。
  */
 import type { MessageBus } from "./bus";
-import type { Message, MessageDir } from "./message";
+import { DEFAULT_MAX_BYTES, type Message, type MessageDir } from "./message";
+import { utf8Decode } from "./codec";
+import { ParamError } from "./errors";
 import { TERM_DEFAULT_COLOR } from "./term";
 import { AnsiFgScanner } from "./ansicolor";
 import { formatLogParts, formatTimestamp, type LogFormatOptions, type LogLineLabels } from "./format";
@@ -19,6 +21,8 @@ import { formatLogParts, formatTimestamp, type LogFormatOptions, type LogLineLab
 export interface LogViewOptions {
   /** 显示行上限，默认 500（SPEC §3.3：可视窗口，数据本体在总线/环形缓冲） */
   maxRows?: number;
+  /** 原始历史字节预算，默认 256 KiB（含隐藏 TX）。 */
+  maxBytes?: number;
   /** 是否显示 TX 行（SPEC §3.5：MCP server 未运行时接收区只显示收与
    *  系统事件，TX 行整行隐藏）；默认 true */
   showTx?: boolean;
@@ -89,6 +93,14 @@ export function splitHardLines(text: string): string[] {
 export class LogView {
   rows: LogRow[] = [];
   private entries: Message[] = [];
+  private retainedBytes = 0;
+  private readonly maxBytes: number;
+  private headAll = new AnsiFgScanner();
+  private headRx = new AnsiFgScanner();
+  private colorize = new AnsiFgScanner();
+  private deferred = false;
+  private dirty = false;
+  private layoutWidth = 0;
   private lastMsgId = 0;
   private rowSeq = 0;
   private format: LogFormatOptions;
@@ -104,14 +116,32 @@ export class LogView {
     this.labels = labels;
     this.showTx = opts.showTx ?? true;
     this.maxRows = opts.maxRows ?? 500;
+    this.maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
+    if (!Number.isInteger(this.maxRows) || this.maxRows <= 0 || !Number.isFinite(this.maxBytes) || this.maxBytes <= 0) {
+      throw new ParamError("PARAM_INVALID", "log history limits must be positive (maxRows integer)");
+    }
     this.measure = opts.measure;
     this.wrapWidth = opts.wrapWidth;
+    this.layoutWidth = this.wrapWidth?.() ?? 0;
   }
 
   /** 显示开关或前缀文案变化：全量重排版保留的消息。 */
   setFormat(format: LogFormatOptions, labels: LogLineLabels): void {
-    this.format = format;
-    this.labels = labels;
+    this.configure(format, labels);
+  }
+
+  /** 一次提交显示设置；只有度量语义改变才清字符宽度缓存。 */
+  configure(format: LogFormatOptions, labels: LogLineLabels,
+    opts: { showTx?: boolean; remeasure?: boolean } = {}): void {
+    const changed = (Object.keys(format) as (keyof LogFormatOptions)[]).some(k => format[k] !== this.format[k])
+      || (Object.keys(labels) as (keyof LogLineLabels)[]).some(k => labels[k] !== this.labels[k])
+      || (opts.showTx !== undefined && opts.showTx !== this.showTx)
+      || opts.remeasure || this.layoutWidth !== (this.wrapWidth?.() ?? 0);
+    if (!changed) return;
+    this.format = { ...format };
+    this.labels = { ...labels };
+    if (opts.showTx !== undefined) this.showTx = opts.showTx;
+    if (opts.remeasure) this.widthCache.clear();
     this.rebuild();
   }
 
@@ -135,33 +165,43 @@ export class LogView {
   }
 
   /**
-   * 从总线同步新消息（每帧调用）。返回本次新增行数 added 与
+   * 从总线同步新消息（每帧调用）。返回行数净增量 added、内容变化 changed 与
    * 因环形缓冲裁剪而未能显示的帧数 lost（id 断档，如暂停期间流量
    * 超过缓冲容量）。
    * 不清空已见 id：清屏用 clear()。
    */
-  sync(bus: MessageBus): { added: number; lost: number } {
-    const pending: Message[] = [];
-    for (const msg of bus.buffer.peek()) {
-      if (msg.id > this.lastMsgId) pending.push(msg);
-    }
-    if (pending.length === 0) return { added: 0, lost: 0 };
-    // 首条新消息 id 前出现断档 = 有帧在被显示前就被环形缓冲裁掉（真实丢帧）
-    const lost = Math.max(0, pending[0]!.id - this.lastMsgId - 1);
+  sync(bus: MessageBus, visible = true): { added: number; lost: number; changed: boolean } {
+    this.deferred = !visible;
     const before = this.rows.length;
-    for (const msg of pending) {
-      this.lastMsgId = Math.max(this.lastMsgId, msg.id);
+    const first = this.rows[0];
+    const last = this.rows[this.rows.length - 1];
+    let lost = 0;
+    let seen = false;
+    for (const msg of bus.buffer.peek()) {
+      if (msg.id <= this.lastMsgId) continue;
+      if (!seen) lost = Math.max(0, msg.id - this.lastMsgId - 1);
+      seen = true;
+      this.lastMsgId = msg.id;
       this.entries.push(msg);
+      this.retainedBytes += msg.payload.byteLength;
+      this.trim();
+      if (this.deferred || this.dirty || msg.payload.byteLength > this.maxBytes) this.dirty = true;
+      else this.appendRows(msg);
     }
-    this.trim();
-    this.rebuild();
-    return { added: this.rows.length - before, lost };
+    if (visible && this.dirty) this.rebuild();
+    const changed = visible && (first !== this.rows[0] || last !== this.rows[this.rows.length - 1]);
+    return { added: this.rows.length - before, lost, changed };
   }
 
   /** 清屏：丢全部行；upToMsgId 通常为当前 lastMsgId，防止旧消息重新出现。 */
   clear(upToMsgId?: number): void {
     this.rows = [];
     this.entries = [];
+    this.retainedBytes = 0;
+    this.headAll = new AnsiFgScanner();
+    this.headRx = new AnsiFgScanner();
+    this.colorize = new AnsiFgScanner();
+    this.dirty = false;
     this.widthCache.clear();
     if (upToMsgId !== undefined) this.lastMsgId = Math.max(this.lastMsgId, upToMsgId);
   }
@@ -171,48 +211,68 @@ export class LogView {
   }
 
   private trim(): void {
-    while (this.entries.length > this.maxRows) this.entries.shift();
+    let count = 0;
+    while (this.entries.length - count > this.maxRows || this.retainedBytes > this.maxBytes) {
+      const msg = this.entries[count++]!;
+      this.retainedBytes -= msg.payload.byteLength;
+      if (msg.dir !== "sys") {
+        const text = utf8Decode(msg.payload);
+        this.headAll.feed(text, false);
+        if (msg.dir !== "tx") this.headRx.feed(text, false);
+      }
+    }
+    if (count) {
+      this.entries.splice(0, count);
+      const oldest = this.entries[0]?.id ?? Infinity;
+      this.rows = this.rows.filter(row => row.msgId >= oldest);
+    }
   }
 
   private rebuild(): void {
-    const rows: LogRow[] = [];
-    // 颜色转义（SPEC §3.3）：扫描器状态（当前前景色 + 帧尾截断序列）从
-    // entries 头部重放，重排版确定性一致；sys 行不参与（UI 生成文本）。
-    const colorize = this.format.color ? new AnsiFgScanner() : null;
-    for (const msg of this.entries) {
-      if (!this.showTx && msg.dir === "tx") continue;
-      const { ts, prefix, content } = formatLogParts(msg, this.format, this.labels);
-      const prefixKind: LogRow["prefixKind"] =
-        msg.dir === "rx" ? "rx" : msg.dir === "sys" ? "sys" : msg.source === "mcp" ? "tx-mcp" : "tx-manual";
-      const head = prefix === "" ? ts : `${ts}${prefix} `;
-      // 前缀在行内的真实下标：时间戳段 `[YYYY-MM-DD HH:MM:SS.mmm] ` 恒为
-      // formatTimestamp 长度 + 3（左右括号 + 分隔空格），与拼行一致
-      const prefixAt = this.format.timestamp && prefix !== "" ? formatTimestamp(msg.ts).length + 3 : 0;
-      const parse = colorize !== null && msg.dir !== "sys" ? colorize.feed(content) : null;
-      const line = head + (parse !== null ? parse.plain : content);
-      let fg: Uint32Array | null = null;
-      if (parse !== null) {
-        // 时间戳/前缀区恒默认色（渲染层按前缀类别着色），内容区用解析结果
-        fg = new Uint32Array(line.length).fill(TERM_DEFAULT_COLOR);
-        fg.set(parse.fg, head.length);
-      }
-      let first = true;
-      // 先按硬换行拆行（帧内嵌 \r\n/\n/\r），再对每条逻辑行做宽度折行；
-      // 拆分/折行出的后续行均无方向前缀（SPEC §3.3/§3.7）
-      for (const piece of splitFgLines(line, fg)) {
-        for (const chunk of this.wrap(piece.text, piece.fg)) {
-          rows.push({
-            key: this.rowSeq++,
-            msgId: msg.id,
-            dir: msg.dir,
-            prefix: first ? prefix : "",
-            prefixAt: first ? prefixAt : 0,
-            prefixKind: first ? prefixKind : "",
-            text: chunk.text,
-            fg: chunk.fg,
-          });
-          first = false;
-        }
+    if (this.deferred) { this.dirty = true; return; }
+    this.rows = [];
+    this.layoutWidth = this.wrapWidth?.() ?? 0;
+    this.colorize = (this.showTx ? this.headAll : this.headRx).clone();
+    for (const msg of this.entries) this.appendRows(msg);
+    this.dirty = false;
+  }
+
+  private appendRows(msg: Message): void {
+    if (!this.showTx && msg.dir === "tx") return;
+    const rows = this.rows;
+    const colorize = this.format.color ? this.colorize : null;
+    const { ts, prefix, content } = formatLogParts(msg, this.format, this.labels);
+    const prefixKind: LogRow["prefixKind"] =
+      msg.dir === "rx" ? "rx" : msg.dir === "sys" ? "sys" : msg.source === "mcp" ? "tx-mcp" : "tx-manual";
+    const head = prefix === "" ? ts : `${ts}${prefix} `;
+    // 前缀在行内的真实下标：时间戳段 `[YYYY-MM-DD HH:MM:SS.mmm] ` 恒为
+    // formatTimestamp 长度 + 3（左右括号 + 分隔空格），与拼行一致
+    const prefixAt = this.format.timestamp && prefix !== "" ? formatTimestamp(msg.ts).length + 3 : 0;
+    const parse = colorize !== null && msg.dir !== "sys"
+      ? (this.format.hex || this.format.escape ? new AnsiFgScanner() : colorize).feed(content) : null;
+    const line = head + (parse !== null ? parse.plain : content);
+    let fg: Uint32Array | null = null;
+    if (parse !== null) {
+      // 时间戳/前缀区恒默认色（渲染层按前缀类别着色），内容区用解析结果
+      fg = new Uint32Array(line.length).fill(TERM_DEFAULT_COLOR);
+      fg.set(parse.fg, head.length);
+    }
+    let first = true;
+    // 先按硬换行拆行（帧内嵌 \r\n/\n/\r），再对每条逻辑行做宽度折行；
+    // 拆分/折行出的后续行均无方向前缀（SPEC §3.3/§3.7）
+    for (const piece of splitFgLines(line, fg)) {
+      for (const chunk of this.wrap(piece.text, piece.fg)) {
+        rows.push({
+          key: this.rowSeq++,
+          msgId: msg.id,
+          dir: msg.dir,
+          prefix: first ? prefix : "",
+          prefixAt: first ? prefixAt : 0,
+          prefixKind: first ? prefixKind : "",
+          text: chunk.text,
+          fg: chunk.fg,
+        });
+        first = false;
       }
     }
     // 行数上限兜底（换行可能使行数超过消息数上限）

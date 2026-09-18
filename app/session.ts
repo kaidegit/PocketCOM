@@ -411,13 +411,14 @@ export const logView = new LogView(
 
 /** 显示开关/语言/字号变化：全量重排版并通知渲染。TX 行显隐随 MCP server
  *  运行态（SPEC §3.5：未运行时接收区只显示收与系统事件）。 */
+let measuredLogFontSize = fontSize.value;
 export function applyLogFormat(): void {
-  logView.remeasure();
-  logView.setShowTx(mcpState.value.on);
-  logView.setFormat(
+  logView.configure(
     { hex: rxHex.value, escape: rxEscape.value, timestamp: rxTimestamp.value, color: rxColor.value },
     logLabels(),
+    { showTx: mcpState.value.on, remeasure: measuredLogFontSize !== fontSize.value },
   );
+  measuredLogFontSize = fontSize.value;
   logVersion.value++;
 }
 
@@ -841,8 +842,8 @@ export function pumpSession(nowMs: number): void {
     termVersion.value++;
   }
   if (!rxPaused.value) {
-    const { added, lost } = logView.sync(bus);
-    if (added > 0) logVersion.value++;
+    const { changed, lost } = logView.sync(bus, uiMode.value === "transfer");
+    if (changed) logVersion.value++;
     // 环形缓冲裁掉了尚未显示的帧（如暂停期间流量超容量）：记一条 sys 提示
     if (lost > 0) sysMsg(t("sys.bufferOverflow", { n: lost }));
   }

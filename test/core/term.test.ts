@@ -444,3 +444,19 @@ describe("杂项序列", () => {
     expect(lineText(t, 2)).toBe("");
   });
 });
+
+test("scrollback ring preserves ordering across wrap, resize and clear", () => {
+  const t = new Terminal({ cols: 8, rows: 2, scrollback: 3 });
+  t.feedString("0\r\n1\r\n2\r\n3\r\n4\r\n5\r\n");
+  const history = () => Array.from({ length: t.scrollbackCount }, (_, i) => t.lineAt(i)!.text.trim());
+  expect(history()).toEqual(["2", "3", "4"]);
+  t.setScrollback(2);
+  expect(history()).toEqual(["3", "4"]);
+  t.setScrollback(4);
+  t.feedString("6\r\n7\r\n8\r\n");
+  expect(history()).toEqual(["4", "5", "6", "7"]);
+  t.feedString("\x1b[3J");
+  expect(history()).toEqual([]);
+  t.feedString("9\r\n");
+  expect(history()).toEqual([""]); // ED 3 also erases the visible screen
+});

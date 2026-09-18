@@ -47,12 +47,12 @@ describe("LogView", () => {
     feed(bus, { payload: strToBytes("1") });
     feed(bus, { payload: strToBytes("2") });
     feed(bus, { payload: strToBytes("3") }); // 逐出 id 1，未被显示
-    expect(lv.sync(bus)).toEqual({ added: 2, lost: 1 });
-    expect(lv.sync(bus)).toEqual({ added: 0, lost: 0 });
+    expect(lv.sync(bus)).toEqual({ added: 2, lost: 1, changed: true });
+    expect(lv.sync(bus)).toEqual({ added: 0, lost: 0, changed: false });
     feed(bus, { payload: strToBytes("4") }); // 缓冲 [3,4]
     feed(bus, { payload: strToBytes("5") }); // 缓冲 [4,5]
     // lastMsgId=3，首条新消息 id=4 连续 → 无丢帧
-    expect(lv.sync(bus)).toEqual({ added: 2, lost: 0 });
+    expect(lv.sync(bus)).toEqual({ added: 2, lost: 0, changed: true });
   });
 
   test("tx 两类前缀 + sys 前缀", () => {
@@ -325,4 +325,99 @@ describe("LogView", () => {
     expect(lv.rows[0]!.text).toBe("<= \x1b[31mr");
     expect(lv.rows.every((r) => r.fg === null)).toBe(true);
   });
+});
+
+describe("incremental log history", () => {
+  test("saturation reports changes and preserves surviving row identities", () => {
+    const bus = new MessageBus();
+    const lv = new LogView(FORMAT, LABELS, { maxRows: 3 });
+    for (const text of ["a", "b", "c"]) { feed(bus, { payload: strToBytes(text) }); lv.sync(bus); }
+    const survivor = lv.rows[1];
+    feed(bus, { payload: strToBytes("LATEST") });
+    expect(lv.sync(bus)).toEqual({ added: 0, lost: 0, changed: true });
+    expect(lv.rows[0]).toBe(survivor);
+    expect(lv.rows[2]!.text).toBe("<= LATEST");
+    expect(lv.sync(bus).changed).toBe(false);
+  });
+
+  test("byte eviction can reduce rows and still notifies; hidden TX alone does not", () => {
+    const bus = new MessageBus();
+    const lv = new LogView(FORMAT, LABELS, { maxBytes: 6, showTx: false });
+    feed(bus, { payload: strToBytes("a\nb\nc") });
+    lv.sync(bus);
+    feed(bus, { payload: strToBytes("xy") });
+    expect(lv.sync(bus)).toEqual({ added: -2, lost: 0, changed: true });
+    feed(bus, { dir: "tx", payload: strToBytes("z") });
+    expect(lv.sync(bus).changed).toBe(false);
+    lv.setFormat({ ...FORMAT, hex: true }, LABELS);
+    expect(lv.rows.map(r => r.text)).toEqual(["<= 78 79"]);
+  });
+
+  test("ANSI head checkpoint survives eviction, split CSI, reflow and format toggles", () => {
+    const bus = new MessageBus();
+    const lv = new LogView({ ...FORMAT, color: true }, { ...LABELS, rx: "" }, { maxRows: 2 });
+    for (const text of ["\x1b[3", "1mred", "next"]) {
+      feed(bus, { payload: strToBytes(text) }); lv.sync(bus);
+    }
+    const check = () => {
+      expect(lv.rows.map(r => r.text)).toEqual(["red", "next"]);
+      expect(lv.rows.every(r => [...r.fg!].every(c => c === 1))).toBe(true);
+    };
+    check(); lv.refresh(); check();
+    lv.setFormat({ ...FORMAT, hex: true }, { ...LABELS, rx: "" });
+    lv.setFormat({ ...FORMAT, color: true }, { ...LABELS, rx: "" }); check();
+  });
+
+  test("hidden history consumes without measuring; visibility catches up without new data", () => {
+    let measures = 0;
+    const bus = new MessageBus();
+    const lv = new LogView(FORMAT, LABELS, { maxBytes: 4, measure: () => { measures++; return 1; }, wrapWidth: () => 80 });
+    for (const text of ["aa", "bb", "cc"]) {
+      feed(bus, { payload: strToBytes(text) });
+      expect(lv.sync(bus, false).changed).toBe(false);
+    }
+    lv.setFormat({ ...FORMAT, timestamp: true }, LABELS);
+    expect(measures).toBe(0);
+    expect(lv.lastSeenMsgId).toBe(3);
+    expect(lv.sync(bus).changed).toBe(true);
+    expect(lv.rows.length).toBe(2);
+    expect(lv.rows[1]!.text.endsWith("cc")).toBe(true);
+  });
+
+  test("identical configuration preserves rows and width cache", () => {
+    let measures = 0;
+    const bus = new MessageBus();
+    const lv = new LogView(FORMAT, LABELS, { measure: () => { measures++; return 1; }, wrapWidth: () => 80 });
+    feed(bus, { payload: strToBytes("abc") }); lv.sync(bus);
+    const row = lv.rows[0], count = measures;
+    lv.configure({ ...FORMAT }, { ...LABELS });
+    expect(lv.rows[0]).toBe(row);
+    lv.configure({ ...FORMAT, color: true }, LABELS, { showTx: false });
+    expect(measures).toBe(count);
+    lv.configure({ ...FORMAT, color: true }, LABELS, { remeasure: true });
+    expect(measures).toBeGreaterThan(count);
+  });
+
+  test("oversize history frame is discarded whole", () => {
+    const bus = new MessageBus();
+    const lv = new LogView(FORMAT, LABELS, { maxBytes: 3 });
+    feed(bus, { payload: strToBytes("1234") }); lv.sync(bus);
+    expect(lv.rows).toEqual([]);
+    lv.refresh(); expect(lv.rows).toEqual([]);
+    feed(bus, { payload: strToBytes("ok") });
+    expect(lv.sync(bus).lost).toBe(0);
+    expect(lv.rows[0]!.text).toBe("<= ok");
+  });
+});
+
+test("ANSI checkpoint retains separate TX-visible and RX-only histories", () => {
+  const bus = new MessageBus();
+  const lv = new LogView({ ...FORMAT, color: true }, { ...LABELS, rx: "" }, { maxRows: 1, showTx: false });
+  feed(bus, { dir: "tx", payload: strToBytes("\x1b[31m") }); lv.sync(bus);
+  feed(bus, { payload: strToBytes("x") }); lv.sync(bus);
+  expect(lv.rows[0]!.fg![0]).toBe(TERM_DEFAULT_COLOR);
+  lv.setShowTx(true);
+  expect(lv.rows[0]!.fg![0]).toBe(1);
+  lv.setShowTx(false);
+  expect(lv.rows[0]!.fg![0]).toBe(TERM_DEFAULT_COLOR);
 });

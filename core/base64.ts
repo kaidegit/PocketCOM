@@ -20,38 +20,30 @@ const B64_REVERSE = ((): Int16Array => {
  * 长度非法（len % 4 !== 0）或出现字母表外字符抛 ProtocolError。
  */
 export function decodeBase64(input: string): Uint8Array {
-  // 单趟扫描：跳过空白，校验字符，统计有效长度（含 '=' 填充）。
-  let total = 0;
-  for (let i = 0; i < input.length; i++) {
-    const c = input.charCodeAt(i);
-    if (c === 0x20 || c === 0x09 || c === 0x0a || c === 0x0d) continue;
-    if (c !== 0x3d && (c > 127 || B64_REVERSE[c] < 0)) {
-      throw new ProtocolError("PROTOCOL_VIOLATION", `invalid base64 character at offset ${i}`);
-    }
-    total++;
+  // 宿主常规输入没有空白；兼容带空白的外部事件时才分配规范化字符串。
+  const text = /[ \t\r\n]/.test(input) ? input.replace(/[ \t\r\n]/g, "") : input;
+  const n = text.length;
+  if (n % 4 !== 0) {
+    throw new ProtocolError("PROTOCOL_VIOLATION", `invalid base64 length: ${n} chars`);
   }
-  if (total % 4 !== 0) {
-    throw new ProtocolError("PROTOCOL_VIOLATION", `invalid base64 length: ${total} chars`);
-  }
-  // 末尾 1~2 个 '=' 为填充；填充只能出现在末尾。
-  const last = input.length > 0 ? input.charCodeAt(input.length - 1) : 0;
-  const prev = input.length > 1 ? input.charCodeAt(input.length - 2) : 0;
-  const pad = last === 0x3d ? (prev === 0x3d ? 2 : 1) : 0;
-  const outLen = (total / 4) * 3 - pad;
-  const out = new Uint8Array(outLen);
-  let outIdx = 0;
-  let acc = 0;
-  let bits = 0;
-  for (let i = 0; i < input.length; i++) {
-    const c = input.charCodeAt(i);
-    if (c === 0x20 || c === 0x09 || c === 0x0a || c === 0x0d) continue;
-    if (c === 0x3d) break; // 填充开始即结束
-    acc = (acc << 6) | B64_REVERSE[c]!;
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      if (outIdx < outLen) out[outIdx++] = (acc >> bits) & 0xff;
+  const pad = text.endsWith("==") ? 2 : text.endsWith("=") ? 1 : 0;
+  const out = new Uint8Array(n / 4 * 3 - pad);
+  let at = 0;
+  for (let i = 0; i < n; i += 4) {
+    const a = text.charCodeAt(i), b = text.charCodeAt(i + 1);
+    const c = text.charCodeAt(i + 2), d = text.charCodeAt(i + 3);
+    const last = i + 4 === n;
+    const va = a < 128 ? B64_REVERSE[a]! : -1;
+    const vb = b < 128 ? B64_REVERSE[b]! : -1;
+    const vc = last && c === 61 && pad === 2 ? 0 : c < 128 ? B64_REVERSE[c]! : -1;
+    const vd = last && d === 61 ? 0 : d < 128 ? B64_REVERSE[d]! : -1;
+    if ((va | vb | vc | vd) < 0) {
+      throw new ProtocolError("PROTOCOL_VIOLATION", `invalid base64 quartet at offset ${i}`);
     }
+    const bits = (va << 18) | (vb << 12) | (vc << 6) | vd;
+    out[at++] = bits >> 16;
+    if (at < out.length) out[at++] = bits >> 8;
+    if (at < out.length) out[at++] = bits;
   }
   return out;
 }

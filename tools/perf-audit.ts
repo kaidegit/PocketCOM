@@ -72,7 +72,7 @@ emit({
   note: "Core only. Constant 8px measurement, 640px wrap width; not native UI frame timing.",
 });
 
-// Demonstrate the production app's `added > 0` invalidation failure at 500 rows.
+// Verify content invalidation independently from net row growth at saturation.
 {
   const { bus, view } = logFixture(500, 8, { wrap: false });
   const before = view.rows[view.rows.length - 1]!;
@@ -82,7 +82,7 @@ emit({
   if (after.text !== "LATEST") throw new Error("probe did not deliver latest row");
   emit({ type: "observation", name: "saturated-log-invalidation", rows: view.rows.length,
     ...result, beforeMsgId: before.msgId, afterMsgId: after.msgId,
-    contentsChanged: before.text !== after.text, appWouldBumpLogVersion: result.added > 0 });
+    contentsChanged: before.text !== after.text, appWouldBumpLogVersion: result.changed });
 }
 
 for (const count of [20, 100, 500]) {
@@ -106,10 +106,8 @@ for (const [name, opts] of [
     sink += view.sync(bus).added;
   });
   bench("log.sync.idle", () => { sink += view.sync(bus).added; });
-  bench("log.apply-format.500x256.two-rebuilds", () => {
-    view.remeasure();
-    view.setShowTx(false);
-    view.setFormat(format, labels);
+  bench("log.apply-format.500x256.atomic-remeasure", () => {
+    view.configure(format, labels, { showTx: false, remeasure: true });
     sink += view.rows.length;
   });
 }

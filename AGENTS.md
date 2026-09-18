@@ -52,13 +52,13 @@ app/            # Vue Vapor 组件与页面状态（仅渲染 + 输入），pock
                 #   终端独立调色板）；i18n.ts/locale.ts 语言包；fontsize.ts 字号档位常量
                 #   （mono 槽 12/14/16px）；fields.ts 活跃文本域路由；wheel.ts 滚轮分区
                 #   路由；layout.ts 布局常量；statusbar.tsx 状态栏；svc.ts 宿主事件行封装
-core/           # 纯 TS：连接状态机(connection)、帧合流(framing)、消息总线(bus)、编解码(codec)、
-                #   格式化(format)、日志视图(logview)、ANSI 前景色扫描（ansicolor：接收区
+core/           # 纯 TS：连接状态机(connection)、帧合流(framing：分块缓冲并批量拷贝)、消息总线(bus)、编解码(codec)、
+                #   格式化(format)、日志视图(logview：增量排版、500 帧 / 256 KiB 原始历史、ANSI 头检查点、隐藏时延迟排版)、ANSI 前景色扫描（ansicolor：接收区
                 #   颜色转义的 SGR 解析/剥离，跨包续接截断序列，色编码复用 term）、
                 #   发送组装(send)、base64、统一会话
                 #   （session：串口+四类网络+回环+tcps 客户端表+自动重连）、设置持久化
                 #   （config：schema/归一化/历史封顶 50）、headless 终端模型
-                #   （term：VT100/xterm 解析 + 网格/光标/属性/滚动区域/alt 屏/回滚 +
+                #   （term：VT100/xterm 解析 + 网格/光标/属性/滚动区域/alt 屏/环形回滚 +
                 #   按键/粘贴编码 + DSR/DA 应答队列，SPEC §3.4，M3）、MCP 命令执行器/
                 #   读行格式化/终端模式门控/config 白名单（mcp，SPEC §6，M4）
 bridge/         # com.* HostOps 契约：com.ts 命名空间探测/共享事件/枢纽 +

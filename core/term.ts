@@ -168,6 +168,7 @@ export class Terminal {
 
   private scrollbackLimit: number;
   private scrollback: TermLine[] = [];
+  private scrollbackStart = 0;
   private screen: TermLine[] = [];
   private curX = 0;
   private curY = 0;
@@ -280,7 +281,7 @@ export class Terminal {
   /** 越界返回 null。 */
   lineAt(index: number): TermLine | null {
     if (index < 0 || index >= this.totalLines) return null;
-    if (index < this.scrollback.length) return this.scrollback[index]!;
+    if (index < this.scrollback.length) return this.scrollback[(this.scrollbackStart + index) % this.scrollback.length]!;
     return this.screen[index - this.scrollback.length] ?? null;
   }
 
@@ -290,7 +291,14 @@ export class Terminal {
     const next = Terminal.clampScrollback(lines);
     if (next === this.scrollbackLimit) return;
     this.scrollbackLimit = next;
-    while (this.scrollback.length > this.scrollbackLimit) this.scrollback.shift();
+    const keep = Math.min(this.scrollback.length, this.scrollbackLimit);
+    const start = this.scrollback.length - keep;
+    const retained: TermLine[] = [];
+    for (let i = start; i < this.scrollback.length; i++) {
+      retained.push(this.scrollback[(this.scrollbackStart + i) % this.scrollback.length]!);
+    }
+    this.scrollback = retained;
+    this.scrollbackStart = 0;
     this.version++;
   }
 
@@ -342,7 +350,7 @@ export class Terminal {
    */
   feed(bytes: Uint8Array): void {
     if (bytes.byteLength === 0) return;
-    const all = this.u8Tail.length > 0 ? this.u8Tail.concat(Array.from(bytes)) : Array.from(bytes);
+    const all = this.u8Tail.length > 0 ? this.u8Tail.concat(Array.from(bytes)) : bytes;
     this.u8Tail = [];
     let i = 0;
     const n = all.length;
@@ -350,7 +358,6 @@ export class Terminal {
     while (i < n) {
       const b = all[i]!;
       if (b < 0x80) {
-        u8 = [];
         this.parse(b);
         i++;
         continue;
@@ -454,8 +461,13 @@ export class Terminal {
       const removed = this.screen[top]!;
       // 主屏且区域顶 = 屏幕顶：上滚行进回滚（alt 屏不进）
       if (top === 0 && this.alt === null) {
-        this.scrollback.push(removed);
-        while (this.scrollback.length > this.scrollbackLimit) this.scrollback.shift();
+        if (this.scrollbackLimit > 0) {
+          if (this.scrollback.length < this.scrollbackLimit) this.scrollback.push(removed);
+          else {
+            this.scrollback[this.scrollbackStart] = removed;
+            this.scrollbackStart = (this.scrollbackStart + 1) % this.scrollbackLimit;
+          }
+        }
       }
       for (let y = top; y < bottom; y++) this.screen[y] = this.screen[y + 1]!;
       this.screen[bottom] = this.blankLine();
@@ -948,6 +960,7 @@ export class Terminal {
   private eraseDisplay(mode: number): void {
     if (mode === 3) {
       this.scrollback = [];
+      this.scrollbackStart = 0;
       this.eraseDisplay(2);
       return;
     }

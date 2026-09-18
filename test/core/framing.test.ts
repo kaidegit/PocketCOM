@@ -111,3 +111,20 @@ describe("FrameCoalescer（其他）", () => {
     expect([...c.frames[0]!]).toEqual([9]);
   });
 });
+
+test("chunk buffering owns its bytes and flush resets before callbacks", () => {
+  const frames: Uint8Array[] = [];
+  const fc = new FrameCoalescer({ mode: "network", onFrame: frame => {
+    frames.push(frame);
+    if (frames.length === 1) fc.feed(new Uint8Array([7]), 0);
+  } });
+  const bytes = new Uint8Array([1, 2, 3]);
+  fc.feed(bytes.subarray(1), 0);
+  bytes.fill(9);
+  fc.feed(new Uint8Array([4]), 0);
+  fc.flush();
+  expect([...frames[0]!]).toEqual([2, 3, 4]);
+  expect(fc.pendingBytes).toBe(1);
+  fc.flush();
+  expect([...frames[1]!]).toEqual([7]);
+});

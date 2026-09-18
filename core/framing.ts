@@ -49,7 +49,8 @@ export function computeThresholdMs(mode: FrameMode, serial?: SerialFrameParams):
 export class FrameCoalescer {
   readonly thresholdMs: number;
   private readonly onFrame: (frame: Uint8Array) => void;
-  private buf: number[] = [];
+  private chunks: Uint8Array[] = [];
+  private byteCount = 0;
   private lastByteAt: number | null = null;
 
   constructor(opts: FrameCoalescerOptions) {
@@ -58,7 +59,7 @@ export class FrameCoalescer {
   }
 
   get pendingBytes(): number {
-    return this.buf.length;
+    return this.byteCount;
   }
 
   /**
@@ -67,28 +68,35 @@ export class FrameCoalescer {
    */
   feed(bytes: Uint8Array, nowMs: number): void {
     if (bytes.byteLength === 0) return;
-    if (this.buf.length > 0 && this.lastByteAt !== null && nowMs - this.lastByteAt > this.thresholdMs) {
+    if (this.byteCount > 0 && this.lastByteAt !== null && nowMs - this.lastByteAt > this.thresholdMs) {
       this.emit();
     }
-    for (let i = 0; i < bytes.byteLength; i++) this.buf.push(bytes[i]!);
+    this.chunks.push(bytes.slice()); // feed 后调用方可复用输入缓冲
+    this.byteCount += bytes.byteLength;
     this.lastByteAt = nowMs;
   }
 
   /** 周期调用：静默超时后产出当前累积帧（未凑满也产出）。 */
   tick(nowMs: number): void {
-    if (this.buf.length > 0 && this.lastByteAt !== null && nowMs - this.lastByteAt > this.thresholdMs) {
+    if (this.byteCount > 0 && this.lastByteAt !== null && nowMs - this.lastByteAt > this.thresholdMs) {
       this.emit();
     }
   }
 
   /** 强制产出剩余字节（如连接断开时收尾）。 */
   flush(): void {
-    if (this.buf.length > 0) this.emit();
+    if (this.byteCount > 0) this.emit();
   }
 
   private emit(): void {
-    const frame = new Uint8Array(this.buf);
-    this.buf = [];
+    const frame = new Uint8Array(this.byteCount);
+    let offset = 0;
+    for (const chunk of this.chunks) {
+      frame.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    this.chunks = [];
+    this.byteCount = 0;
     this.onFrame(frame);
   }
 }

@@ -45,6 +45,13 @@ describe("decodeBase64", () => {
   test("长度非 4 的倍数抛 ProtocolError", () => {
     expect(() => decodeBase64("Zg=")).toThrow(ProtocolError);
     expect(() => decodeBase64("Z")).toThrow(ProtocolError);
-    expect(() => decodeBase64("Zg==Zg==")).not.toThrow();
+    expect(() => decodeBase64("Zg==Zg==")).toThrow(ProtocolError);
   });
+});
+
+test("Base64 padding and trailing whitespace", () => {
+  expect([...decodeBase64(" Zg== \r\n")]).toEqual([102]);
+  for (const bad of ["====", "Z===", "Zg=A", "=m9v", "Zm=v", "Zg==AAAA"]) {
+    expect(() => decodeBase64(bad)).toThrow(ProtocolError);
+  }
 });

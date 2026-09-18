@@ -21,12 +21,21 @@ export class AnsiFgScanner {
   /** 上一帧行尾截断的不完整 CSI 序列（含起始 ESC；下一帧续接）。 */
   private pending = "";
 
-  feed(text: string): AnsiFgText {
+  /** 历史头检查点：复制颜色与跨帧尾序列，不持有原始消息。 */
+  clone(): AnsiFgScanner {
+    const copy = new AnsiFgScanner();
+    copy.fg = this.fg;
+    copy.pending = this.pending;
+    return copy;
+  }
+
+  feed(text: string, collect = true): AnsiFgText {
     const s = this.pending + text;
     this.pending = "";
     const chars: string[] = [];
     const colors: number[] = [];
     const keep = (from: number, to: number): void => {
+      if (!collect) return;
       for (let k = from; k < to; k++) {
         chars.push(s[k]!);
         colors.push(this.fg);
@@ -35,8 +44,10 @@ export class AnsiFgScanner {
     let i = 0;
     while (i < s.length) {
       if (s[i] !== "\x1b") {
-        chars.push(s[i]!);
-        colors.push(this.fg);
+        if (collect) {
+          chars.push(s[i]!);
+          colors.push(this.fg);
+        }
         i++;
         continue;
       }
