@@ -68,7 +68,6 @@ function spawnFloodHost(): FloodHost {
     "--title", "PocketCOM",
     "--viewport", "960x640",
     "--density", "2",
-    "--native-text",
     "--companions", "pocketcom",
     "--editor",
     ...shots,

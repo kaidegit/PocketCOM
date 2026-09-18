@@ -1,24 +1,31 @@
 # pocketcom-host — the PocketCOM desktop host: a minimal fork of
-# vendor/pocketjs/hosts/desktop (the stock gpui desktop host) plus the
+# vendor/pocketjs/hosts/desktop (the stock wgpu desktop host) plus the
 # self-developed `com.*` serial bridge (host/macos/src/com.rs, SPEC §4.2).
 #
 # Same lone-bin crate model as upstream: outside any workspace, own
-# Cargo.lock, path-depending on the engine crates. The ONLY upstream-source
-# difference is `mod com;` + one mount call in main.rs (POCKETCOM sections).
+# Cargo.lock, path-depending on the engine crates. The upstream-source
+# differences are `mod com*;` + one mount call in Runtime::boot (POCKETCOM
+# sections); rendering is the portable pocket-ui-wgpu pipeline (no gpui).
 
 [package]
 name = "pocketcom-host"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "PocketCOM desktop host on gpui (PocketJS runtime + com.* serial bridge)"
+description = "PocketCOM desktop host on wgpu (PocketJS runtime + com.* serial bridge)"
 
 [dependencies]
 pocketjs-core = { path = "../../vendor/pocketjs/engine/core", features = ["std"] }
 pocket-mod = { path = "../../vendor/pocketjs/engine/crates/pocket-mod" }
 pocket-ui-surface = { path = "../../vendor/pocketjs/engine/crates/pocket-ui-surface" }
-pocket-ui-gpui = { path = "../../vendor/pocketjs/engine/backends/gpui" }
-gpui = "0.2.2"
+pocket-text = { path = "../../vendor/pocketjs/engine/crates/pocket-text" }
+pocket-ui-wgpu = { path = "../../vendor/pocketjs/engine/crates/pocket-ui-wgpu" }
+pocket3d = { path = "../../vendor/pocketjs/engine/pocket3d/crates/pocket3d", default-features = false }
+# Version pins mirror the engine workspace (vendor/pocketjs/engine/Cargo.toml)
+# so the graph resolves one shared wgpu/winit build.
+wgpu = "25"
+winit = "0.30"
+arboard = { version = "3", default-features = false }
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 anyhow = "1"
@@ -31,15 +38,11 @@ base64 = "0.22"
 tungstenite = { version = "0.28", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
 # (System appearance for follow-system theme, SPEC §3.7, reads the global
 # AppleInterfaceStyle preference through raw CoreFoundation FFI — no AppKit
-# binding crate needed; --screenshot window lookup below is the one place
-# that does go through ObjC.)
-# --screenshot PATH@TICK (shot.rs): `screencapture -l` of our own window —
-# window-server compositing captures the gpui Metal layer, and own-window
-# content needs no Screen Recording TCC authorization. objc2 only finds the
-# window (title match) and its windowNumber.
-objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSBitmapImageRep", "NSResponder", "NSView", "NSWindow", "NSImageRep"] }
-objc2-foundation = { version = "0.3", features = ["NSArray", "NSData", "NSDictionary", "NSGeometry", "NSString"] }
+# binding crate needed.)
+# --screenshot PATH@TICK (shot.rs) reads back the retained wgpu render target
+# and encodes a PNG — no window-server capture, no Screen Recording TCC
+# authorization, occlusion-immune. Version mirrors the engine workspace.
+png = "0.18"
 
 [profile.release]
 debug = false

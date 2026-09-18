@@ -37,7 +37,7 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 | UI 框架 | **Vue Vapor 适配器**（约束，不用 Solid/Octane） | `vue` + `vue-jsx-vapor` + `@pocketjs/framework/vue-vapor` 组件 |
 | 字体 | **MiSans**（Regular/Medium/Semibold/Bold 四个字重） | 源文件 vendor 进 `assets/fonts/`（来自 `/Users/kai/Downloads/MiSans`，本机路径不入库），构建期烘焙字形 |
 | 语言 | TypeScript（strict） | 全部源码 |
-| 桌面宿主 | **gpui 桌面宿主**（fork 自 `vendor/pocketjs/hosts/desktop`，gpui 0.2.2）+ 自研 `com.*` 扩展 | 串口/网络/MCP 不在 PocketJS 内核能力内，按 surface 模式自研（§4.2） |
+| 桌面宿主 | **wgpu 桌面宿主**（fork 自 `vendor/pocketjs/hosts/desktop`，winit + pocket-ui-wgpu，无平台文本系统）+ 自研 `com.*` 扩展 | 串口/网络/MCP 不在 PocketJS 内核能力内，按 surface 模式自研（§4.2） |
 | MCP server | 宿主进程内原生线程（Rust）+ tick 边界事件投递 | 不经 QuickJS guest；模式抄 `pocket-net` 的 poll/drain（§6.2） |
 
 ### 2.2 PocketJS 平台约束（本规格的重要前提）
@@ -45,10 +45,10 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 调研自 PocketJS 源码（`vendor/pocketjs`，0.11.x）与官方文档，以下约束直接决定架构设计：
 
 1. **无 DOM、无运行时 CSS**。UI 仅 `View` / `Text` / `Image` 原语 + flexbox；样式为编译期的 Tailwind 子集，动态样式必须用 `style={{…}}` 对象或"整体 class 字面量的三元表达式"，运行期拼接 class 片段是编译错误。
-2. **字体烘焙（baked font atlas）为默认路径**。构建时扫描源码中出现的字符与字号生成字形图集，设备端没有字体光栅化器。**但 gpui 桌面宿主支持 per-app 声明 `enhances: ["text.layout.native"]`**：改走 CoreText 运行时排版（`TEXT_RUN`），字形覆盖 = OS 字体回退链（CJK/emoji 全有），任意 Unicode 可显示。嵌入式目标仍受烘焙约束。对策见 §5.4。
+2. **字体烘焙（baked font atlas）为唯一文字路径**。构建时扫描源码中出现的字符与字号生成字形图集，宿主与设备端都没有平台字体光栅化器（wgpu 宿主已移除原生 CoreText 排版；`text.layout.native` 能力上游 macos-app target 不再提供）。字符集 = 源码扫描 ∪ `app/fonts.json` 声明（ranges/characterFiles/回退脸）。本项目用 MiSans 作回退脸 + GB2312 一级字表覆盖运行时数据的常见 CJK（§5.4）；超出烘焙字符集的运行时数据显示 tofu，HEX 视图保证无损。
 3. **NET 模块 v1 仅有 fetch 形态的 HTTP client**，明确不含 WebSocket、server、raw socket，串口更不在其内；桌面宿主默认甚至没有 mount `net`/`fs`。→ **本项目必须自研宿主桥接**（§4.2），官方扩展姿势：spec 契约（`contracts/spec/*.ts`）+ transport-neutral Rust core + 宿主 `guest.mount("com", …)`。
 4. **帧（tick）投递模型**：原生线程不得直接回调 JS guest；异步完成事件在 tick 边界成批投递（FIFO）。串口 RX 数据也遵循该模型：宿主侧累积，tick 边界 drain。
-5. **桌面宿主 = gpui 窗口 + QuickJS guest**（`pocket-mod`/rquickjs），与掌机跑同一 JS 环境；宿主为单进程单线程 supervisor 模型。键盘输入支持字符（IME 路径）、F1–F12 等命名键、修饰键与粘贴事件，按 tick 批进 guest——终端模式按键直发可行。
+5. **桌面宿主 = winit 窗口 + QuickJS guest**（`pocket-mod`/rquickjs），与掌机跑同一 JS 环境；宿主为双线程模型：winit 主线程管窗口/输入/呈现，pocket-runtime 工作线程跑 60Hz tick + wgpu 渲染。键盘输入支持字符（IME 路径）、F1–F12 等命名键、修饰键（key 行带 cmd/ctl/alt/sh 标志，Ctrl 修饰单字符键不发 ch 防双投）与粘贴事件，按 tick 批进 guest——终端模式按键直发可行。
 
 ### 2.3 参考项目
 
@@ -262,7 +262,7 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 
 字体：UI 统一使用 **MiSans**（字重 Regular/Medium/Semibold/Bold；源文件 vendor 在 `assets/fonts/`）。**mono 槽（`font-mono`，接收区/终端网格/等宽文本框）使用 JetBrains Mono**（Regular，OFL，随 `assets/fonts/JetBrainsMono-Regular.ttf` vendor；嵌入式烘焙的 mono 槽本来就用它）——MiSans 非等宽字体，终端网格必须严格等宽才能保证列对齐与格宽度量一致。
 
-**macOS 桌面端（首期目标平台）**：pocket.json 声明 `enhances: ["text.layout.native"]`，走 gpui 宿主的 CoreText 运行时排版——**任意 Unicode（含 CJK/emoji）可显示，无 tofu**，烘焙字形约束在桌面端不成立。MiSans 与 JetBrains Mono 注册进宿主字体链（`register_fonts` + `TextConfig::new("MiSans")`，mono 槽解析到 `mono_family` JetBrains Mono；CJK 等未覆盖字符走系统回退）。代价：放弃跨宿主字节级金样确定性（金样测试改在 gpui 宿主上比对，见 §7）。
+**macOS 桌面端（首期目标平台）**：与嵌入式同走烘焙字形路径（wgpu 宿主无平台文本系统，上游 macos-app target 已不提供 `text.layout.native`）。字符集 = 源码扫描（覆盖全部 i18n 文案）∪ `app/fonts.json` 声明：`fallback` 链把 MiSans 设为回退脸（UI 主脸 Inter、mono 主脸 JetBrains Mono，缺失字形逐字回退 MiSans），ranges（制表符/全角/CJK 标点等）+ `assets/fonts/gb2312.txt`（GB2312 全集 L1+L2，6763 字）覆盖**运行时数据**（终端/接收区）的简体 CJK；GB2312 之外的字符（GBK 扩展、繁体、emoji）为 tofu。上游 `text.glyphs.streamed`（DYNAMIC_TEXT，字体档 .pjfa 按需流入，2MiB 常驻预算）是完整覆盖的正解，但当前上游原生桌面宿主尚未接线：核心状态机已备（`engine/core/src/font_stream.rs`），而 `pocket-ui-surface` 未挂 fontStream* ops、桌面 offload provider（pocket_text）未实现 font.* 方法、macos-app target 能力剖面亦未声明该能力——接入属宿主 fork + app 渲染改造的独立工程（§7 备查）。超出字符集的运行时数据显示 tofu（HEX 视图无损，§5.4）；emoji 不可显示（烘焙管线无彩色字形）。代价：pak ~70MB（9 槽 × 7.3k 字形，构建 ~35s）——桌面分发可接受。
 
 **嵌入式/未来 RT-Thread 端**：仍受构建期烘焙约束，策略为：
 
@@ -321,7 +321,7 @@ MCP server 实现于**宿主层**（fork 的桌面宿主 crate 内的原生线�
 
 - **核心层纯 TS 单测**（Vitest/Bun test）：帧合流、hex/escape/UTF-8 解码（含截断序列与非法字节）、ANSI/VT100 模型（对齐经典用例）、环形缓冲、消息总线、状态机迁移。
 - **UI 测试**：PocketJS headless Bun host + 帧金样（PNG golden），覆盖双模式、双主题、双语言。
-- **脚本化 UI 截图**（宿主能力，配合 e2e/文档产出）：宿主 flag `--screenshot PATH@T` 在第 T tick（60Hz 虚拟时钟，与 `--mouse/--click/--key/--type` 的 `@T` 同基准，可重复传入）把主窗口当前内容导出为 PNG。实现走系统 `screencapture -l` 捕获本进程窗口——自窗口内容免 Screen Recording（TCC）授权，agent/CI 运行零弹窗；不采用 `CGWindowListCreateImage`（deprecated）与 CPU 光栅（跳过 TEXT_RUN，native-text 下丢全部文字）。截图为窗口实际渲染内容（含 28pt 标题栏、2x 物理像素），含 CoreText 排版与合成器结果，**非确定性，不做 byte-exact 金样**（金样仍走 headless 路线）；同 UI 状态下输出字节一致，可作 e2e 相等断言。该 flag 为 opt-in：CI 不传即不触发，宿主单测仅覆盖参数解析与 PNG 头校验纯函数。
+- **脚本化 UI 截图**（宿主能力，配合 e2e/文档产出）：宿主 flag `--screenshot PATH@T` 在第 T tick（60Hz 虚拟时钟，与 `--mouse/--click/--key/--type` 的 `@T` 同基准，可重复传入）把画布当前内容导出为 PNG。wgpu 宿主实现 = 呈现后**回读保留渲染目标**（`gpu::Target::read_rgba`）宿主内编码 PNG——免 Screen Recording（TCC）授权，且**不受窗口遮挡影响**（`screencapture -l` 窗口路线在被遮挡窗口上会冻结在首帧，已废弃；不采用 `CGWindowListCreateImage`（deprecated）与 CPU 光栅）。截图 = 纯画布像素（无标题栏，尺寸 = 逻辑视口 × density），坐标反推 `画布坐标 = 像素/density`；无合成器参与，同 UI 状态输出字节一致，可作 e2e 相等断言，**不做 byte-exact 金样**（金样仍走 headless 路线）。触发按墙钟 60Hz 换算（runtime 首输出为原点，`T+2` 起可捕获）。该 flag 为 opt-in：CI 不传即不触发，宿主单测仅覆盖参数解析与 PNG 头校验纯函数。
 - **桥接契约测试**：sim host（确定性 fixture）驱动核心层全链路。
 - **MCP 集成测试**：脚本化 MCP client 走完整会话（connect → send → read → 前缀断言 → disconnect）。
 - 真机回归：macOS 实机串口回环（USB 转串口 TX-RX 短接）。
@@ -343,17 +343,17 @@ M0 桌面宿主调研已完成（2026-09-04），#1/#3 已关闭：
 
 | # | 风险/问题 | 状态 | 结论/应对 |
 |---|---|---|---|
-| 1 | 桌面宿主 JS 引擎形态与扩展点 | ✅ 已关闭 | gpui 窗口 + QuickJS guest（`pocket-mod`）；扩展 = `contracts/spec/*.ts` + Rust core + `guest.mount("com", …)`；app 可放外部仓库（vendor + `--project-root`），宿主二进制支持 `--js/--pak` |
+| 1 | 桌面宿主 JS 引擎形态与扩展点 | ✅ 已关闭 | winit/wgpu 窗口 + QuickJS guest（`pocket-mod`）；扩展 = `contracts/spec/*.ts` + Rust core + `guest.mount("com", …)`；app 可放外部仓库（vendor + `--project-root`），宿主二进制支持 `--js/--pak` |
 | 2 | 无内置 serial/socket/WS，全部桥接自研 | 开放 | 工作量最大项。契约先行；Rust 侧用成熟 crate（串口 `serialport`、异步 IO `tokio`、WS `tokio-tungstenite`），事件批按 `pocket-net` 的 poll/drain 模式 |
-| 3 | 烘焙字体不支持任意字符 | ✅ 已关闭（桌面端） | gpui 后端 `enhances: ["text.layout.native"]` 走 CoreText，任意 Unicode 可显示；烘焙约束仅剩嵌入式目标（§5.4） |
+| 3 | 烘焙字体不支持任意字符 | ✅ 以字表扩大覆盖 | 桌面与嵌入式同为烘焙路径；`app/fonts.json` 以 MiSans 回退链 + GB2312 一级字表覆盖 UI 与常见运行时数据，超出字符集显示 tofu（§5.4） |
 | 4 | 终端网格渲染性能 | 开放 | M0 压测；native text 路径下按行渲染 `TEXT_RUN`，备选 `Image` 位图自绘网格 |
 | 5 | MCP 多读缓冲的会话语义 | 开放 | 首版共享缓冲，v1.1 按 session 隔离 |
 | 6 | RT-Thread 上 Rust `no_std` 核心构建与 lwIP/UART 适配 | 开放 | M5 预研，架构已预留 |
-| 7 | 金样测试需要 wasm32 target + headless Bun host；native text 路径放弃跨宿主字节确定性 | 开放 | UI 金样在 gpui 宿主或 wasm host 二选一，M3 前定 |
+| 7 | 金样测试需要 wasm32 target + headless Bun host | 开放 | UI 金样走 wasm host；wgpu 宿主截图已改为渲染目标回读，同状态字节一致 |
 
 ## 10. 附录
 
 - PocketJS 文档：https://pocketjs.dev/docs/ 、NET 模块说明：https://pocketjs.dev/docs/net/
-- PocketJS 源码（vendor，`vendor/pocketjs/`，0.11.x）关键路径：`engine/backends/gpui/`（桌面渲染后端）、`hosts/desktop/`（桌面宿主，fork 起点）、`contracts/spec/net.ts`（surface 契约样板）、`engine/crates/pocket-net/`（transport trait + tick drain 样板）、`docs/RUNTIMES.md`（Runtime = ⟨Cores, Surfaces, Guest⟩ 扩展模型）、`docs/BACKENDS.md`（native text 说明）。
+- PocketJS 源码（vendor，`vendor/pocketjs/`）关键路径：`engine/crates/pocket-ui-wgpu/`（桌面 wgpu 渲染后端）、`hosts/desktop/`（桌面宿主，fork 起点）、`contracts/spec/net.ts`（surface 契约样板）、`engine/crates/pocket-net/`（transport trait + tick drain 样板）、`docs/RUNTIMES.md`（Runtime = ⟨Cores, Surfaces, Guest⟩ 扩展模型）。
 - COMTool 调研要点：连接/插件/装配三层解耦、帧合流公式、终端基于 pyte 的 headless 模型（本项目以纯 TS 重写等价物）。
 - umeko_serial_mcp 调研要点：6 个 tool 的划分、来源标签（LLM/HARDWARE/USER_OVERRIDE/SYSTEM）、UI 发送回灌 agent 读缓冲；缺陷清单见 §1.1/§3.5/§6。

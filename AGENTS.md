@@ -19,7 +19,7 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
   - **Vue Vapor 的 `Portal` host 固定为规格屏 480×272**（`components-vue-vapor.ts` 的 `createPortalRoot` 用静态 `SCREEN_W/H`，不读实时视口）→ 全屏遮罩等"铺满窗口"的弹层内容不能 `inset 0` 寄生于 portal host 盒子，必须按 `viewportSize` 显式给 width/height 自撑（见 `app/widgets.tsx` 的 `PopupLayer` 遮罩），否则视口超出 480×272 的区域点空白收不掉弹层。
   - **条件读取 getter 会漏注册响应式依赖**：`style` 里 `show() ? top() : 0` 这类写法，若 `top()` 仅在 show 为 true 时才执行，其内部读到的 ref 在 show=false 的首帧不被追踪，后续数据源变化不再触发重跑（实测：Scrollbar 因此 0 宽永不渲染）。数据源为非响应式宿主对象（logView.rows、terminal.totalLines）的纯指示组件，用 **onFrame 轮询 + 本地 ref**（TextField 光标闪烁同款模式；值不变不写 ref，重绘不空转），见 `app/widgets.tsx` 的 `Scrollbar`。
 - **无 DOM、无运行时 CSS**：只用 `View/Text/Image` 原语；动态样式用 `style={{…}}` 或整体 class 字面量三元，**禁止拼接 class 片段**（编译错误）。
-- **字体**：UI 统一使用 MiSans（Regular/Medium/Semibold/Bold，vendor 在 `assets/fonts/`）；**mono 槽（接收区/终端网格）用 JetBrains Mono**（同目录 vendor，OFL）——MiSans 非等宽，终端网格必须严格等宽。桌面端经 `text.layout.native`（pocket.json 已声明）走 CoreText 运行时排版，任意 Unicode 可显示；**烘焙字形约束只对嵌入式目标成立**——嵌入式视图只允许使用已烘焙字符集，未知字形回退替换符并保证 HEX 视图无损（SPEC §5.4）。
+- **字体**：UI 主字体 MiSans（vendor 在 `assets/fonts/`）；**mono 槽（接收区/终端网格）用 JetBrains Mono**（同目录 vendor，OFL）——MiSans 非等宽，终端网格必须严格等宽。**wgpu 宿主无平台文本系统**：所有文字都从烘焙字形图集渲染（构建期 `bakeAtlases`，字符集 = 源码扫描 ∪ `app/fonts.json` 声明）；`app/fonts.json` 声明 MiSans 为回退脸（UI 主脸 Inter、mono 主脸 JBM，CJK 等缺失字形逐字回退到 MiSans），并用 ranges + `assets/fonts/gb2312.txt`（GB2312 全集 L1+L2，6763 字）覆盖运行时数据（终端/接收区）的常见字符；GB2312 之外的 GBK/繁体/emoji 为 tofu，HEX 视图保证无损（SPEC §5.4）——更完整覆盖需上游 text.glyphs.streamed，现状评估见 SPEC §5.4。改字体声明后须重测字符覆盖（构建日志的 `font: slot … N glyphs` 行）。
 - **无内置串口/WebSocket/raw socket**：所有 IO 走 `bridge/` 的 `com.*` HostOps 契约，核心层不得直接 import 任何平台 API。
 - 宿主事件只能在 **tick 边界**投递进 JS（FIFO 队列 drain），不得直接回调。
 - i18n：所有用户可见文案必须走 `assets/i18n/` 语言包 key，禁止硬编码。当前语言：`zh-CN`、`en`。**同一 key 不得既是字符串又是嵌套对象**（JSON 重复 key 后者覆盖前者，label 会退化成显示原始 key，如 `conn.parity` vs `conn.parityOpt.*`）。
@@ -68,22 +68,32 @@ test/           # 单测，按源码分层镜像（test/core/* 对应 core/ 各�
                 #   test/host/<系统>/* 对应 host/* 的 Rust 测试，经 #[path] 纳入宿主 crate 的
                 #   cfg(test) 编译，cargo 过滤器不变；testutil.ts 为测试专用工具）
 host/macos/     # macOS 宿主：串口/TCP/UDP/WS 原生 IO、设置持久化+外观事件、
-                #   MCP server（fork 自 vendor hosts/desktop）。com.rs 只留命名空间
-                #   挂载与共享设施（句柄计数/连接注册表/事件流），实现按协议分文件：
-                #   com_serial.rs（串口）/com_tcp.rs（TCP+TCP Server）/com_udp.rs（UDP）/
-                #   com_ws.rs（WebSocket）/com_env.rs（配置+外观）/com_mcp.rs（MCP server，
-                #   M4：手写 Streamable HTTP + JSON-RPC，仅绑 127.0.0.1 + Bearer token，
-                #   读缓冲有界 256KiB，工具命令经 mcpCmds/mcpResults 在 tick 边界进
-                #   guest 核心层执行，read 由宿主缓冲直答；客户端数变化经
-                #   {t:"mcp",on,clients} 事件回推 UI）。fork 差异：on_key_down
-                #   把 Ctrl 修饰的单字符键以 key 行（ctl 标志）转发给 guest（上游只会发
-                #   命名键/纯文本，终端模式的控制码如 Ctrl+C 依赖此路径；Alt 不转发，
-                #   保留 Option 组合字符的 insertText 输入）；右键鼠标事件（b:2 行）
-                #   对 pocketcom companion 放行（上游仅 system-ui；接收区右键菜单与
-                #   终端选中右键复制依赖此路径）
+                #   MCP server（fork 自 vendor hosts/desktop 的 wgpu 版：winit 主线程
+                #   窗口/输入 + pocket-runtime 工作线程 60Hz tick + pocket-ui-wgpu
+                #   渲染，无 gpui、无平台文本系统）。上游源文件随上游同步：main.rs
+                #   （POCKETCOM 段落 = 差异全集）、gpu.rs（渲染/呈现）、supervisor.rs/
+                #   plan.rs/buttons.rs（include! 进 main 作用域）、net.rs（SVC WIRE）。
+                #   com.rs 只留命名空间挂载与共享设施（句柄计数/连接注册表/事件流），
+                #   实现按协议分文件：com_serial.rs（串口）/com_tcp.rs（TCP+TCP Server）/
+                #   com_udp.rs（UDP）/com_ws.rs（WebSocket）/com_env.rs（配置+外观）/
+                #   com_mcp.rs（MCP server，M4：手写 Streamable HTTP + JSON-RPC，仅绑
+                #   127.0.0.1 + Bearer token，读缓冲有界 256KiB，工具命令经
+                #   mcpCmds/mcpResults 在 tick 边界进 guest 核心层执行，read 由宿主缓冲
+                #   直答；客户端数变化经 {t:"mcp",on,clients} 事件回推 UI）。
+                #   fork 差异（main.rs 内 POCKETCOM 标注）：Runtime::boot 挂载 com.*；
+                #   --wheel 脚本滚轮（定位 + scroll 行）；--screenshot PATH@TICK 经
+                #   gpu.rs Target::read_rgba 回读渲染目标直接编码 PNG（shot.rs，被遮挡
+                #   窗口的窗口服务器合成会冻结，screencapture 路线作废；截图 = 纯画布
+                #   像素，无标题栏，坐标 = 像素/density）；--no-native-mouse-keyboard
+                #   输入静音；POCKETCOM_TRACE svc 双向 trace；右键 b:2 行对 pocketcom
+                #   companion 放行（上游 editor 方言丢弃 b:2；接收区右键菜单与终端选中
+                #   右键复制依赖此路径）。Ctrl/cmd 键转发上游已内置（key 行带 ctl/cmd
+                #   标志，Ctrl 修饰不发 ch）
 host/rtthread/  # RT-Thread 宿主（预留）：UART/lwIP 适配 bridge 契约
 assets/i18n/    # 语言包
-assets/fonts/   # MiSans（UI）+ JetBrains Mono（mono 槽）字体文件（vendor，构建期烘焙字形）
+assets/fonts/   # MiSans（UI 回退脸）+ JetBrains Mono（mono 槽主脸）字体文件
+                #   （vendor）+ gb2312.txt（GB2312 全集 6763 字，运行时字符集），
+                #   构建期经 app/fonts.json 声明烘焙字形图集进 pak
 docs/           # 调研、移植与脚本化 UI 验证文档（e2e.md）、e2e 控件坐标速查
                 #   （coords.md：各按钮/勾选框/弹层项实测点击坐标，配复验工具
                 #   tools/coords-probe.py；改布局后重测）、MCP 服务手册（mcp.md）、
@@ -104,7 +114,7 @@ SPEC.md         # 功能规格（权威）
 - 类型检查：`npm run typecheck`（tsc --noEmit，tsconfig 严格度对齐上游，不要私自加严 flags——构建会用同一份 tsconfig 编译上游框架源码）
 - Manifest 校验：`npm run check`（= `bun vendor/pocketjs/tools/pocket.ts check --target macos-app --manifest app/pocket.json --project-root .`）
 - 构建 app bundle：`npm run build`（输出 `dist/pocketcom-main.js` + `.pak`）
-- 构建桌面宿主（fork 自 `vendor/pocketjs/hosts/desktop` + 自研 `com.*` 串口/网络/配置桥）：`cargo build --release --manifest-path host/macos/Cargo.toml`（输出 `host/macos/target/release/pocketcom-host`；首次全量编译 15–25 分钟；网络桥依赖 tungstenite(rustls)）
+- 构建桌面宿主（fork 自 `vendor/pocketjs/hosts/desktop` 的 wgpu 版 + 自研 `com.*` 串口/网络/配置桥）：`cargo build --release --manifest-path host/macos/Cargo.toml`（输出 `host/macos/target/release/pocketcom-host`；网络桥依赖 tungstenite(rustls)；wgpu 25 / winit 0.30 版本 pin 与引擎 workspace 对齐）
 - 宿主桥接单测：`cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host`（测试源在 `test/host/macos/`：serial_tests.rs 参数校验/事件格式/端口过滤、tcp_tests.rs 参数校验 + 127.0.0.1 TCP 回环（监听/接入/定向/广播/踢除/关停级联）、udp_tests.rs UDP 回环、ws_tests.rs 参数校验/握手失败/子协议头、env_tests.rs 配置原子写 0600/导出剥 token（`POCKETCOM_CONFIG` 重定向路径）、main_tests.rs 调度/repaint hash/脚本 flags 解析（含 `--no-native-mouse-keyboard`）、shot_tests.rs PNG 头校验、mcp_tests.rs HTTP 解析/401 鉴权/JSON-RPC 分发/读缓冲有界/命令往返/mcpStop 语义等，经 `#[path]` 编入宿主 crate；`--release` 复用既有 release 产物免 15–25 分钟全量重编）
 - 宿主串口硬件回环测试（需 TX↔RX 短接的真实串口；未设 `POCKETCOM_LOOPBACK_PORT` 时自动跳过）：
   `POCKETCOM_LOOPBACK_PORT=/dev/cu.xxx POCKETCOM_LOOPBACK_BAUD=3000000 cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host com_serial::loopback -- --nocapture`
@@ -112,9 +122,9 @@ SPEC.md         # 功能规格（权威）
 - 桌面运行：`node tools/dev.mjs`（默认用 fork 产物 `host/macos/target/release/pocketcom-host`，未构建时回退 vendor 的 `pocket-desktop-host` 并警告 `com.*` 不可用；flags 取自 `.pocket/macos-app/plan.json`）
 - 打包分发：`tools/package-macos.sh`（前置 `npm run build` + `cargo build` 产物；组装 `dist/PocketCOM.app` 并打 `dist/PocketCOM-<版本>-macos-arm64.dmg`。launcher 设 `POCKETJS_DIST` 指向 `Resources/dist` 后 exec 宿主二进制，flags 从 `.pocket/macos-app/plan.json` 推导（同 dev.mjs）；`VERSION=x.y.z` 覆盖版本号。**仅 ad-hoc 签名**（未公证）：首次打开需右键→打开或 `xattr -cr`。不启用沙盒故无 entitlement；`NSLocalNetworkUsageDescription`（含 zh/en InfoPlist.strings）为未来 TCP/UDP/WS 连局域网设备的授权弹窗预留，监听 `127.0.0.1` 不触发该弹窗）
 - CI/CD：`.github/workflows/macos.yml`（macos-latest=arm64；push main/PR/tag `v*`/手动触发。跑 typecheck + check + 核心单测 + 全量构建 + 打包；产物上传 artifact，`v*` tag 额外创建 GitHub Release 附 .dmg 与 .app.zip；宿主编译用 `Swatinem/rust-cache` 缓存）
-- 脚本化 UI 验证：宿主脚本 flags（`--mouse` `--click` `--wheel` `--key` `--type` `--press` `--storm` `--screenshot` `--quit-after` `--announce-ready` `--no-native-mouse-keyboard`（丢弃原生鼠标/滚轮/键盘事件，e2e 必加以防物理输入污染）；`@T` 为 60Hz 虚拟时钟 tick 序号）经 `node tools/dev.mjs -- <flags…>` 原样转发给宿主二进制（不带 `--` 行为不变）。**各参数详解、tick/坐标系、拖拽与组合键配方、截图机制与坑位见 [docs/e2e.md](docs/e2e.md)**；观测用 `POCKETCOM_TRACE=1`。本机真机 e2e 已验证：串口全链路（M1）、TCP Client 回环（M2）、`--screenshot`/`--wheel`/`--key cmd+enter`、终端模式（M3，滚轮/拖拽选区/Ctrl 控制码均可脚本注入）、MCP 全链路含终端模式门控（M4，见上）、"应用配置"设置弹窗全链路（打开→草稿→应用/Escape/遮罩关闭，coords.md §3）；截图为 opt-in flag，CI 不触发。
+- 脚本化 UI 验证：宿主脚本 flags（`--mouse` `--click` `--wheel` `--key` `--type` `--press` `--storm` `--screenshot` `--quit-after` `--announce-ready` `--trace-frames` `--no-native-mouse-keyboard`（丢弃原生鼠标/滚轮/键盘事件，e2e 必加以防物理输入污染）；`@T` 为 60Hz 虚拟时钟 tick 序号）经 `node tools/dev.mjs -- <flags…>` 原样转发给宿主二进制（不带 `--` 行为不变）。**各参数详解、tick/坐标系、拖拽与组合键配方、截图机制与坑位见 [docs/e2e.md](docs/e2e.md)**；观测用 `POCKETCOM_TRACE=1`。本机真机 e2e 已验证（wgpu 宿主）：弹层打开/收起、模式切换、`--wheel`/`--key`、`--screenshot`（渲染目标回读）、终端模式、MCP 全链路含终端模式门控（M4）；截图为 opt-in flag，CI 不触发。
 - UI 金样测试：PocketJS headless Bun host（byte-exact PNG golden，待落地）
-- MCP 集成测试：`bun test host/macos/mcp/`（前置 `npm run build` + `cargo build --release`；脚本化 MCP client 经原生 fetch 走真实宿主+guest 全链路：401 鉴权 → initialize 会话 → tools/list → connect（bun TCP echo + loopback 回环）→ send → read 前缀断言（`[RX]`/`[SYS]`/i18n 手动前缀）→ force 语义 → disconnect → config 白名单（token 不可触）→ 会话 DELETE；终端模式门控（SPEC §6.1）经 `--click` 脚本切模式验证停服/重启。产物缺失自动跳过，CI 在前置步骤产出两者）。同目录 `flood.test.ts` 为大流量 e2e：loopback + MCP 灌入 400 条小帧 + 6×48KiB 突发（超环形缓冲 256KiB 触发逐出），断言收/发字节对称、洪峰后连接与 MCP 存活、渲染收据出帧，并落 3 张窗口截图供检查接收框（无屏幕录制权限的会话里截图断言降级为警告跳过，见 docs/e2e.md 常见坑 6）
+- MCP 集成测试：`bun test host/macos/mcp/`（前置 `npm run build` + `cargo build --release`；脚本化 MCP client 经原生 fetch 走真实宿主+guest 全链路：401 鉴权 → initialize 会话 → tools/list → connect（bun TCP echo + loopback 回环）→ send → read 前缀断言（`[RX]`/`[SYS]`/i18n 手动前缀）→ force 语义 → disconnect → config 白名单（token 不可触）→ 会话 DELETE；终端模式门控（SPEC §6.1）经 `--click` 脚本切模式验证停服/重启。产物缺失自动跳过，CI 在前置步骤产出两者）。同目录 `flood.test.ts` 为大流量 e2e：loopback + MCP 灌入 400 条小帧 + 6×48KiB 突发（超环形缓冲 256KiB 触发逐出），断言收/发字节对称、洪峰后连接与 MCP 存活、渲染收据出帧，并落 3 张画布截图（渲染目标回读，免录屏权限）供检查接收框
 - RT-Thread 固件构建（预留）：`host/rtthread/` 按 RT-Thread package 规范组织（`SConscript` + `Kconfig`），在固件工程中经 `scons` 编译；前期可用 QEMU（如 `qemu-vexpress-a9` BSP）验证，命令落地后更新本节。
 
 ## 参考代码库（只读，禁止修改）

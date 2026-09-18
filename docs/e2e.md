@@ -44,8 +44,8 @@ plan 派生 flags（`--app/--title/--viewport/--density/--fixed/--native-text/
 
 - `--mouse/--click/--wheel` 的 X,Y 是**画布逻辑像素**（plan 的 logical
   viewport，默认 960x640），原点在窗口内容区左上角（标题栏之下）。
-- 从 `--screenshot` PNG 反推：`画布坐标 = (截图像素 - 标题栏) / density`。
-  默认 2x 下标题栏高 56 物理像素（28pt），即 `(px - 56) / 2`。
+- 从 `--screenshot` PNG 反推：`画布坐标 = 截图像素 / density`（渲染目标回读，
+  PNG 不含标题栏；2x 下即 `px / 2`）。
 - 控件坐标以 `app/panel.tsx` / `app/transfer.tsx` 的布局表（`layoutInfo`）为
   权威：块顶 = 头部高 + 累计块高，控件在块内 `LABEL_H+LABEL_GAP` 偏移处。
 - **各按钮/勾选框/弹层项的实测点击坐标速查表见 [coords.md](coords.md)**
@@ -150,19 +150,22 @@ NAME → 按钮映射：
 ### --screenshot
 
 `--screenshot PATH@T`，可重复传入导出多个时刻（`--screenshot a.png@30
---screenshot b.png@90`）。机制与性质：
+--screenshot b.png@90`）。机制与性质（wgpu 宿主）：
 
-- 走系统 `screencapture -l` 捕获**本进程窗口**（窗口服务器合成，gpui Metal
-  内容完整）。自进程窗口免 Screen Recording（TCC）授权——CI/agent 运行零弹窗。
-  不要改回 AppKit 自绘：`drawViewHierarchyInRect:` 是 iOS-only（运行时
-  unrecognized selector），`cacheDisplayInRect:` 拿不到 Metal 层内容（全黑），
-  `CGWindowListCreateImage` 已 deprecated。
-- PNG 含 28pt 标题栏，尺寸 = 物理像素（2x 下 1920x1336）。父目录自动创建。
+- **渲染目标回读**：第 T tick 的帧呈现后，从保留的 wgpu 渲染目标
+  （`gpu::Target::read_rgba`）读回 RGBA 像素、宿主内编码 PNG 落盘。
+  免 Screen Recording（TCC）授权——CI/agent 运行零弹窗；**不受窗口遮挡
+  影响**（此前 `screencapture -l` 路线在窗口被遮挡时窗口服务器停止重合成，
+  截图冻结在首帧，已废弃）。
+- **触发时刻 = 墙钟 60Hz 换算**（以 runtime 首个输出为原点，`T+2` 起可捕获，
+  两 tick 余量等 guest 应用 T 的脚本事件并换上新帧）。宿主为 demand-driven：
+  静态 UI 停止出帧后，由事件循环按下一截图时刻定时唤醒补拍。
+- **PNG = 纯画布像素，无标题栏**，尺寸 = 逻辑视口 × density（2x 下 960x640 →
+  1920x1280）。坐标反推因此简化：`画布坐标 = 截图像素 / density`。父目录自动创建。
 - 成功打印回执 `pocket-desktop-host: screenshot <path> (WxH)`，失败打印错误
   不中断运行。
-- 同一 UI 状态下输出**字节一致**，可做 e2e 相等断言；但不同状态/时序不保证
-  确定（CoreText 抗锯齿、合成器时序），**不做 byte-exact 金样**——金样走
-  headless wasm 路线（SPEC §7）。
+- 同一 UI 状态下输出**字节一致**（无合成器参与），可做 e2e 相等断言；
+  **不做 byte-exact 金样**——金样走 headless wasm 路线（SPEC §7）。
 - CI 不跑截图：opt-in flag 不传即不触发；宿主单测仅覆盖解析与 PNG 头校验。
 
 ## 观测
@@ -216,7 +219,7 @@ NAME → 按钮映射：
    test harness 二进制，不重建 `target/release/pocketcom-host`——旧产物会让
    新 flag 报 `unknown flag`。
 2. 点击无效果：先检查是否 hover 聚焦（`--mouse` 一帧），再看坐标是否画布
-   逻辑坐标（截图像素要 `/2` 且减标题栏 56px）。
+   逻辑坐标（截图像素直接 `/2`，渲染目标回读不含标题栏）。
 3. 事件没到 guest：`POCKETCOM_TRACE=1` 看 svc 行；行到了但 UI 没变，多半是
    坐标命中落空。com.* 侧看 `pocketcom-trace: com.mcpStart …` 等 op trace。
 4. `--wheel` 不滚动：指针未落在目标分区（面板 x<270 / 日志 / 终端），或该区
@@ -231,9 +234,8 @@ NAME → 按钮映射：
    点击的目标焦点偷走，重则真实点击/按键把脚本刚打开的弹层关掉、往正在
    编辑的字段里打入字符。e2e 一律加 `--no-native-mouse-keyboard`（见输入
    flags 节）。
-7. **`screencapture` 报 `could not create image from window` / 全屏截图只剩
-   壁纸**：运行会话的 TCC 责任进程（终端 app、Lody.app、sshd 等）没有
-   "屏幕录制"权限，或显示器休眠/锁屏。TCC 按**拉起进程树的责任 app** 授权，
-   与"自进程窗口免授权"不冲突的前提是从已授权的终端直接跑；远程 agent 会话
-   需在系统设置给对应 app 授权（或唤醒屏幕），否则 -l 必败、窗口全程不绘制
-   （退出收据 frames rendered 接近 0）。`flood.test.ts` 对此降级为警告跳过。
+7. **截图与屏幕录制权限、遮挡**：`--screenshot` 走渲染目标回读，不依赖
+   TCC 录屏权限、不受窗口遮挡/休眠影响（旧 `screencapture -l` 路线在被遮挡
+   窗口上会冻结在首帧，已废弃；全屏 `screencapture -x` 仍需录屏权限，无权限
+   时输出全黑）。若截图内容陈旧，先查退出收据 frames rendered——渲染数
+   接近 0 是渲染问题而非截图问题。

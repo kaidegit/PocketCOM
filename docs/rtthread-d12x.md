@@ -698,7 +698,7 @@ svc 行先落本地环形队列；**真正投递给 guest 的时机在帧内**�
 }
 ```
 
-与桌面 `app/pocket.json` 的差异只有：viewport 固定 480×272（dynamic min 720×480 过不了准入）、去掉 `companions`（svc 由我们宿主直供，`svcOpen` 恒真）、去掉桌面专属 enhances（`text.layout.native`/`text.glyphs.runtime`/`display.viewport.live`/`input.ime`/`input.pointer`——嵌入式没有运行时排版与实时视口）。**app 源码零改动**；若后续觉得 272 高度下 `PANEL_FOOTER_H` 拥挤，再做一个小变体常量表（app 侧改，不动框架）。
+与桌面 `app/pocket.json` 的差异只有：viewport 固定 480×272（dynamic min 720×480 过不了准入）、去掉 `companions`（svc 由我们宿主直供，`svcOpen` 恒真）、去掉桌面 enhances（`display.viewport.live`/`input.ime`/`input.pointer`/`input.text`/`host.clipboard`——桌面自上游弃用 `text.layout.native`/`text.glyphs.runtime` 后已不在 enhances 里；嵌入式同样没有实时视口与文本输入）。**app 源码零改动**；若后续觉得 272 高度下 `PANEL_FOOTER_H` 拥挤，再做一个小变体常量表（app 侧改，不动框架）。
 
 构建命令（放 `package.json` scripts：`"build:d12x": "bun vendor/pocketjs/tools/pocket.ts build --host-profile app/d12x.pocket.host.json --manifest app/pocket.d12x.json --project-root . --output dist/pocketcom-d12x.pocket"`）：
 

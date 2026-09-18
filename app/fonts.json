@@ -1,0 +1,18 @@
+{
+  "fallback": [
+    "../assets/fonts/MiSans-Regular.ttf",
+    "../assets/fonts/JetBrainsMono-Regular.ttf"
+  ],
+  "characterFiles": [
+    "../assets/fonts/gb2312.txt"
+  ],
+  "ranges": [
+    "U+00A0-00FF",
+    "U+2010-2027",
+    "U+2190-2193",
+    "U+2500-259F",
+    "U+25A0-25CB",
+    "U+3000-303F",
+    "U+FF01-FF5E"
+  ]
+}

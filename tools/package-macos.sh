@@ -57,13 +57,12 @@ if (plan && plan.app && plan.viewport) {
     "--viewport", `${plan.viewport.logical[0]}x${plan.viewport.logical[1]}`,
     "--density", String(plan.viewport.rasterDensity),
     ...(plan.viewport.policy === "fixed" ? ["--fixed"] : []),
-    ...(plan.features["text.layout.native"] ? ["--native-text"] : []),
     ...(plan.companions?.length ? ["--companions", plan.companions.join(",")] : []),
     ...(plan.companions?.length ? ["--editor"] : []),
   ];
 } else {
   args = ["--app", "pocketcom-main", "--title", "PocketCOM", "--viewport",
-          "960x640", "--density", "2", "--native-text", "--companions",
+          "960x640", "--density", "2", "--companions",
           "pocketcom", "--editor"];
 }
 const shq = (s) => "'" + String(s).replace(/'/g, `'\\''`) + "'";

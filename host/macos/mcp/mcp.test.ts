@@ -60,7 +60,6 @@ function spawnHost(opts: { clicks?: string[]; quitTicks: number }): HostHandle {
     "--title", "PocketCOM",
     "--viewport", "960x640",
     "--density", "2",
-    "--native-text",
     "--companions", "pocketcom",
     "--editor",
     "--quit-after", String(opts.quitTicks),

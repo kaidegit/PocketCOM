@@ -16,9 +16,7 @@
         "input.pointer",
         "input.ime",
         "host.clipboard",
-        "display.viewport.live",
-        "text.glyphs.runtime",
-        "text.layout.native"
+        "display.viewport.live"
       ]
     }
   },

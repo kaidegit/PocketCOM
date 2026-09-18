@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// dev.mjs — run the built PocketCOM bundle on the PocketCOM gpui desktop host.
+// dev.mjs — run the built PocketCOM bundle on the PocketCOM wgpu desktop host.
 // Flags derive from .pocket/macos-app/plan.json (same logic as upstream
-// tools/macos.ts): viewport, density, fixed, native-text, companions.
+// tools/macos.ts): viewport, density, fixed, companions.
 //
-// Host binary: our fork (host/macos, binary pocketcom-host — the stock host
-// plus the com.* serial bridge, SPEC §4.2) wins; fall back to the vendored
-// stock pocket-desktop-host with a warning when the fork is not built yet.
+// Host binary: our fork (host/macos, binary pocketcom-host — the stock
+// wgpu desktop host plus the com.* serial bridge, SPEC §4.2) wins; fall back
+// to the vendored stock pocket-desktop-host with a warning when the fork is
+// not built yet.
 import { readFileSync, existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
@@ -104,7 +105,6 @@ const flags = [
   "--viewport", `${plan.viewport.logical[0]}x${plan.viewport.logical[1]}`,
   "--density", String(plan.viewport.rasterDensity),
   ...(plan.viewport.policy === "fixed" ? ["--fixed"] : []),
-  ...(plan.features["text.layout.native"] ? ["--native-text"] : []),
   ...(plan.companions?.length ? ["--companions", plan.companions.join(",")] : []),
   // editor dialect (svc: keyboard/IME/pointer/scroll) once a companion is declared
   ...(plan.companions?.length ? ["--editor"] : []),
