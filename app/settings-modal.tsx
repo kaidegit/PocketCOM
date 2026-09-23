@@ -25,7 +25,7 @@ import { theme, themeMode, type ThemeMode } from "./theme";
 import { locale, t, type Locale } from "./i18n";
 import { viewportSize } from "./layout";
 import { setActiveField } from "./fields";
-import { applyLogFormat, exportConfig, fontSize, importConfig, scrollbackLines, setScrollbackLines } from "./session";
+import { applyLogFormat, exportConfig, fontSize, historyLines, importConfig, scrollbackLines, setHistoryLines, setScrollbackLines } from "./session";
 import { applyLocale } from "./locale";
 import {
   BTN_Y,
@@ -61,7 +61,8 @@ const draftLocale = ref<Locale>("zh-CN");
 const draftTheme = ref<ThemeMode>("dark");
 const draftFontSize = ref<12 | 14 | 16>(14);
 
-/** 回滚行数输入框句柄（弹窗内容挂载时经 onHandle 注入）。 */
+/** 行数输入框句柄（弹窗内容挂载时经 onHandle 注入）：接收区历史 / 终端回滚。 */
+let historyField: TextFieldHandle | undefined;
 let scrollField: TextFieldHandle | undefined;
 
 export function settingsOpen(): boolean {
@@ -82,6 +83,7 @@ export function closeSettingsModal(): void {
   closePopup(); // 收可能开着的下拉
   settingsOpenRef.value = false;
   modalScroll.value = 0;
+  historyField = undefined;
   scrollField = undefined;
   // 卸载的输入框不得滞留活跃域（activeField 无卸载清理，悬挂会让键盘路由悬空）
   setActiveField(null);
@@ -95,14 +97,15 @@ export function modalWheel(dy: number): void {
   modalScroll.value = Math.max(0, Math.min(max, modalScroll.value - dy));
 }
 
-/** 弹窗打开时的文本域鼠标路由：只认弹窗内回滚行数输入框——全局
+/** 弹窗打开时的文本域鼠标路由：只认弹窗内两个行数输入框——全局
  *  textFieldMouse 是纯几何命中，会把遮罩下方的发送框/面板输入框也认领走。
  *  抬起事件总放行，保证拖选跨出输入框后能正常释放。 */
 export function settingsFieldMouse(x: number, y: number, down: boolean): boolean {
   if (!down) return textFieldMouse(x, y, false);
-  const r = scrollFieldRegion();
-  if (r !== null && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
-    return textFieldMouse(x, y, true);
+  for (const r of [historyFieldRegion(), scrollFieldRegion()]) {
+    if (r !== null && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
+      return textFieldMouse(x, y, true);
+    }
   }
   return false;
 }
@@ -113,8 +116,10 @@ function applyDrafts(): void {
   themeMode.value = draftTheme.value;
   fontSize.value = draftFontSize.value;
   applyLogFormat(); // 字号变化重排日志行宽
+  const h = Number.parseInt((historyField?.text() ?? "").trim(), 10);
+  setHistoryLines(Number.isFinite(h) ? h : 10000);
   const n = Number.parseInt((scrollField?.text() ?? "").trim(), 10);
-  setScrollbackLines(Number.isFinite(n) ? n : 9999);
+  setScrollbackLines(Number.isFinite(n) ? n : 10000);
   closeSettingsModal();
 }
 
@@ -124,6 +129,7 @@ function importAndSync(): void {
     draftLocale.value = locale.value;
     draftTheme.value = themeMode.value;
     draftFontSize.value = fontSize.value;
+    historyField?.setText(String(historyLines.value));
     scrollField?.setText(String(scrollbackLines.value));
   }
 }
@@ -141,9 +147,15 @@ const ctlAnchor = (i: number): PopupAnchor => ({
   w: ctlW(),
   h: CTL_H,
 });
-const scrollFieldRegion = (): SelRect => ({
+const historyFieldRegion = (): SelRect => ({
   x: ctlX(),
   y: frame().y + modalRowY(3) + CTL_TOP_OFF - modalScroll.value,
+  w: ctlW(),
+  h: CTL_H,
+});
+const scrollFieldRegion = (): SelRect => ({
+  x: ctlX(),
+  y: frame().y + modalRowY(4) + CTL_TOP_OFF - modalScroll.value,
   w: ctlW(),
   h: CTL_H,
 });
@@ -292,8 +304,27 @@ function SettingsBox() {
             </View>
           </View>
 
-          {/* 终端回滚行数（0–100000，应用时生效，SPEC §3.4/§3.8） */}
+          {/* 接收区历史行数（1–100000，应用时生效，SPEC §3.3/§3.8） */}
           <View class="absolute" style={{ insetT: modalRowY(3), insetL: 0, insetR: 0, height: MODAL_ROW_H }}>
+            <Text
+              class="absolute text-xs"
+              style={{ insetL: 0, insetT: 0, height: MODAL_ROW_H, lineHeight: MODAL_ROW_H, textColor: theme.value.dim }}
+            >
+              {t("settings.historyLines")}
+            </Text>
+            <View class="absolute" style={{ insetL: LABEL_COL_W, insetR: 0, insetT: CTL_TOP_OFF, height: CTL_H }}>
+              <TextField
+                initial={String(historyLines.value)}
+                selRegion={historyFieldRegion}
+                onHandle={(h) => {
+                  historyField = h;
+                }}
+              />
+            </View>
+          </View>
+
+          {/* 终端回滚行数（0–100000，应用时生效，SPEC §3.4/§3.8） */}
+          <View class="absolute" style={{ insetT: modalRowY(4), insetL: 0, insetR: 0, height: MODAL_ROW_H }}>
             <Text
               class="absolute text-xs"
               style={{ insetL: 0, insetT: 0, height: MODAL_ROW_H, lineHeight: MODAL_ROW_H, textColor: theme.value.dim }}

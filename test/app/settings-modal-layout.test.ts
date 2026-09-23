@@ -46,10 +46,11 @@ describe("settings-modal-layout.modalFrame", () => {
 });
 
 describe("settings-modal-layout.modalRowY", () => {
-  test("四行等距累计（行高 34 + 行距 10）", () => {
+  test("五行等距累计（行高 34 + 行距 10）", () => {
     expect(modalRowY(0)).toBe(40);
     expect(modalRowY(1)).toBe(40 + 44);
     expect(modalRowY(2)).toBe(40 + 88);
     expect(modalRowY(3)).toBe(40 + 132);
+    expect(modalRowY(4)).toBe(40 + 176);
   });
 });

@@ -142,6 +142,7 @@
     "language": "Language",
     "theme": "Theme",
     "fontSize": "Font size",
+    "historyLines": "Receive history lines",
     "scrollbackLines": "Scrollback lines",
     "themeLight": "Light",
     "themeDark": "Dark",

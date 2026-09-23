@@ -125,7 +125,7 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 - 自动换行开关：按帧合流边界换行，间隔 ms 可配（默认 200ms）
 - 转义显示开关：不可见字节显示为 `\x01` 形式
 - 帧内换行符拆分：ASCII 非转义显示下，数据帧内嵌的 `\r\n` / `\n` / `\r` 按硬换行拆成独立显示行（拆分出的后续行与折行续行一致：无方向前缀）；帧末换行不产生多余空行。HEX / 转义显示下换行字节以 `\x0A` 等形式可见，不受影响。行内禁止出现控制字符直接渲染（多行文本会在固定行高内溢出，与后续行重叠）
-- 接收区显示最多 500 行；用于格式切换重放的原始历史最多 500 帧 / 256 KiB（含隐藏 TX），超限逐出最旧整帧并同步释放对应显示行。单帧超出预算不保留，不截断为伪完整帧；历史裁剪不计接收丢帧。ANSI 历史头保留解析状态，重排不会丢失已消费的颜色状态。新增数据增量排版，内容变化独立于行数净增量通知 UI。终端模式仍消费有界日志历史，但推迟日志排版至重新可见；暂停仍不消费，恢复时检测消息断档。
+- 接收区显示行数可调：设置项 `receive.historyLines`，默认 10000 行，范围 1–100000，修改即时生效（超出新上限的旧行按新上限裁剪）。用于格式切换重放的原始历史与显示行同上限（帧数 ≤ 行数设置），字节预算 = max(256 KiB, 行数 × 256 B)（含隐藏 TX），超限逐出最旧整帧并同步释放对应显示行。单帧超出预算不保留，不截断为伪完整帧；历史裁剪不计接收丢帧。ANSI 历史头保留解析状态，重排不会丢失已消费的颜色状态。新增数据增量排版，内容变化独立于行数净增量通知 UI。终端模式仍消费有界日志历史，但推迟日志排版至重新可见；暂停仍不消费，恢复时检测消息断档。
 - ANSI 颜色开关：勾选后数据行默认色切换为主题正文色（深色白/浅色黑），内容解析 `\x1b[31m` 等 SGR 序列按前景色着色（30–37 / 90–97 / 38;5 与 38:5 的 256 色 / 38;2 与 38:2 的 24-bit RGB，`0`/`39`/`ESC[m` 复位；仅前景，背景与加粗等属性忽略；调色板与终端视图共用 §3.7 token）；行尾被截断的不完整序列跨包缓冲，与后续帧续接；状态跨行/跨帧持续，sys 行不参与解析；HEX / 转义显示下无原始 ESC 可解析（序列以 `\x1B` 字节可见），仅默认色生效
 - 方向标记：记录发送时 `=>` 发送 / `<=` 接收（开启则强制自动换行）
 - 暂停显示（数据继续入缓冲）、清屏、滚动锁定（用户上翻时不强制贴底）
@@ -149,7 +149,7 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 ### 3.4 终端模式
 
 - 主区切换为终端视图：固定行列字符网格、等宽渲染、可回滚。
-- **回滚行数可调**：设置项 `terminal.scrollbackLines`，默认 9999 行，范围 0–100000（0 = 不回滚），修改即时生效（超出新上限的旧行按新上限裁剪）。
+- **回滚行数可调**：设置项 `terminal.scrollbackLines`，默认 10000 行，范围 0–100000（0 = 不回滚），修改即时生效（超出新上限的旧行按新上限裁剪）。
 - **ANSI/VT100 解析在纯 TS 核心层实现**（headless 终端模型：屏幕网格 + 光标 + 属性 + 回滚），不依赖 xterm.js（其依赖 DOM）。
 - 按键直发、无本地回显；Backspace 发 `0x7F`；方向键/功能键/Home/End 等映射为对应转义序列（term 行为对齐 `linux`/`xterm`）。
 - 粘贴即发；选中复制。
@@ -192,7 +192,7 @@ interface Message {
 ### 3.8 设置与持久化
 
 - 配置路径：macOS 存 Application Support：`~/Library/Application Support/PocketCOM/config.json`（RT-Thread 预留下载路径抽象）。
-- 内容：语言、主题、字体大小、终端回滚行数（`terminal.scrollbackLines`）、最近连接参数（按类型）、发送历史、接收区开关项、日志路径、MCP 端口与 token。
+- 内容：语言、主题、字体大小、接收区历史行数（`receive.historyLines`）、终端回滚行数（`terminal.scrollbackLines`）、最近连接参数（按类型）、发送历史、接收区开关项、日志路径、MCP 端口与 token。
 - 支持配置导出 / 导入（JSON 文件）。
 - **"应用配置"弹窗语义**（§3.1）：弹窗内修改为草稿、不落盘，点"应用"才写入各状态并触发既有防抖回写；导入/导出是即时动作（不经草稿），导入成功后立即生效并把弹窗草稿重同步为导入值（未应用的其它草稿修改被丢弃）；回滚行数缩小导致的终端历史裁剪不可逆（§3.4）。
 - 发送历史、连接历史上限各 50 条。
@@ -303,7 +303,7 @@ MCP server 实现于**宿主层**（fork 的桌面宿主 crate 内的原生线�
 
 无 resources / prompts（与 umeko 一致，后续按需扩）。
 
-约定：tool 输出为面向 agent 的稳定英文短句（不随 UI 语言切换）；`read` 行的来源标签除外（随 i18n，与 UI 前缀同源，见 §6.4）。tool 执行失败返回 `isError: true` + `content[{type:"text"}]`（`code: msg` 格式），协议层错误（未知 tool、参数缺失）走 JSON-RPC error。`send` 的 `appendNewline` 追加 `\r\n`。`config_read`/`config_write` 白名单：`language / theme / fontSize / terminal.scrollbackLines / receive.{hex,escape,timestamp,wrap,color} / send.{escape,crlf,appendNewline} / mcp.{enabled,port}`（token 不可读出亦不可写入）。
+约定：tool 输出为面向 agent 的稳定英文短句（不随 UI 语言切换）；`read` 行的来源标签除外（随 i18n，与 UI 前缀同源，见 §6.4）。tool 执行失败返回 `isError: true` + `content[{type:"text"}]`（`code: msg` 格式），协议层错误（未知 tool、参数缺失）走 JSON-RPC error。`send` 的 `appendNewline` 追加 `\r\n`。`config_read`/`config_write` 白名单：`language / theme / fontSize / terminal.scrollbackLines / receive.{hex,escape,timestamp,wrap,color,historyLines} / send.{escape,crlf,appendNewline} / mcp.{enabled,port}`（token 不可读出亦不可写入）。
 
 ### 6.4 读缓冲与来源可见性
 

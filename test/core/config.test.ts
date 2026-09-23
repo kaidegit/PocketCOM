@@ -19,7 +19,7 @@ describe("normalizeConfig", () => {
       theme: "system",
       fontSize: 16,
       terminal: { scrollbackLines: 5000 },
-      receive: { hex: true, escape: true, timestamp: true, wrap: false, color: true },
+      receive: { hex: true, escape: true, timestamp: true, wrap: false, color: true, historyLines: 8000 },
       send: { escape: true, crlf: true, appendNewline: true },
       logPath: "/tmp/log.txt",
       mcp: { enabled: true, port: 8000, token: "t" },
@@ -28,7 +28,7 @@ describe("normalizeConfig", () => {
     expect(cfg.theme).toBe("system");
     expect(cfg.fontSize).toBe(16);
     expect(cfg.terminal).toEqual({ scrollbackLines: 5000 });
-    expect(cfg.receive).toEqual({ hex: true, escape: true, timestamp: true, wrap: false, color: true });
+    expect(cfg.receive).toEqual({ hex: true, escape: true, timestamp: true, wrap: false, color: true, historyLines: 8000 });
     expect(cfg.send).toEqual({ escape: true, crlf: true, appendNewline: true });
     expect(cfg.logPath).toBe("/tmp/log.txt");
     expect(cfg.mcp).toEqual({ enabled: true, port: 8000, token: "t" });
@@ -50,16 +50,24 @@ describe("normalizeConfig", () => {
     expect(cfg.terminal.scrollbackLines).toBe(0); // clamp 到范围下限
     expect(cfg.mcp.port).toBe(1); // 0 clamp 到下限
     expect(cfg.receive.hex).toBe(false);
+    expect(cfg.receive.historyLines).toBe(DEFAULT_CONFIG.receive.historyLines); // 非数字 → 默认
     expect(cfg.sendHistory).toEqual([]);
   });
 
   test("数值字段 clamp 到合法区间", () => {
     const cfg = normalizeConfig({
       terminal: { scrollbackLines: 999999 },
+      receive: { historyLines: 999999 },
       mcp: { port: 99999 },
     });
     expect(cfg.terminal.scrollbackLines).toBe(100000);
+    expect(cfg.receive.historyLines).toBe(100000);
     expect(cfg.mcp.port).toBe(65535);
+  });
+
+  test("receive.historyLines 下限 1（0 非法，LogView 要求正数）", () => {
+    const cfg = normalizeConfig({ receive: { historyLines: 0 } });
+    expect(cfg.receive.historyLines).toBe(1);
   });
 
   test("lastConn 按类型归一化，未提供的类型不出现", () => {

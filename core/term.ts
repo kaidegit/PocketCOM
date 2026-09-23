@@ -152,7 +152,7 @@ export interface TermKeyMods {
 export interface TerminalOptions {
   cols?: number;
   rows?: number;
-  /** 回滚行数上限（0 = 不回滚），默认 9999（SPEC §3.4）。 */
+  /** 回滚行数上限（0 = 不回滚），默认 10000（SPEC §3.4）。 */
   scrollback?: number;
 }
 
@@ -201,7 +201,7 @@ export class Terminal {
   constructor(opts: TerminalOptions = {}) {
     this.cols = Math.max(2, Math.floor(opts.cols ?? 80));
     this.rows = Math.max(2, Math.floor(opts.rows ?? 24));
-    this.scrollbackLimit = Terminal.clampScrollback(opts.scrollback ?? 9999);
+    this.scrollbackLimit = Terminal.clampScrollback(opts.scrollback ?? 10000);
     this.scrollBottom = this.rows - 1;
     this.savedMain = this.blankSaved();
     this.savedAlt = this.blankSaved();

@@ -18,15 +18,15 @@ export const LABEL_COL_W = 110;
 /** 控件在行内垂直居中偏移 =(MODAL_ROW_H 34 - 控件高 28)/ 2。 */
 export const CTL_TOP_OFF = 3;
 
-/** 行 i 的画布内顶偏移：0 语言 / 1 主题 / 2 字号 / 3 回滚行数。 */
+/** 行 i 的画布内顶偏移：0 语言 / 1 主题 / 2 字号 / 3 接收区历史行数 / 4 回滚行数。 */
 export function modalRowY(i: number): number {
   return ROW0_Y + i * (MODAL_ROW_H + ROW_GAP);
 }
 
-export const DIV_Y = modalRowY(3) + MODAL_ROW_H + 12;
+export const DIV_Y = modalRowY(4) + MODAL_ROW_H + 12;
 export const IO_Y = DIV_Y + 1 + 12;
 export const BTN_Y = IO_Y + 30 + 12;
-/** 弹窗内容总高（标题 + 4 行 + 分隔线 + 导入导出 + 按钮 + 底 padding）。 */
+/** 弹窗内容总高（标题 + 5 行 + 分隔线 + 导入导出 + 按钮 + 底 padding）。 */
 export const MODAL_CONTENT_H = BTN_Y + 30 + MODAL_PAD;
 
 export interface ModalFrame {

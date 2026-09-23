@@ -67,7 +67,7 @@ export interface AppConfig {
   theme: ConfigTheme;
   fontSize: ConfigFontSize;
   terminal: { scrollbackLines: number };
-  receive: { hex: boolean; escape: boolean; timestamp: boolean; wrap: boolean; color: boolean };
+  receive: { hex: boolean; escape: boolean; timestamp: boolean; wrap: boolean; color: boolean; historyLines: number };
   send: { escape: boolean; crlf: boolean; appendNewline: boolean };
   lastConn: LastConnConfig;
   /** 发送历史：去重置顶、最旧在后，上限 50（SPEC §3.3/§3.8）。 */
@@ -83,8 +83,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   language: "zh-CN",
   theme: "dark",
   fontSize: 14,
-  terminal: { scrollbackLines: 9999 },
-  receive: { hex: false, escape: false, timestamp: false, wrap: true, color: false },
+  terminal: { scrollbackLines: 10000 },
+  receive: { hex: false, escape: false, timestamp: false, wrap: true, color: false, historyLines: 10000 },
   send: { escape: false, crlf: false, appendNewline: false },
   lastConn: {},
   sendHistory: [],
@@ -215,6 +215,12 @@ export function normalizeConfig(raw: unknown): AppConfig {
       timestamp: asBool(asRecord(r.receive).timestamp, DEFAULT_CONFIG.receive.timestamp),
       wrap: asBool(asRecord(r.receive).wrap, DEFAULT_CONFIG.receive.wrap),
       color: asBool(asRecord(r.receive).color, DEFAULT_CONFIG.receive.color),
+      historyLines: asInt(
+        asRecord(r.receive).historyLines,
+        DEFAULT_CONFIG.receive.historyLines,
+        1,
+        100000,
+      ),
     },
     send: {
       escape: asBool(asRecord(r.send).escape, DEFAULT_CONFIG.send.escape),

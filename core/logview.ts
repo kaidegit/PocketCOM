@@ -3,7 +3,8 @@
  * - 数据源是 core 消息总线（单一事实源）：每帧 sync() 从总线环形缓冲
  *   peek 出 id > lastSeenId 的新消息；暂停 = 不 sync，恢复后自然追上
  *   （缓冲有界，追不上即丢最旧——sync 按 id 断档返回 lost，由 app 层记 sys 提示）。
- * - 显示行有界（默认 500 行），原始历史另受 256 KiB 预算限制。
+ * - 显示行与原始历史有界（maxRows/maxBytes，可经 configure() 运行时调整；
+ *   默认 500 行 / 256 KiB，SPEC §3.3）。
  * - hex/escape/timestamp/color 切换时用保留的最近消息全量重排版；
  *   color（ANSI 颜色转义）开启时内容剥离 SGR 序列并产出逐字符前景色
  *   （row.fg，编码同 core/term.ts），扫描状态从历史头检查点重放。
@@ -94,7 +95,6 @@ export class LogView {
   rows: LogRow[] = [];
   private entries: Message[] = [];
   private retainedBytes = 0;
-  private readonly maxBytes: number;
   private headAll = new AnsiFgScanner();
   private headRx = new AnsiFgScanner();
   private colorize = new AnsiFgScanner();
@@ -106,7 +106,8 @@ export class LogView {
   private format: LogFormatOptions;
   private labels: LogLineLabels;
   private showTx: boolean;
-  private readonly maxRows: number;
+  private maxRows: number;
+  private maxBytes: number;
   private readonly measure?: (text: string) => number;
   private readonly wrapWidth?: () => number;
   private widthCache = new Map<string, number>();
@@ -130,18 +131,30 @@ export class LogView {
     this.configure(format, labels);
   }
 
-  /** 一次提交显示设置；只有度量语义改变才清字符宽度缓存。 */
+  /** 一次提交显示设置与历史上限；只有度量语义改变才清字符宽度缓存。
+   *  上限缩小立即裁剪历史（不可逆，SPEC §3.3/§3.8）。 */
   configure(format: LogFormatOptions, labels: LogLineLabels,
-    opts: { showTx?: boolean; remeasure?: boolean } = {}): void {
+    opts: { showTx?: boolean; remeasure?: boolean; maxRows?: number; maxBytes?: number } = {}): void {
+    if (opts.maxRows !== undefined && (!Number.isInteger(opts.maxRows) || opts.maxRows <= 0)) {
+      throw new ParamError("PARAM_INVALID", "log history limits must be positive (maxRows integer)");
+    }
+    if (opts.maxBytes !== undefined && (!Number.isFinite(opts.maxBytes) || opts.maxBytes <= 0)) {
+      throw new ParamError("PARAM_INVALID", "log history limits must be positive (maxBytes)");
+    }
+    const limitsChanged = (opts.maxRows !== undefined && opts.maxRows !== this.maxRows)
+      || (opts.maxBytes !== undefined && opts.maxBytes !== this.maxBytes);
     const changed = (Object.keys(format) as (keyof LogFormatOptions)[]).some(k => format[k] !== this.format[k])
       || (Object.keys(labels) as (keyof LogLineLabels)[]).some(k => labels[k] !== this.labels[k])
       || (opts.showTx !== undefined && opts.showTx !== this.showTx)
-      || opts.remeasure || this.layoutWidth !== (this.wrapWidth?.() ?? 0);
+      || opts.remeasure || limitsChanged || this.layoutWidth !== (this.wrapWidth?.() ?? 0);
     if (!changed) return;
     this.format = { ...format };
     this.labels = { ...labels };
     if (opts.showTx !== undefined) this.showTx = opts.showTx;
     if (opts.remeasure) this.widthCache.clear();
+    if (opts.maxRows !== undefined) this.maxRows = opts.maxRows;
+    if (opts.maxBytes !== undefined) this.maxBytes = opts.maxBytes;
+    if (limitsChanged) this.trim();
     this.rebuild();
   }
 

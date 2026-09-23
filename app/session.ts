@@ -23,6 +23,7 @@ import {
   type SerialConnParams,
 } from "../core/config";
 import { LogView, type LogRow } from "../core/logview";
+import { DEFAULT_MAX_BYTES } from "../core/message";
 import type { LogLineLabels } from "../core/format";
 import { composeSendBytes, type SendOptions } from "../core/send";
 import { strToBytes } from "../core/codec";
@@ -67,6 +68,16 @@ export function setUiMode(next: "transfer" | "terminal"): void {
 /** 终端回滚行数设置（SPEC §3.4：terminal.scrollbackLines，0–100000）。 */
 export const scrollbackLines = ref(DEFAULT_CONFIG.terminal.scrollbackLines);
 
+/** 接收区历史行数设置（SPEC §3.3：receive.historyLines，1–100000）。
+ *  显示行与重放历史同上限；原始历史的字节预算随之缩放（见 historyByteBudget）。 */
+export const historyLines = ref(DEFAULT_CONFIG.receive.historyLines);
+/** 字节预算 = max(256 KiB, 行数 × 256 B)：行数上限对小帧日志真实生效，
+ *  ≤1000 行时退回既有 256 KiB 下限（与总线环形缓冲同量级）。 */
+const HISTORY_BYTES_PER_LINE = 256;
+function historyByteBudget(): number {
+  return Math.max(DEFAULT_MAX_BYTES, historyLines.value * HISTORY_BYTES_PER_LINE);
+}
+
 /** 终端模式核心（SPEC §3.4）：RX 帧持续灌入（模式切换不清屏），响应字节经
  *  pumpSession 写回连接。 */
 export const terminal = new Terminal({ scrollback: scrollbackLines.value });
@@ -92,6 +103,15 @@ export function setScrollbackLines(n: number): void {
   scrollbackLines.value = v;
   terminal.setScrollback(v);
   termScroll.value = Math.min(termScroll.value, terminal.scrollbackCount);
+}
+
+/** 接收区历史行数设置（即时生效，缩小裁剪不可逆，SPEC §3.3）。 */
+export function setHistoryLines(n: number): void {
+  if (!Number.isFinite(n)) return;
+  const v = Math.min(100000, Math.max(1, Math.floor(n)));
+  if (v === historyLines.value) return;
+  historyLines.value = v;
+  applyLogFormat();
 }
 
 /** 终端键入/粘贴直发（无本地回显，SPEC §3.4）；未连接静默丢弃。 */
@@ -186,6 +206,7 @@ function buildMcpConfigSnapshot(): Record<string, unknown> {
       timestamp: rxTimestamp.value,
       wrap: rxWrap.value,
       color: rxColor.value,
+      historyLines: historyLines.value,
     },
     send: {
       escape: sendEscape.value,
@@ -215,6 +236,7 @@ function applyMcpConfigPatch(patch: McpConfigPatch): void {
     if (patch.receive.timestamp !== undefined) rxTimestamp.value = patch.receive.timestamp;
     if (patch.receive.wrap !== undefined) rxWrap.value = patch.receive.wrap;
     if (patch.receive.color !== undefined) rxColor.value = patch.receive.color;
+    if (patch.receive.historyLines !== undefined) setHistoryLines(patch.receive.historyLines);
     needFormat = true;
   }
   if (patch.send) {
@@ -402,21 +424,27 @@ export const logView = new LogView(
   { hex: rxHex.value, escape: rxEscape.value, timestamp: rxTimestamp.value, color: rxColor.value },
   logLabels(),
   {
-    maxRows: 500,
+    maxRows: historyLines.value,
+    maxBytes: historyByteBudget(),
     showTx: mcpState.value.on,
     measure: (s) => getOps().measureText(s, MONO_SLOTS[fontSize.value]),
     wrapWidth: () => (rxWrap.value ? rxWidth.value - 12 : 0),
   },
 );
 
-/** 显示开关/语言/字号变化：全量重排版并通知渲染。TX 行显隐随 MCP server
- *  运行态（SPEC §3.5：未运行时接收区只显示收与系统事件）。 */
+/** 显示开关/语言/字号/历史行数变化：全量重排版并通知渲染。TX 行显隐随 MCP
+ *  server 运行态（SPEC §3.5：未运行时接收区只显示收与系统事件）。 */
 let measuredLogFontSize = fontSize.value;
 export function applyLogFormat(): void {
   logView.configure(
     { hex: rxHex.value, escape: rxEscape.value, timestamp: rxTimestamp.value, color: rxColor.value },
     logLabels(),
-    { showTx: mcpState.value.on, remeasure: measuredLogFontSize !== fontSize.value },
+    {
+      showTx: mcpState.value.on,
+      remeasure: measuredLogFontSize !== fontSize.value,
+      maxRows: historyLines.value,
+      maxBytes: historyByteBudget(),
+    },
   );
   measuredLogFontSize = fontSize.value;
   logVersion.value++;
@@ -616,6 +644,7 @@ function buildConfigJson(): string {
       timestamp: rxTimestamp.value,
       wrap: rxWrap.value,
       color: rxColor.value,
+      historyLines: historyLines.value,
     },
     send: {
       escape: sendEscape.value,
@@ -703,6 +732,7 @@ function applyConfig(cfg: AppConfig): void {
   themeMode.value = cfg.theme;
   fontSize.value = cfg.fontSize;
   setScrollbackLines(cfg.terminal.scrollbackLines);
+  setHistoryLines(cfg.receive.historyLines);
   rxHex.value = cfg.receive.hex;
   rxEscape.value = cfg.receive.escape;
   rxTimestamp.value = cfg.receive.timestamp;
@@ -773,6 +803,7 @@ for (const source of [
   themeMode,
   fontSize,
   scrollbackLines,
+  historyLines,
   rxHex,
   rxEscape,
   rxTimestamp,

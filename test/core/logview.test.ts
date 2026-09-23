@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { LogView, splitHardLines, type LogRow } from "../../core/logview";
+import { ParamError } from "../../core/errors";
 import { TERM_DEFAULT_COLOR } from "../../core/term";
 import { MessageBus } from "../../core/bus";
 import { strToBytes } from "../../core/codec";
@@ -407,6 +408,43 @@ describe("incremental log history", () => {
     feed(bus, { payload: strToBytes("ok") });
     expect(lv.sync(bus).lost).toBe(0);
     expect(lv.rows[0]!.text).toBe("<= ok");
+  });
+
+  test("configure 运行时改 maxRows：缩小立即裁剪、放大不复活已逐出帧", () => {
+    const bus = new MessageBus();
+    const lv = new LogView(FORMAT, LABELS, { maxRows: 2 });
+    for (const text of ["a", "b", "c"]) { feed(bus, { payload: strToBytes(text) }); lv.sync(bus); }
+    expect(lv.rows.map(r => r.text)).toEqual(["<= b", "<= c"]);
+    lv.configure(FORMAT, LABELS, { maxRows: 1 });
+    expect(lv.rows.map(r => r.text)).toEqual(["<= c"]);
+    lv.configure(FORMAT, LABELS, { maxRows: 4 });
+    expect(lv.rows.map(r => r.text)).toEqual(["<= c"]);
+    for (const text of ["d", "e", "f"]) { feed(bus, { payload: strToBytes(text) }); lv.sync(bus); }
+    expect(lv.rows.map(r => r.text)).toEqual(["<= c", "<= d", "<= e", "<= f"]);
+  });
+
+  test("configure 运行时改 maxBytes：超预算的旧整帧立即逐出", () => {
+    const bus = new MessageBus();
+    const lv = new LogView(FORMAT, LABELS, { maxRows: 10 });
+    feed(bus, { payload: strToBytes("aaaa") });
+    feed(bus, { payload: strToBytes("bb") });
+    lv.sync(bus);
+    expect(lv.rows.map(r => r.text)).toEqual(["<= aaaa", "<= bb"]);
+    lv.configure(FORMAT, LABELS, { maxBytes: 4 }); // 4+2 > 4 → 逐出 aaaa
+    expect(lv.rows.map(r => r.text)).toEqual(["<= bb"]);
+    lv.configure(FORMAT, LABELS, { maxBytes: 1 }); // 2 > 1 → 全逐出
+    expect(lv.rows).toEqual([]);
+  });
+
+  test("configure 非法上限抛错且不改状态", () => {
+    const bus = new MessageBus();
+    const lv = new LogView(FORMAT, LABELS, { maxRows: 2 });
+    feed(bus, { payload: strToBytes("x") }); lv.sync(bus);
+    expect(() => lv.configure(FORMAT, LABELS, { maxRows: 0 })).toThrow(ParamError);
+    expect(() => lv.configure(FORMAT, LABELS, { maxRows: 1.5 })).toThrow(ParamError);
+    expect(() => lv.configure(FORMAT, LABELS, { maxBytes: -1 })).toThrow(ParamError);
+    expect(lv.rows.map(r => r.text)).toEqual(["<= x"]);
+    expect(lv.sync(bus).added).toBe(0);
   });
 });
 

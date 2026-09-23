@@ -36,7 +36,7 @@ app/            # Vue Vapor 组件与页面状态（仅渲染 + 输入），pock
                 #   文本框选区命中区，四合一；块集合随连接类型/客户端列表动态伸缩；
                 #   页脚"应用配置"按钮 = 设置弹窗入口）；settings-modal.tsx "应用配置"
                 #   模态弹窗（草稿模式：打开快照、应用一次性写回、取消/遮罩/Escape
-                #   丢弃；语言/主题/字号/回滚行数/导入导出，导入成功重同步草稿；
+                #   丢弃；语言/主题/字号/接收区历史行数/回滚行数/导入导出，导入成功重同步草稿；
                 #   settings-modal-layout.ts 为其纯几何，headless 可测）；
                 #   transfer.tsx 接收区/发送区（字号三档/发送历史/tcps 定向发送/
                 #   日志拖动选区）；terminal.tsx 终端视图（M3：字符网格按 run 合并
@@ -48,12 +48,12 @@ app/            # Vue Vapor 组件与页面状态（仅渲染 + 输入），pock
                 #   弹层锚点 x 按标签实测宽累计，防弹层与控件脱节）；
                 #   session.ts 会话接线单例 + 连接参数仓库 + 设置持久化（加载/防抖回写/
                 #   导入导出）+ uiMode/终端模型装配（bus→term 持续灌入、DSR/DA 应答泵、
-                #   scrollbackLines 设置）；theme.ts 主题令牌（深色/浅色/跟随系统 +
+                #   scrollbackLines/historyLines 设置）；theme.ts 主题令牌（深色/浅色/跟随系统 +
                 #   终端独立调色板）；i18n.ts/locale.ts 语言包；fontsize.ts 字号档位常量
                 #   （mono 槽 12/14/16px）；fields.ts 活跃文本域路由；wheel.ts 滚轮分区
                 #   路由；layout.ts 布局常量；statusbar.tsx 状态栏；svc.ts 宿主事件行封装
 core/           # 纯 TS：连接状态机(connection)、帧合流(framing：分块缓冲并批量拷贝)、消息总线(bus)、编解码(codec)、
-                #   格式化(format)、日志视图(logview：增量排版、500 帧 / 256 KiB 原始历史、ANSI 头检查点、隐藏时延迟排版)、ANSI 前景色扫描（ansicolor：接收区
+                #   格式化(format)、日志视图(logview：增量排版、行数/字节上限运行时可调（字节预算 = max(256 KiB, 行数 × 256 B)）、ANSI 头检查点、隐藏时延迟排版)、ANSI 前景色扫描（ansicolor：接收区
                 #   颜色转义的 SGR 解析/剥离，跨包续接截断序列，色编码复用 term）、
                 #   发送组装(send)、base64、统一会话
                 #   （session：串口+四类网络+回环+tcps 客户端表+自动重连）、设置持久化

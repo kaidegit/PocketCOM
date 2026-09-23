@@ -204,7 +204,8 @@ describe("滚动区域与回滚", () => {
     expect(lineText(t, 2)).toBe("b");
   });
 
-  test("scrollback 默认 9999、setScrollback 即时裁剪（SPEC §3.4）", () => {
+  test("scrollback 默认 10000、setScrollback 即时裁剪（SPEC §3.4）", () => {
+    expect(new Terminal({ cols: 5, rows: 2 }).scrollbackLimitLines).toBe(10000);
     const t = new Terminal({ cols: 5, rows: 2, scrollback: 10 });
     for (let i = 0; i < 20; i++) t.feedString(`l${i}\r\n`);
     expect(t.scrollbackCount).toBe(10);

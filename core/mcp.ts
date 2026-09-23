@@ -417,7 +417,7 @@ export type McpConfigPatch = {
   theme?: "light" | "dark" | "system";
   fontSize?: 12 | 14 | 16;
   scrollbackLines?: number;
-  receive?: { hex?: boolean; escape?: boolean; timestamp?: boolean; wrap?: boolean; color?: boolean };
+  receive?: { hex?: boolean; escape?: boolean; timestamp?: boolean; wrap?: boolean; color?: boolean; historyLines?: number };
   send?: { escape?: boolean; crlf?: boolean; appendNewline?: boolean };
   mcp?: { enabled?: boolean; port?: number };
 };
@@ -484,11 +484,18 @@ export function validateConfigPatch(raw: unknown): McpConfigPatch {
   }
   if (top.receive !== undefined) {
     const rec = asRecord(top.receive);
-    rejectUnknown("receive.", rec, ["hex", "escape", "timestamp", "wrap", "color"]);
+    rejectUnknown("receive.", rec, ["hex", "escape", "timestamp", "wrap", "color", "historyLines"]);
     const sub: McpConfigPatch["receive"] = {};
     for (const key of ["hex", "escape", "timestamp", "wrap", "color"] as const) {
       const v = boolField(rec, key);
       if (v !== undefined) sub[key] = v;
+    }
+    if (rec.historyLines !== undefined) {
+      const v = rec.historyLines;
+      if (typeof v !== "number" || !Number.isFinite(v) || v < 1 || v > 100000) {
+        throw new ParamError("PARAM_INVALID", "config receive.historyLines must be 1..100000");
+      }
+      sub.historyLines = Math.floor(v);
     }
     if (Object.keys(sub).length > 0) patch.receive = sub;
   }
