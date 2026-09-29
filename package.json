@@ -9,7 +9,7 @@
     "check": "bun vendor/pocketjs/tools/pocket.ts check --target macos-app --manifest app/pocket.json --project-root .",
     "build": "bun vendor/pocketjs/tools/pocket.ts compile --target macos-app --manifest app/pocket.json --project-root .",
     "dev": "npm run build && node tools/dev.mjs",
-    "install:macos": "tools/package-macos.sh && tools/install-macos.sh"
+    "install:macos": "npm run build && cargo build --locked --release --manifest-path host/macos/Cargo.toml && tools/package-macos.sh && tools/install-macos.sh"
   },
   "repository": {
     "type": "git",
