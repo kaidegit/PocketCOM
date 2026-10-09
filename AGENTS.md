@@ -4,7 +4,7 @@
 
 ## 项目简介
 
-PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调试助手（参考 COMTool 精简复刻）。单页面、收发/终端双模式开关切换；连接支持串口/TCP/UDP/WebSocket/回环（loopback，测试用）；i18n + 深色模式；内置 MCP server 供 AI agent 共享收发。首期平台 macOS，远期 RT-Thread。
+PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调试助手（参考 COMTool 精简复刻）。单页面、收发/终端双模式开关切换；连接支持串口/TCP/UDP/WebSocket/回环（loopback，测试用）；i18n + 深色模式；内置 MCP server 供 AI agent 共享收发。首期平台 macOS；AIC D12x + RT-Thread 已接入应用打包/固件构建，设备 IO 桥与紧凑布局后续实现。
 
 ## 技术栈与硬性约束
 
@@ -81,7 +81,7 @@ host/macos/     # macOS 宿主：串口/TCP/UDP/WS 原生 IO、设置持久化+�
                 #   保留 Option 组合字符的 insertText 输入）；右键鼠标事件（b:2 行）
                 #   对 pocketcom companion 放行（上游仅 system-ui；接收区右键菜单与
                 #   终端选中右键复制依赖此路径）
-host/rtthread/  # RT-Thread 宿主（预留）：UART/lwIP 适配 bridge 契约
+host/rtthread/  # AIC/RT-Thread 产品接入：manifest/profile、构建编排与内存报告；复用 fork hosts/aic 和 SDK pocketjs 应用；UART/lwIP 桥后续实现
 assets/i18n/    # 语言包
 assets/fonts/   # MiSans（UI）+ JetBrains Mono（mono 槽）字体文件（vendor，构建期烘焙字形）
 docs/           # 调研、移植与脚本化 UI 验证文档（e2e.md）、e2e 控件坐标速查
@@ -89,15 +89,16 @@ docs/           # 调研、移植与脚本化 UI 验证文档（e2e.md）、e2e 
                 #   tools/coords-probe.py；改布局后重测）、MCP 服务手册（mcp.md）、
                 #   D12x RT-Thread 移植方案（rtthread-d12x.md，M5 预研）、性能审阅
                 #   （performance-review-2026-09-17.md；performance/ 保存原始基准数据）
-vendor/pocketjs # PocketJS 上游（git submodule；引擎 crates 与桌面宿主来源）
+vendor/pocketjs # kaidegit/pocketjs fork（submodule，feat/aic；桌面引擎与 AIC 宿主）
+vendor/luban-lite # 局域网 yekai/luban-lite SDK（submodule，feat/pocketjs；RT-Thread/驱动/镜像）
 SPEC.md         # 功能规格（权威）
 ```
 
-分层依赖单向：`app → core → bridge`，`host/*`（host/macos、预留的 host/rtthread）实现 bridge 契约。core 必须保持纯 TS、可在 Bun/Node 下单测。
+分层依赖单向：`app → core → bridge`，`host/*`（host/macos；host/rtthread 设备桥后续实现）实现 bridge 契约。core 必须保持纯 TS、可在 Bun/Node 下单测。
 
 ## 构建与测试
 
-前置：bun（`~/.bun/bin` 需在 PATH）；首次克隆后执行 `git submodule update --init --depth 1 && cd vendor/pocketjs && bun install`。wasm32 target 仅浏览器宿主/金样测试需要，桌面开发不必装。
+前置：bun（`~/.bun/bin` 需在 PATH）；首次克隆后执行 `git submodule update --init --depth 1 vendor/pocketjs`，根目录 `npm ci` 后再 `(cd vendor/pocketjs && bun install --frozen-lockfile)`（npm 会移除链接包的嵌套依赖，编译器需要 vendor runtime bundles）；板端另外执行 `git submodule update --init --depth 1 vendor/luban-lite`（需访问局域网 Gitea）。根 framework 为本地 fork，Vue/Vapor 与 fork 一致；npm peer 解析见 `.npmrc`。显式升级用 `git submodule update --remote vendor/pocketjs vendor/luban-lite` 跟踪 `.gitmodules` 分支；构建不拉取更新，Git gitlink 仍记录实际提交。wasm32 target 仅浏览器宿主/金样测试需要，桌面开发不必装。
 
 - 核心层单测：`bun test test/`（源码在 `test/core/`、`test/bridge/` 与 `test/app/`，与源码分层分离）
 - 核心性能复测：`bun tools/perf-audit.ts`；桌面 QuickJS 基准用 `tools/perf-quickjs.c` 链接既有 release 引擎库，命令与测量边界见 [性能审阅](docs/performance-review-2026-09-17.md)。只测核心层，不代表完整 UI 帧耗时。
@@ -115,7 +116,7 @@ SPEC.md         # 功能规格（权威）
 - 脚本化 UI 验证：宿主脚本 flags（`--mouse` `--click` `--wheel` `--key` `--type` `--press` `--storm` `--screenshot` `--quit-after` `--announce-ready` `--no-native-mouse-keyboard`（丢弃原生鼠标/滚轮/键盘事件，e2e 必加以防物理输入污染）；`@T` 为 60Hz 虚拟时钟 tick 序号）经 `node tools/dev.mjs -- <flags…>` 原样转发给宿主二进制（不带 `--` 行为不变）。**各参数详解、tick/坐标系、拖拽与组合键配方、截图机制与坑位见 [docs/e2e.md](docs/e2e.md)**；观测用 `POCKETCOM_TRACE=1`。本机真机 e2e 已验证：串口全链路（M1）、TCP Client 回环（M2）、`--screenshot`/`--wheel`/`--key cmd+enter`、终端模式（M3，滚轮/拖拽选区/Ctrl 控制码均可脚本注入）、MCP 全链路含终端模式门控（M4，见上）、"应用配置"设置弹窗全链路（打开→草稿→应用/Escape/遮罩关闭，coords.md §3）；截图为 opt-in flag，CI 不触发。
 - UI 金样测试：PocketJS headless Bun host（byte-exact PNG golden，待落地）
 - MCP 集成测试：`bun test host/macos/mcp/`（前置 `npm run build` + `cargo build --release`；脚本化 MCP client 经原生 fetch 走真实宿主+guest 全链路：401 鉴权 → initialize 会话 → tools/list → connect（bun TCP echo + loopback 回环）→ send → read 前缀断言（`[RX]`/`[SYS]`/i18n 手动前缀）→ force 语义 → disconnect → config 白名单（token 不可触）→ 会话 DELETE；终端模式门控（SPEC §6.1）经 `--click` 脚本切模式验证停服/重启。产物缺失自动跳过，CI 在前置步骤产出两者）。同目录 `flood.test.ts` 为大流量 e2e：loopback + MCP 灌入 400 条小帧 + 6×48KiB 突发（超环形缓冲 256KiB 触发逐出），断言收/发字节对称、洪峰后连接与 MCP 存活、渲染收据出帧，并落 3 张窗口截图供检查接收框（无屏幕录制权限的会话里截图断言降级为警告跳过，见 docs/e2e.md 常见坑 6）
-- RT-Thread 固件构建（预留）：`host/rtthread/` 按 RT-Thread package 规范组织（`SConscript` + `Kconfig`），在固件工程中经 `scons` 编译；前期可用 QEMU（如 `qemu-vexpress-a9` BSP）验证，命令落地后更新本节。
+- AIC + RT-Thread：`npm run check:aic` 校验，`npm run package:aic` 打包；`RTT_EXEC_PATH=/path/to/riscv-none-elf/bin npm run build:aic -- --sdk /path/to/sdk -- -j4` 构建（默认 SDK=`vendor/luban-lite`、SCons=`-j8`）。复用 SDK pocketjs 应用与 fork `hosts/aic`；首次生成 bootloader 地址元数据但不重编已跟踪 bootloader.bin。应用包/内存报告在 `dist/aic/`，SDK 镜像在其 `output/`。内联包实际常驻 PSRAM；预算超限失败，不调分区/heap、不烧录。完整架构、前置环境与限制见 [host/rtthread/README.md](host/rtthread/README.md)。测试 `bun test test/host/rtthread/`，目录与宿主分层镜像。桌面 CI 仅初始化 PocketJS，不访问局域网 SDK。
 
 ## 参考代码库（只读，禁止修改）
 

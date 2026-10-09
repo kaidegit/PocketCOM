@@ -1,6 +1,8 @@
 # PocketCOM 移植 ArtInChip D12x（RT-Thread + AIC GE）完整方案
 
-状态：M5 预研产出（SPEC §8 M5「移植评估报告」）。本文是基于本地代码实证 + 官方文档 + 社区资料的可执行移植手册：从零开始，每一步给出具体命令、文件与验收标准。
+状态：历史 M5 预研（2026-09 基线），不是当前构建配方。2026-10-09 已接入 AIC + RT-Thread 打包与固件入口，当前架构、命令与验收以 [host/rtthread/README.md](../host/rtthread/README.md) 和 SPEC §4.4 为准。
+
+**当前存储纠正**：fork `hosts/aic` 已实现软件 RGB565、触摸与帧循环，SDK 应用将 `.pocket` 内联进固件。当前链接脚本将 `.rodata` 放入 PSRAM_CMA，bootloader 随固件加载，因此内联包不是 flash-backed 零拷贝；文件加载入口也会整包分配且长期保留 PAK，仅恢复 rodata 分区不会减少总 PSRAM。本期不恢复文件系统，不开启 GE，不实现设备 IO 桥或小屏布局。以下 Phase 步骤保留为历史设计参考，涉及组件重写、外置包或 Linux-only 环境的假设不再适用于当前入口。本文是基于本地代码实证 + 官方文档 + 社区资料的可执行移植手册：从零开始，每一步给出具体命令、文件与验收标准。
 
 - 调研基线：`vendor/pocketjs` @ 当前 submodule pin、luban-lite master（本地 `/Volumes/aigo_1t/DevPkgs/artinchip/luban-lite`，RT-Thread 内核 4.1.1）、pocketjs.dev 文档与博客、ArtInChip D12x Datasheet（2026-09 检索）。
 - 结论先行：**可行**。D12x（玄铁 E907，RV32IMAFC @384–400MHz，8MB SiP PSRAM，GE 2D 引擎，480×272 RGB565 屏）落在 PocketJS 已验证硬件谱系内（该谱系包含 24MB RAM 的 PSP 和 ESP32-S3/P4 MCU）。技术路线 **照搬 PocketJS 官方 ESP-IDF 宿主的组件结构**，把 FreeRTOS 层换成 RT-Thread，把 PPA 加速器换成 AIC GE。工作量估计（单人）：**6–9 周**。

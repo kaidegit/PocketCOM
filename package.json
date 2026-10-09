@@ -9,7 +9,10 @@
     "check": "bun vendor/pocketjs/tools/pocket.ts check --target macos-app --manifest app/pocket.json --project-root .",
     "build": "bun vendor/pocketjs/tools/pocket.ts compile --target macos-app --manifest app/pocket.json --project-root .",
     "dev": "npm run build && node tools/dev.mjs",
-    "install:macos": "npm run build && cargo build --locked --release --manifest-path host/macos/Cargo.toml && tools/package-macos.sh && tools/install-macos.sh"
+    "install:macos": "npm run build && cargo build --locked --release --manifest-path host/macos/Cargo.toml && tools/package-macos.sh && tools/install-macos.sh",
+    "check:aic": "bun host/rtthread/aic.ts check",
+    "package:aic": "bun host/rtthread/aic.ts package",
+    "build:aic": "bun host/rtthread/aic.ts build"
   },
   "repository": {
     "type": "git",
@@ -27,9 +30,10 @@
   "devDependencies": {
     "@emnapi/core": "^1.11.3",
     "@emnapi/runtime": "^1.11.3",
-    "@pocketjs/cli": "^0.11.0",
-    "@pocketjs/framework": "^0.11.0",
+    "@pocketjs/framework": "file:vendor/pocketjs",
     "bun-types": "^1.4.1",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vue": "3.6.0-rc.1",
+    "vue-jsx-vapor": "3.2.19"
   }
 }

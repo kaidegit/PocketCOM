@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-aic-host-1.json",
+  "version": 1,
+  "id": "aic-d12x-demo68",
+  "platform": "aic",
+  "form": "takeover",
+  "tickHz": 60,
+  "display": {
+    "physicalViewport": [480, 272],
+    "logicalViewports": [[480, 272]],
+    "presentations": ["native"],
+    "rasterDensity": 1
+  },
+  "capabilities": ["input.touch", "text.glyphs.baked"]
+}

@@ -3,7 +3,7 @@
 基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调试助手。单页面、收发/终端双模式切换，内置 MCP server，让 AI agent 可以直接接入共享收发数据。
 
 - 首期平台：macOS（桌面宿主）
-- 远期平台：RT-Thread（架构预留，不实现）
+- 嵌入式接入：AIC D12x + RT-Thread（应用包/固件构建已接入，设备 IO 和小屏交互后续实现）
 
 ## 功能特性
 
@@ -27,9 +27,10 @@ core/           # 纯 TS：连接状态机、帧合流、消息总线（有界�
 bridge/         # com.* HostOps 契约（类型 + sim host fixture）
 test/           # 单测，按源码分层镜像（test/core、test/bridge、test/host）
 host/macos/     # macOS 宿主：串口/TCP/UDP/WS 原生 IO、MCP server
-host/rtthread/  # RT-Thread 宿主（预留）
+host/rtthread/  # AIC 产品配置、构建与内存报告
 assets/         # i18n 语言包、MiSans 字体
-vendor/pocketjs # PocketJS 上游（git submodule）
+vendor/pocketjs # PocketJS fork（submodule，feat/aic）
+vendor/luban-lite # 局域网 SDK（submodule，feat/pocketjs）
 SPEC.md         # 功能规格（权威定义）
 ```
 
@@ -41,8 +42,9 @@ SPEC.md         # 功能规格（权威定义）
 
 ```bash
 # 首次克隆：拉取 submodule 并安装依赖
-git submodule update --init --depth 1
-cd vendor/pocketjs && bun install && cd ../..
+git submodule update --init --depth 1 vendor/pocketjs
+npm ci
+(cd vendor/pocketjs && bun install --frozen-lockfile)
 
 # 核心层单测
 bun test test/
@@ -68,6 +70,17 @@ tools/package-macos.sh   # 产出 dist/PocketCOM.app 与 dist/PocketCOM-<版本>
 ```
 
 > 分发包为 ad-hoc 签名（未公证），首次打开需右键 → 打开，或执行 `xattr -cr dist/PocketCOM.app`。
+
+## AIC + RT-Thread
+
+```sh
+git submodule update --init --depth 1 vendor/luban-lite  # 需访问局域网 Gitea
+npm run check:aic
+npm run package:aic
+RTT_EXEC_PATH=/path/to/riscv-none-elf/bin npm run build:aic
+```
+
+复用 SDK 已跑通的 demo68-nor 应用入口和 fork AIC 宿主，保留内联包；包与固件资源仍占 PSRAM。产物、分支更新、依赖安装顺序、内存预算与功能边界见 [host/rtthread/README.md](host/rtthread/README.md)。不自动烧录。
 
 ## MCP 接入
 

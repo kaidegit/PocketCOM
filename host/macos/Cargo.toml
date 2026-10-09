@@ -14,7 +14,7 @@ license = "MIT"
 description = "PocketCOM desktop host on gpui (PocketJS runtime + com.* serial bridge)"
 
 [dependencies]
-pocketjs-core = { path = "../../vendor/pocketjs/engine/core", features = ["std"] }
+pocketjs-core = { path = "../../vendor/pocketjs/engine/core" }
 pocket-mod = { path = "../../vendor/pocketjs/engine/crates/pocket-mod" }
 pocket-ui-surface = { path = "../../vendor/pocketjs/engine/crates/pocket-ui-surface" }
 pocket-ui-gpui = { path = "../../vendor/pocketjs/engine/backends/gpui" }

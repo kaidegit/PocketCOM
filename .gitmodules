@@ -1,4 +1,8 @@
 [submodule "vendor/pocketjs"]
 	path = vendor/pocketjs
-	url = https://github.com/pocket-stack/pocketjs
-	branch = main
+	url = https://github.com/kaidegit/pocketjs.git
+	branch = feat/aic
+[submodule "vendor/luban-lite"]
+	path = vendor/luban-lite
+	url = http://192.168.0.20:3000/yekai/luban-lite.git
+	branch = feat/pocketjs

@@ -9,7 +9,7 @@
 PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调试助手，功能定位参考 [COMTool](/Volumes/aigo_1t/GitRepo/COMTool) 的精简复刻：只保留**收发模式**与**终端模式**两个核心功能，并内置 **MCP 服务**，允许 AI agent 接入共享收发数据。
 
 - 首期目标平台：macOS（桌面宿主）
-- 远期目标平台：RT-Thread（嵌入式宿主，本版本只做架构预留，不实现）
+- 嵌入式目标平台：AIC D12x + RT-Thread（本期接入构建与渲染；设备 IO 桥和小屏交互后续实现）
 
 ### 1.1 设计原则
 
@@ -24,7 +24,7 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 - 波形图、协议解析插件脚本、SSH 连接（COMTool 有，均砍掉）
 - WebSocket server 模式（仅 client）
 - 自动更新、多窗口
-- RT-Thread 实际移植（仅架构预留）
+- RT-Thread UART/网络/MCP 桥、紧凑布局和软键盘（本期不实现）
 
 ## 2. 技术栈与平台约束
 
@@ -234,11 +234,15 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 - 终端模式的按键直发也走此通道（命名键 `key` 行 + 字符 `ch` 行）。
 - 该方言是 app 级协议而非宿主能力，可在嵌入式宿主上以触摸/按键复用同一 dispatcher。
 
-### 4.4 RT-Thread 预留
+### 4.4 AIC + RT-Thread 接入
 
-- 核心层与桥接契约不引入任何桌面专有 API；RT-Thread 移植 = 新宿主（QuickJS + PocketJS 嵌入式核心 + UART/lwIP 适配桥接契约）。
-- 目录预留：`host/rtthread/`，按 RT-Thread package 规范组织（`SConscript` + `Kconfig`），作为离线软件包引入固件工程，经 `scons` 编译；前期可用 QEMU（如 `qemu-vexpress-a9`）验证。详见 AGENTS.md 目录结构与构建节。
-- 配置存储、日志、字体密度走平台抽象接口。
+- PocketCOM 负责产品源码、板端 manifest/host profile、启动入口和构建编排；PocketJS fork 的 `hosts/aic` 负责 QuickJS、触摸、RGB565 渲染和帧循环；luban-lite SDK 负责 RT-Thread、MPP、硬件驱动、链接与镜像打包。
+- `vendor/pocketjs` 跟踪 `kaidegit/pocketjs` 的 `feat/aic`，`vendor/luban-lite` 跟踪局域网 Gitea `yekai/luban-lite` 的 `feat/pocketjs`。显式 `git submodule update --remote` 更新分支；构建不拉取更新。父仓库 gitlink 仍按 Git 机制记录提交。
+- `host/rtthread/` 放产品配置与接入文档；复用 SDK 的 `application/rt-thread/pocketjs` 和 `d12x_demo68-nor_rt-thread_pocketjs_defconfig`，不复制通用宿主，不修改 vendor 已跟踪文件。
+- 板端 Vue Vapor 应用使用 480×272、native presentation、density 1、60Hz；共享现有 UI，启动前初始化视口。当前接受小屏布局不完整，`com.*` 缺失时沿用能力探测降级；本期不提供 UART/网络/MCP、持久化或软键盘。
+- `check:aic` 校验配置/类型；`package:aic` 生成 JS/PAK/.pocket、宿主契约头和内联 C 数组；`build:aic` 重新打包后经 SCons 构建固件。默认 SDK 为 submodule，支持 `--sdk <路径>` 和 `-- <scons 参数>`，工具链遵循 `RTT_EXEC_PATH`。产物在 `dist/aic`，中间文件在 `.pocket/aic`，宿主生成文件在其已忽略的 `hosts/aic/generated`。
+- 内联包暂不恢复文件系统分区：当前 `.rodata` 链接进 PSRAM，bootloader 随固件加载；宿主文件加载则整包分配 heap，PAK 长期借用，不能自动减少 PSRAM。构建报告实际 ELF/map 的包大小、静态段、CMA/SW 边界、framebuffer/TLSF 预算及 OS 分区占用；超限失败，不自动调整分区或提高 heap，不自动烧录。
+- 字体 UI 使用 MiSans，mono 使用 JetBrains Mono；显式烘焙中英文语言包字符，未知字形遵守 §5.4。未来桥接仍由产品宿主实现，设备事件仅在 tick 边界进入 JS，core 保持纯 TS。
 
 ## 5. 关键专项设计
 
@@ -336,7 +340,7 @@ MCP server 实现于**宿主层**（fork 的桌面宿主 crate 内的原生线�
 | M2 | TCP/UDP/WS + i18n + 深色模式 + 设置持久化 | §3.2 其余连接、§3.6/3.7/3.8 |
 | M3 | 终端模式 | §3.4 |
 | M4 | MCP 服务 | §6 全项 + 集成测试 |
-| M5 | RT-Thread 预研（不实现） | 移植评估报告 |
+| M5 | AIC + RT-Thread 构建与宿主接入 | 应用包、固件构建、内存报告；设备 IO 桥/紧凑布局后续实现 |
 
 ## 9. 风险与开放问题
 
@@ -349,7 +353,7 @@ M0 桌面宿主调研已完成（2026-09-04），#1/#3 已关闭：
 | 3 | 烘焙字体不支持任意字符 | ✅ 已关闭（桌面端） | gpui 后端 `enhances: ["text.layout.native"]` 走 CoreText，任意 Unicode 可显示；烘焙约束仅剩嵌入式目标（§5.4） |
 | 4 | 终端网格渲染性能 | 开放 | M0 压测；native text 路径下按行渲染 `TEXT_RUN`，备选 `Image` 位图自绘网格 |
 | 5 | MCP 多读缓冲的会话语义 | 开放 | 首版共享缓冲，v1.1 按 session 隔离 |
-| 6 | RT-Thread 上 Rust `no_std` 核心构建与 lwIP/UART 适配 | 开放 | M5 预研，架构已预留 |
+| 6 | AIC/RT-Thread 设备 IO 与内存预算 | 开放 | Rust/固件构建已接入；真机启动、lwIP/UART 桥及紧凑布局待验证/实现 |
 | 7 | 金样测试需要 wasm32 target + headless Bun host；native text 路径放弃跨宿主字节确定性 | 开放 | UI 金样在 gpui 宿主或 wasm host 二选一，M3 前定 |
 
 ## 10. 附录

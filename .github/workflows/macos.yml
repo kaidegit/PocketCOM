@@ -26,7 +26,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          submodules: recursive
+          # The SDK remote is LAN-only; desktop CI only needs PocketJS.
+          submodules: false
+
+      - name: Initialize PocketJS
+        run: git submodule update --init --depth 1 vendor/pocketjs
 
       - uses: actions/setup-node@v4
         with:
@@ -37,12 +41,14 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - name: Install framework deps (vendor/pocketjs)
-        working-directory: vendor/pocketjs
-        run: bun install
-
       - name: Install root deps
         run: npm ci
+
+      # npm may hoist/remove dependencies inside the linked file: package.
+      # The compiler resolves its runtime bundles from this directory.
+      - name: Install framework deps (vendor/pocketjs)
+        working-directory: vendor/pocketjs
+        run: bun install --frozen-lockfile
 
       - name: Typecheck
         run: npm run typecheck
