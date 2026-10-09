@@ -12,7 +12,8 @@
     "install:macos": "npm run build && cargo build --locked --release --manifest-path host/macos/Cargo.toml && tools/package-macos.sh && tools/install-macos.sh",
     "check:aic": "bun host/rtthread/aic.ts check",
     "package:aic": "bun host/rtthread/aic.ts package",
-    "build:aic": "bun host/rtthread/aic.ts build"
+    "build:aic": "bun host/rtthread/aic.ts build",
+    "flash:aic": "bun host/rtthread/aic.ts flash"
   },
   "repository": {
     "type": "git",

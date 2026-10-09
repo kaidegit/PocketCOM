@@ -10,10 +10,34 @@ export const DEFCONFIG = "d12x_demo68-nor_rt-thread_pocketjs_defconfig";
 
 export function parseArgs(argv: string[]) {
   const [command, ...args] = argv;
-  if (!["check", "package", "build"].includes(command ?? "")) {
+  if (!["check", "package", "build", "flash"].includes(command ?? "")) {
     throw new Error(
-      "usage: bun host/rtthread/aic.ts <check|package|build> [--sdk <path>] [-- <scons args>]",
+      "usage: bun host/rtthread/aic.ts <check|package|build> [--sdk <path>] [-- <scons args>]\n" +
+      "       bun host/rtthread/aic.ts flash [--all] [--sdk <path>] [<aic-isp args>]",
     );
+  }
+
+  let sdk: string | undefined;
+  const takeSdkPath = () => {
+    sdk = args.shift();
+    if (!sdk || sdk.startsWith("--")) throw new Error("--sdk requires a path");
+    return sdk;
+  };
+
+  // aic-isp owns its grammar (port, baud rates, --verify, --reset, ...); only
+  // --all and --sdk are ours, everything else is forwarded verbatim so unknown
+  // flags fail inside aic-isp with its own message instead of here.
+  if (command === "flash") {
+    let all = false;
+    const isp: string[] = [];
+    while (args.length > 0) {
+      const arg = args.shift()!;
+      if (arg === "--all" && !all) all = true;
+      else if (arg === "--sdk" && sdk === undefined) takeSdkPath();
+      else if (arg === "--all" || arg === "--sdk") throw new Error(`duplicate option: ${arg}`);
+      else isp.push(arg);
+    }
+    return { command: command!, sdk, scons: [], all, isp };
   }
 
   // Split "-- <scons args>" off; everything before the separator is ours.
@@ -22,14 +46,12 @@ export function parseArgs(argv: string[]) {
   if (separator >= 0) args.splice(separator, 1);
 
   // Only --sdk belongs to us; anything else here is a typo, not a passthrough.
-  let sdk: string | undefined;
   while (args.length > 0) {
     const arg = args.shift();
     if (arg !== "--sdk" || sdk !== undefined) {
       throw new Error(`unknown or duplicate option: ${arg}`);
     }
-    sdk = args.shift();
-    if (!sdk || sdk.startsWith("--")) throw new Error("--sdk requires a path");
+    takeSdkPath();
   }
 
   if (command !== "build" && scons.length > 0) {
@@ -60,7 +82,7 @@ export function parseArgs(argv: string[]) {
     );
   }
 
-  return { command: command!, sdk, scons };
+  return { command: command!, sdk, scons, all: false, isp: [] };
 }
 
 /** Spawn a child with inherited stdio; a non-zero exit becomes a thrown error. */
@@ -201,6 +223,24 @@ export function elfSections(bytes: Uint8Array): Record<string, { address: number
 }
 
 /**
+ * Parse the SDK's JSONC image config: strip // comments and trailing commas
+ * before JSON.parse. Consumed by the memory report (OS partition size) and
+ * flashPlan (partition offsets, component files).
+ */
+export function parseImageConfig(text: string) {
+  const withoutComments = text.replace(/\/\/[^\n]*/g, "");
+  return JSON.parse(withoutComments.replace(/,\s*([}\]])/g, "$1"));
+}
+
+/** Decode a partition size suffix ("512k", "16m") into bytes. */
+export function partitionSizeBytes(value: string, partition: string): number {
+  const parts = value.match(/^(\d+)([km]?)$/i);
+  if (!parts) throw new Error(`invalid size for partition ${partition}`);
+  const unit = { k: 1024, m: 1048576 }[parts[2].toLowerCase()] ?? 1;
+  return Number(parts[1]) * unit;
+}
+
+/**
  * Static memory budget of the freshly linked firmware. The SDK map supplies
  * PSRAM region/heap boundaries and the inline package size, the ELF supplies
  * section sizes, and the SDK image config supplies the OS partition size.
@@ -242,16 +282,15 @@ export function memoryReport(input: {
     throw new Error("linked package differs from freshly built package");
   }
 
-  // The SDK writes the partition table as JSONC: strip // comments and
-  // trailing commas before parsing, then decode the size suffix ("3072k").
-  const withoutComments = input.imageConfig.replace(/\/\/[^\n]*/g, "");
-  const config = JSON.parse(withoutComments.replace(/,\s*([}\]])/g, "$1"));
-  const partitionSize = String(config["spi-nor"]?.partitions?.os?.size ?? "");
-
-  const sizeParts = partitionSize.match(/^(\d+)([km]?)$/i);
-  if (!sizeParts) throw new Error("invalid OS partition size");
-  const unitBytes = { k: 1024, m: 1048576 }[sizeParts[2].toLowerCase()] ?? 1;
-  const osPartitionBytes = Number(sizeParts[1]) * unitBytes;
+  // The SDK writes the partition table as JSONC; partitionSizeBytes decodes
+  // the size suffix ("3072k").
+  const config = parseImageConfig(input.imageConfig) as {
+    "spi-nor"?: { partitions?: { os?: { size?: string } } };
+  };
+  const osPartitionBytes = partitionSizeBytes(
+    String(config["spi-nor"]?.partitions?.os?.size ?? ""),
+    "os",
+  );
 
   // Both heaps are placed by the linker inside a PSRAM region; each boundary
   // symbol must land within its own region or the map layout changed.
@@ -314,4 +353,38 @@ export function budgetErrors(report: ReturnType<typeof memoryReport>): string[] 
     errors.push(`SW TLSF pool budget short by ${-report.swAfterPoolBytes} bytes`);
   }
   return errors;
+}
+
+/**
+ * Files to flash and the partition start offsets aic-isp must write them to,
+ * derived from the SDK's pack image config — the same file→partition mapping
+ * the packer uses, with offsets accumulated from the spi-nor partition sizes
+ * in declaration order. A repartition therefore moves the write addresses
+ * along with the bootloader's own table instead of desyncing a hardcoded
+ * constant. "app" is the os component; "all" prepends the spl bootloader.
+ */
+export function flashPlan(
+  imageConfig: string,
+  selection: "app" | "all",
+): { partition: string; file: string; offset: number }[] {
+  const config = parseImageConfig(imageConfig);
+  const partitions = config["spi-nor"]?.partitions;
+  if (!partitions) throw new Error("image config has no spi-nor partition table");
+  const offsets: Record<string, number> = {};
+  let cursor = 0;
+  for (const [name, entry] of Object.entries(partitions)) {
+    offsets[name] = cursor;
+    cursor += partitionSizeBytes(String((entry as { size?: string })?.size ?? ""), name);
+  }
+
+  const targets = config.image?.target;
+  if (!targets) throw new Error("image config has no target components");
+  return (selection === "all" ? ["spl", "os"] : ["os"]).map(partition => {
+    const component = Object.values(targets).find(entry =>
+      (entry as { part?: string[] }).part?.includes(partition),
+    );
+    const file = (component as { file?: string } | undefined)?.file;
+    if (!file) throw new Error(`image config has no component for partition ${partition}`);
+    return { partition, file, offset: offsets[partition] };
+  });
 }

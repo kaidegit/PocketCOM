@@ -8,6 +8,9 @@
 //   build    additionally drive the luban-lite SCons build and check the
 //            static memory budget of the linked firmware.
 //
+// plus flash, which leaves that pipeline alone and pushes already-built
+// images to a board in download mode with the SDK's tools/aic-isp uploader.
+//
 // See host/rtthread/README.md for the full flow and required tools.
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -29,6 +32,7 @@ import {
   run,
   contractHeader,
   embeddedSource,
+  flashPlan,
   memoryReport,
   budgetErrors,
 } from "./build-support";
@@ -41,9 +45,9 @@ const OUT = join(ROOT, "dist/aic");
 const WORK = join(ROOT, ".pocket/aic");
 
 /** Fail early with a pointing error instead of a cryptic tool failure later. */
-function requireFile(path: string) {
+function requireFile(path: string, hint = "initialize submodules/dependencies first") {
   if (!existsSync(path)) {
-    throw new Error(`missing ${path}; initialize submodules/dependencies first`);
+    throw new Error(`missing ${path}; ${hint}`);
   }
 }
 
@@ -54,6 +58,45 @@ function sha256(data: Uint8Array): string {
 
 async function main() {
   const options = parseArgs(Bun.argv.slice(2));
+
+  // --- Flash already-built images; no manifest validation or SDK build. ---
+  // The board must be in download mode (hold the download key PA1 while
+  // powering up); everything about the transfer itself — port, baud rates,
+  // --verify, --reset — is aic-isp's business and forwarded verbatim.
+  if (options.command === "flash") {
+    const sdk = resolve(ROOT, options.sdk ?? "vendor/luban-lite");
+    requireFile(join(sdk, "tools/aic-isp/Cargo.toml"));
+    const productName = DEFCONFIG.replace(/_defconfig$/, "");
+    const images = join(sdk, "output", productName, "images");
+    const imageConfig = join(sdk, "target/d12x/demo68-nor/pack/image_cfg.json");
+    requireFile(imageConfig);
+    const plan = flashPlan(readFileSync(imageConfig, "utf8"), options.all ? "all" : "app");
+    for (const entry of plan) {
+      requireFile(join(images, entry.file), "run npm run build:aic to produce it");
+    }
+
+    // Prefer the repo's prebuilt uploader, then a previous cargo build; build
+    // it once from source otherwise (serialport is its only dependency).
+    const exe = process.platform === "win32" ? "aic-isp.exe" : "aic-isp";
+    const ispDir = join(sdk, "tools/aic-isp");
+    let isp = [join(ispDir, "bin", exe), join(ispDir, "target/release", exe)].find(existsSync);
+    if (!isp) {
+      if (!Bun.which("cargo")) throw new Error("cargo is not on PATH; needed to build tools/aic-isp");
+      console.log("aic: building tools/aic-isp (first run only)");
+      await run(["cargo", "build", "--release"], ispDir);
+      isp = join(ispDir, "target/release", exe);
+    }
+
+    const binArgs = plan.flatMap(entry => [
+      "--bin", `${join(images, entry.file)}@0x${entry.offset.toString(16)}`,
+    ]);
+    console.log(
+      `aic: flash ` +
+      plan.map(e => `${e.file} -> ${e.partition}@0x${e.offset.toString(16)}`).join(", "),
+    );
+    await run([isp, ...binArgs, ...options.isp], ROOT);
+    return;
+  }
 
   // Drop the previous report up front so a failed build cannot leave stale
   // budget numbers next to the new firmware.

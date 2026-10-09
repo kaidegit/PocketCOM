@@ -49,6 +49,14 @@ RTT_EXEC_PATH=/path/to/riscv-none-elf/bin npm run build:aic
 
 # 可选 SDK 与 SCons 并行参数（不传则 -j8）
 RTT_EXEC_PATH=/path/to/riscv-none-elf/bin npm run build:aic -- --sdk /path/to/sdk -- -j4 -Q
+
+# 烧录已构建镜像：板子先进下载模式（按住下载键 PA1 上电）。
+# 默认只下载 app（d12x_os.itb -> os 分区）；--all 先烧 bootloader（bootloader.aic -> spl 分区）。
+# 其余参数原样透传给 SDK 的 tools/aic-isp（端口、--isp-baud、--verify、--reset 等）；
+# 烧写偏移由 pack image_cfg.json 的分区表推导；上传工具优先用其 bin/ 预编译产物，
+# 缺失时首次自动 cargo 构建
+npm run flash:aic -- -p /dev/cu.usbserial-XXX --verify --reset
+npm run flash:aic -- --all -p /dev/cu.usbserial-XXX
 ```
 
 前置：Bun、npm、Python 3、SCons、cargo/rustup，以及 fork 的 `hosts/aic/rust/rust-toolchain.toml` 指定的 nightly + rust-src。工具链需要 upstream `riscv-none-elf-gcc`；脚本遵循 SDK 的 `RTT_EXEC_PATH`，不下载或安装工具链。SDK 的 Python 依赖由其环境提供，SCons/Python 缺失模块会直接报错退出。
@@ -86,6 +94,6 @@ npm run check && npm run build
 cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host
 ```
 
-重复 package 应得到相同 `.pocket`；构建后查看报告和 ELF/map。烧录由用户按 SDK 配方执行；`.img` 是带 section 偏移的容器，不能作为裸文件直接写某个 flash 地址。真机检查启动错误、持续出帧、字体和 UI 渲染；当前不以完整触摸交互或串口收发作为验收。
+重复 package 应得到相同 `.pocket`；构建后查看报告和 ELF/map。烧录用 `npm run flash:aic`：写入 `images/` 下 SDK 打包产物（spl 分区放 `bootloader.aic`，os 分区放 `d12x_os.itb`），烧写偏移按 pack image_cfg.json 的分区表推导；`.img` 是带 section 偏移的容器，不能作为裸文件直接写某个 flash 地址。真机检查启动错误、持续出帧、字体和 UI 渲染；当前不以完整触摸交互或串口收发作为验收。
 
 本机验证（2026-10-09）：应用包 1153064 bytes，ITB 2711552 / 3145728 bytes；CMA 扣双 framebuffer 理论余额 408656 bytes，SW 扣 TLSF 理论余额 468992 bytes。重复打包 SHA-256 相同，273 项 Bun 测试、48 项 macOS 宿主测试通过，桌面脚本启动出帧成功。真机验收尚未执行。

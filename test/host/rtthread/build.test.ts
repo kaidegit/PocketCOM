@@ -7,6 +7,7 @@ import {
   contractHeader,
   embeddedSource,
   elfSections,
+  flashPlan,
   memoryReport,
   budgetErrors,
 } from "../../../host/rtthread/build-support";
@@ -94,11 +95,15 @@ describe("AIC build orchestration", () => {
       command: "build",
       sdk: undefined,
       scons: [],
+      all: false,
+      isp: [],
     });
     expect(parseArgs(["build", "--sdk", "/tmp/sdk with spaces", "--", "-j4", "-Q"])).toEqual({
       command: "build",
       sdk: "/tmp/sdk with spaces",
       scons: ["-j4", "-Q"],
+      all: false,
+      isp: [],
     });
     expect(parseArgs(["build", "--", "-j", "4"]).scons).toEqual(["-j", "4"]);
     expect(DEFCONFIG).toBe("d12x_demo68-nor_rt-thread_pocketjs_defconfig");
@@ -107,6 +112,32 @@ describe("AIC build orchestration", () => {
     expect(() => parseArgs(["build", "--sdk"])).toThrow("requires a path");
     expect(() => parseArgs(["build", "--", "--clean"])).toThrow();
     expect(() => parseArgs(["build", "--typo"])).toThrow();
+    // --all only means something to flash; elsewhere it is a typo.
+    expect(() => parseArgs(["build", "--all"])).toThrow("unknown or duplicate");
+  });
+
+  test("flash args: --all plus verbatim aic-isp passthrough", () => {
+    expect(parseArgs(["flash"])).toEqual({
+      command: "flash",
+      sdk: undefined,
+      scons: [],
+      all: false,
+      isp: [],
+    });
+    expect(
+      parseArgs(["flash", "--all", "-p", "/dev/cu.usbserial-X", "-b", "115200", "--verify", "--reset"]),
+    ).toEqual({
+      command: "flash",
+      sdk: undefined,
+      scons: [],
+      all: true,
+      isp: ["-p", "/dev/cu.usbserial-X", "-b", "115200", "--verify", "--reset"],
+    });
+    expect(parseArgs(["flash", "--sdk", "/tmp/sdk", "--all"]).sdk).toBe("/tmp/sdk");
+
+    expect(() => parseArgs(["flash", "--all", "--all"])).toThrow("duplicate option: --all");
+    expect(() => parseArgs(["flash", "--sdk", "/a", "--sdk", "/b"])).toThrow("duplicate option: --sdk");
+    expect(() => parseArgs(["flash", "--sdk"])).toThrow("requires a path");
   });
 
   test("subprocess failure is propagated", async () => {
@@ -169,5 +200,62 @@ describe("AIC memory admission", () => {
     const malformed = fixtureElf();
     new DataView(malformed.buffer).setUint32(32, 500, true);
     expect(() => elfSections(malformed)).toThrow("invalid ELF section table");
+  });
+});
+
+describe("AIC flash plan", () => {
+  // Partition table + target components mirroring the d12x demo68-nor pack
+  // config, JSONC comments and trailing commas included. Offsets accumulate
+  // in declaration order: spl@0, env@0x80000, env_r@0xA0000, userid@0xC0000,
+  // os@0x100000.
+  const imageConfig = `{
+    "spi-nor": { // Device, name matches image:info:media:type
+        "size": "16m",
+        "partitions": {
+            "spl":    { "size": "512k" },
+            "env":    { "size": "128k" },
+            "env_r":  { "size": "128k" },
+            "userid": { "size": "256k" },
+            "os":     { "size": "3072k" },
+            "os_r":   { "size": "3072k" },
+            "data":   { "size": "9216k" },
+        },
+    },
+    "image": {
+        "target": { // Image components which will be burn to partitions
+            "spl": { "file": "bootloader.aic", "attr": ["mtd", "required"], "part": ["spl"] },
+            "env": { "file": "env.bin", "attr": ["mtd", "optional"], "part": ["env"] },
+            "os":  { "file": "d12x_os.itb", "attr": ["mtd", "required"], "part": ["os"] },
+        },
+    },
+  }
+  `;
+
+  test("app is the os component at its accumulated offset", () => {
+    expect(flashPlan(imageConfig, "app")).toEqual([
+      { partition: "os", file: "d12x_os.itb", offset: 0x100000 },
+    ]);
+  });
+
+  test("all prepends the spl bootloader at offset zero", () => {
+    expect(flashPlan(imageConfig, "all")).toEqual([
+      { partition: "spl", file: "bootloader.aic", offset: 0 },
+      { partition: "os", file: "d12x_os.itb", offset: 0x100000 },
+    ]);
+  });
+
+  test("rejects a missing table and a partition without a component", () => {
+    expect(() => flashPlan("{}", "app")).toThrow("no spi-nor partition table");
+    expect(() => flashPlan('{"spi-nor":{"partitions":{"os":{"size":"1m"}}}}', "app"))
+      .toThrow("no target components");
+
+    // The spl partition is programmed but nothing declares its file.
+    const unbootable = imageConfig.replace(/^\s*"spl": \{ "file"[^\n]*\n/m, "");
+    expect(() => flashPlan(unbootable, "all")).toThrow("no component for partition spl");
+
+    // Size suffixes must parse; a bare number or missing size is an error.
+    expect(() =>
+      flashPlan(imageConfig.replace('"512k"', '"512x"'), "all"),
+    ).toThrow("invalid size for partition spl");
   });
 });
