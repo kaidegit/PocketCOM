@@ -52,7 +52,7 @@ RTT_EXEC_PATH=/path/to/riscv-none-elf/bin npm run build:aic -- --sdk /path/to/sd
 
 # 烧录已构建镜像：板子先进下载模式（按住下载键 PA1 上电）。
 # 默认只下载 app（d12x_os.itb -> os 分区）；--all 先烧 bootloader（bootloader.aic -> spl 分区）。
-# 其余参数原样透传给 SDK 的 tools/aic-isp（端口、--isp-baud、--verify、--reset 等）；
+# 其余参数原样透传给 SDK 的 tools/aic-isp（端口、-b 波特率、--verify、--reset 等）；
 # 烧写偏移由 pack image_cfg.json 的分区表推导；上传工具优先用其 bin/ 预编译产物，
 # 缺失时首次自动 cargo 构建
 npm run flash:aic -- -p /dev/cu.usbserial-XXX --verify --reset
