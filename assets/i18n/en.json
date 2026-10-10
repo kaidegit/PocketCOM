@@ -1,4 +1,10 @@
 {
+  "aic": {
+    "minimal": "AIC / RT-Thread minimal startup check",
+    "noIO": "Serial, network and terminal are unavailable",
+    "frames": "Frames processed: {count}",
+    "touch": "Tap to test · Touches: {count}"
+  },
   "app": {
     "title": "PocketCOM",
     "subtitle": "Serial / network debug tool"

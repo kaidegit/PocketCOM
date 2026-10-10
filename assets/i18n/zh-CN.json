@@ -1,4 +1,10 @@
 {
+  "aic": {
+    "minimal": "AIC / RT-Thread 精简启动验证",
+    "noIO": "暂未启用串口、网络和终端功能",
+    "frames": "已运行帧数：{count}",
+    "touch": "点击测试 · 触摸次数：{count}"
+  },
   "app": {
     "title": "PocketCOM",
     "subtitle": "串口 / 网络调试助手"

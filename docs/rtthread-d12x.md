@@ -2,6 +2,8 @@
 
 状态：历史 M5 预研（2026-09 基线），不是当前构建配方。2026-10-09 已接入 AIC + RT-Thread 打包与固件入口，当前架构、命令与验收以 [host/rtthread/README.md](../host/rtthread/README.md) 和 SPEC §4.4 为准。
 
+2026-10-10 补充：[8 MiB PSRAM 内存优化方案](aic-memory-optimization.md) 基于完整 UI OOM / 精简页成功的现状重新核算预算。本文旧的 heap 估算、SW 调到 6 MiB 和按需加载假设不能直接作为当前配置方案。
+
 **当前存储纠正**：fork `hosts/aic` 已实现软件 RGB565、触摸与帧循环，SDK 应用将 `.pocket` 内联进固件。当前链接脚本将 `.rodata` 放入 PSRAM_CMA，bootloader 随固件加载，因此内联包不是 flash-backed 零拷贝；文件加载入口也会整包分配且长期保留 PAK，仅恢复 rodata 分区不会减少总 PSRAM。本期不恢复文件系统，不开启 GE，不实现设备 IO 桥或小屏布局。以下 Phase 步骤保留为历史设计参考，涉及组件重写、外置包或 Linux-only 环境的假设不再适用于当前入口。本文是基于本地代码实证 + 官方文档 + 社区资料的可执行移植手册：从零开始，每一步给出具体命令、文件与验收标准。
 
 - 调研基线：`vendor/pocketjs` @ 当前 submodule pin、luban-lite master（本地 `/Volumes/aigo_1t/DevPkgs/artinchip/luban-lite`，RT-Thread 内核 4.1.1）、pocketjs.dev 文档与博客、ArtInChip D12x Datasheet（2026-09 检索）。
