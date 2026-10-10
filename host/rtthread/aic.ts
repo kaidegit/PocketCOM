@@ -35,6 +35,7 @@ import {
   flashPlan,
   memoryReport,
   budgetErrors,
+  compactBundle,
 } from "./build-support";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -173,6 +174,9 @@ async function main() {
     `--extra-chars=${[...chars].sort().join("")}`,
   ], ROOT);
 
+  // QuickJS compiles the complete IIFE before running module initialization.
+  // Compact only this target to reduce parser/atom allocations; desktop stays unchanged.
+  const compactJs = await compactBundle(join(WORK, `${plan.app.output}.js`), join(WORK, "compact"));
   // The fork's mono atlas uses its vendored JetBrains Mono, identical to our asset.
   const variant = makeVariant({
     target: profile.id,
@@ -183,7 +187,7 @@ async function main() {
       id: plan.app.id,
       title: plan.app.title,
     },
-    js: readFileSync(join(WORK, `${plan.app.output}.js`)),
+    js: readFileSync(compactJs),
     pak: readFileSync(join(WORK, `${plan.app.output}.pak`)),
   });
 
@@ -266,23 +270,34 @@ async function main() {
   const sconsArgs = options.scons.length > 0 ? options.scons : ["-j8"];
   await run(["scons", ...sconsArgs], sdk, env);
 
-  // The TLSF pool size lives as a #define in the fork's heap port; read it so
-  // the budget tracks the source instead of duplicating the constant here.
-  const heapSource = readFileSync(join(VENDOR, "hosts/aic/port/pocketjs_heap.c"), "utf8");
-  const poolDefine = /#define POCKETJS_POOL_BYTES\s+\((\d+)U\s*\*\s*1024U\)/;
-  const poolMatch = heapSource.match(poolDefine);
-  if (!poolMatch) throw new Error("unsupported TLSF pool definition; update budget reader");
-  const poolBytes = Number(poolMatch[1]) * 1024;
-
   const itbPath = join(images, "d12x_os.itb");
   const imageConfigPath = join(sdk, "target/d12x/demo68-nor/pack/image_cfg.json");
+
+  // The guest heap quota lives as a -D flag in the fork's SConscript; read it
+  // so the budget tracks the source instead of duplicating the constant here.
+  const sconscript = readFileSync(join(VENDOR, "hosts/aic/SConscript"), "utf8");
+  const limitMatch = sconscript.match(/CONFIG_POCKETJS_GUEST_HEAP_LIMIT='\s*'\s*(\d+)/);
+  if (!limitMatch) throw new Error("unsupported guest heap limit definition; update budget reader");
+  const guestHeapLimitBytes = Number(limitMatch[1]);
+
+  // The XIP firmware offset is what the SDK just linked against; the .config
+  // in the checkout reflects the product defconfig this build applied.
+  const sdkConfig = readFileSync(join(sdk, ".config"), "utf8");
+  const xipOffsetMatch = sdkConfig.match(/^CONFIG_AIC_XIP_FW_OFFSET=(0x[\da-f]+)$/m);
+  if (!xipOffsetMatch) {
+    throw new Error("CONFIG_AIC_XIP_FW_OFFSET missing; the product defconfig must enable XIP");
+  }
+  const xipFwOffset = Number(xipOffsetMatch[1]);
+
   const report = memoryReport({
     map: readFileSync(join(images, "d12x.map"), "utf8"),
     elf: readFileSync(join(images, "d12x.elf")),
     imageConfig: readFileSync(imageConfigPath, "utf8"),
+    its: readFileSync(join(images, "d12x_os.its"), "utf8"),
     itbBytes: statSync(itbPath).size,
     packageBytes: bytes.length,
-    poolBytes,
+    guestHeapLimitBytes,
+    xipFwOffset,
     width: profile.display.physicalViewport[0],
     height: profile.display.physicalViewport[1],
   });
@@ -299,10 +314,11 @@ async function main() {
   console.log(`aic: images ${images}`);
   console.log(
     `aic: budget ${reportPath}\n` +
-    `  static CMA=${report.staticCmaBytes}B; package=${report.packageBytes}B\n` +
-    `  CMA after framebuffers=${report.cmaAfterFramebuffersBytes}B;` +
-    ` SW after TLSF=${report.swAfterPoolBytes}B\n` +
-    `  OS=${report.itbBytes}/${report.osPartitionBytes}B`,
+      `  XIP flash sections=${report.xip.flashSectionBytes}B @0x${report.xip.flashLoadAddress.toString(16)};` +
+      ` package=${report.packageBytes}B\n` +
+      `  CMA after framebuffers=${report.cmaAfterFramebuffersBytes}B;` +
+      ` SW after guest+reserve=${report.swAfterReservesBytes}B\n` +
+      `  OS=${report.itbBytes}/${report.osPartitionBytes}B`,
   );
   const errors = budgetErrors(report);
   if (errors.length > 0) throw new Error(errors.join("; "));

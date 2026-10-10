@@ -87,7 +87,8 @@ assets/fonts/   # MiSans（UI）+ JetBrains Mono（mono 槽）字体文件（ven
 docs/           # 调研、移植与脚本化 UI 验证文档（e2e.md）、e2e 控件坐标速查
                 #   （coords.md：各按钮/勾选框/弹层项实测点击坐标，配复验工具
                 #   tools/coords-probe.py；改布局后重测）、MCP 服务手册（mcp.md）、
-                #   D12x RT-Thread 移植方案（rtthread-d12x.md，M5 预研）、性能审阅
+                #   D12x RT-Thread 移植方案（rtthread-d12x.md，M5 预研）、AIC 内存
+                #   优化方案（aic-memory-optimization.md，OOM 基线/候选路线/验收）、性能审阅
                 #   （performance-review-2026-09-17.md；performance/ 保存原始基准数据）
 vendor/pocketjs # kaidegit/pocketjs fork（submodule，feat/aic；桌面引擎与 AIC 宿主）
 vendor/luban-lite # 局域网 yekai/luban-lite SDK（submodule，feat/pocketjs；RT-Thread/驱动/镜像）
@@ -116,7 +117,7 @@ SPEC.md         # 功能规格（权威）
 - 脚本化 UI 验证：宿主脚本 flags（`--mouse` `--click` `--wheel` `--key` `--type` `--press` `--storm` `--screenshot` `--quit-after` `--announce-ready` `--no-native-mouse-keyboard`（丢弃原生鼠标/滚轮/键盘事件，e2e 必加以防物理输入污染）；`@T` 为 60Hz 虚拟时钟 tick 序号）经 `node tools/dev.mjs -- <flags…>` 原样转发给宿主二进制（不带 `--` 行为不变）。**各参数详解、tick/坐标系、拖拽与组合键配方、截图机制与坑位见 [docs/e2e.md](docs/e2e.md)**；观测用 `POCKETCOM_TRACE=1`。本机真机 e2e 已验证：串口全链路（M1）、TCP Client 回环（M2）、`--screenshot`/`--wheel`/`--key cmd+enter`、终端模式（M3，滚轮/拖拽选区/Ctrl 控制码均可脚本注入）、MCP 全链路含终端模式门控（M4，见上）、"应用配置"设置弹窗全链路（打开→草稿→应用/Escape/遮罩关闭，coords.md §3）；截图为 opt-in flag，CI 不触发。
 - UI 金样测试：PocketJS headless Bun host（byte-exact PNG golden，待落地）
 - MCP 集成测试：`bun test host/macos/mcp/`（前置 `npm run build` + `cargo build --release`；脚本化 MCP client 经原生 fetch 走真实宿主+guest 全链路：401 鉴权 → initialize 会话 → tools/list → connect（bun TCP echo + loopback 回环）→ send → read 前缀断言（`[RX]`/`[SYS]`/i18n 手动前缀）→ force 语义 → disconnect → config 白名单（token 不可触）→ 会话 DELETE；终端模式门控（SPEC §6.1）经 `--click` 脚本切模式验证停服/重启。产物缺失自动跳过，CI 在前置步骤产出两者）。同目录 `flood.test.ts` 为大流量 e2e：loopback + MCP 灌入 400 条小帧 + 6×48KiB 突发（超环形缓冲 256KiB 触发逐出），断言收/发字节对称、洪峰后连接与 MCP 存活、渲染收据出帧，并落 3 张窗口截图供检查接收框（无屏幕录制权限的会话里截图断言降级为警告跳过，见 docs/e2e.md 常见坑 6）
-- AIC + RT-Thread：`npm run check:aic` 校验，`npm run package:aic` 打包；`RTT_EXEC_PATH=/path/to/riscv-none-elf/bin npm run build:aic -- --sdk /path/to/sdk -- -j4` 构建（默认 SDK=`vendor/luban-lite`、SCons=`-j8`）；`npm run flash:aic` 用 SDK `tools/aic-isp` 烧录已构建镜像（默认仅 app→os 分区，`--all` 先烧 bootloader→spl 分区，其余参数透传 aic-isp；烧写偏移由 pack image_cfg.json 分区表推导，产物缺失时报错提示先 build:aic，上传工具缺失时自动 cargo 构建）。复用 SDK pocketjs 应用与 fork `hosts/aic`；首次生成 bootloader 地址元数据但不重编已跟踪 bootloader.bin。应用包/内存报告在 `dist/aic/`，SDK 镜像在其 `output/`。内联包实际常驻 PSRAM；预算超限失败，不调分区/heap、不烧录。完整架构、前置环境与限制见 [host/rtthread/README.md](host/rtthread/README.md)。测试 `bun test test/host/rtthread/`，目录与宿主分层镜像。桌面 CI 仅初始化 PocketJS，不访问局域网 SDK。
+- AIC + RT-Thread：`npm run check:aic` 校验，`npm run package:aic` 打包；`RTT_EXEC_PATH=/path/to/riscv-none-elf/bin npm run build:aic -- --sdk /path/to/sdk -- -j4` 构建（默认 SDK=`vendor/luban-lite`、SCons=`-j8`）；`npm run flash:aic` 用 SDK `tools/aic-isp` 烧录已构建镜像（默认仅 app→os 分区，`--all` 先烧 bootloader→spl 分区，其余参数透传 aic-isp；烧写偏移由 pack image_cfg.json 分区表推导，产物缺失时报错提示先 build:aic，上传工具缺失时自动 cargo 构建）。复用 SDK pocketjs 应用与 fork `hosts/aic`；已跟踪 bootloader.bin 含 XIP Boot 与 GET_MEDIA_CRC（2026-10-10 重编进 SDK），构建时只生成地址元数据不重编。固件 XIP：`.text/.rodata` 于 SPI NOR 0x60000000 窗口原地执行（`XIP_FW_OFFSET = os 偏移 0x100000 + 0x800`），PSRAM 为统一 TLSF 系统堆（SDK `RT_USING_USERHEAP`，CMA 底部 1 MiB 留 framebuffer），无 PocketJS 私有池，运行时无 FAL/SFUD/userid flash 访问。应用包/内存报告在 `dist/aic/`，SDK 镜像在其 `output/`。板端入口 `app/main.aic.tsx` 暂挂载 `app/aic.tsx` 精简验证页（帧/触摸计数），不得重新引入完整 App/session 启动图而未经内存验证。AIC 独立压缩 JS 标识符与空白（不折叠表达式/改宿主属性名），桌面构建不变；内联包随 `.rodata` XIP 常驻 flash；预算超限失败，不调分区/配额、不烧录。完整架构、前置环境与限制见 [host/rtthread/README.md](host/rtthread/README.md)。测试 `bun test test/host/rtthread/`，目录与宿主分层镜像。桌面 CI 仅初始化 PocketJS，不访问局域网 SDK。
 
 ## 参考代码库（只读，禁止修改）
 

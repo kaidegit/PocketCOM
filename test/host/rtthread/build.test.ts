@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { runInNewContext } from "node:vm";
 import {
+  compactBundle,
   DEFCONFIG,
   parseArgs,
   run,
@@ -50,12 +54,13 @@ function fixtureElf() {
   view.setUint32(64 + 40 + 20, names.length, true);
 
   // Sections 2-5 are the allocated ones; section 0 stays the zero null entry.
-  // Per header: [section index, sh_name offset, sh_addr, sh_size].
+  // Per header: [section index, sh_name offset, sh_addr, sh_size]. Under XIP
+  // text and rodata sit in the 0x60000000 flash window; data and bss in PSRAM.
   const allocSections = [
-    [2, 11, 0x40000000, 0x100000], // .text
-    [3, 17, 0x40100000, 0x180000], // .rodata
-    [4, 25, 0x40280000, 0x1000], // .data
-    [5, 31, 0x40281000, 0x1000], // .bss
+    [2, 11, 0x60100800, 0x100000], // .text
+    [3, 17, 0x60200000, 0x180000], // .rodata
+    [4, 25, 0x40000000, 0x1000], // .data
+    [5, 31, 0x40001000, 0x1000], // .bss
   ];
   for (const [i, name, address, size] of allocSections) {
     const header = 64 + i * 40;
@@ -67,24 +72,39 @@ function fixtureElf() {
   return bytes;
 }
 
-// Map/image-config fixture mirroring a real SDK link: PSRAM_CMA holds the
-// inline package (.rodata, size must equal packageBytes) plus the CMA heap
-// start; PSRAM_SW starts exactly at its heap start; the OS partition is
-// "3072k" behind a JSONC comment the SDK writes.
+// Map/ITS/image-config fixture mirroring the XIP link: text+rodata execute
+// from the flash window (rodata carries the inline package, size must equal
+// packageBytes), PSRAM_CMA holds data/bss plus the framebuffer CMA heap, the
+// unified system heap fills PSRAM_SW, and the OS partition stays "3072k"
+// behind a JSONC comment the SDK writes. The XIP load address is the window
+// base plus the os partition offset (0x100000) plus the 0x800 ITB header.
 const input = {
   map: [
-    "PSRAM_CMA 0x40000000 0x00380000",
-    "PSRAM_SW 0x40380000 0x00480000",
+    "PSRAM_CMA 0x40000000 0x00100000",
+    "PSRAM_SW 0x40100000 0x00700000",
     " .rodata.pocketjs_embedded_package",
-    " 0x40100000 0x100000 generated/pocket_bin.o",
-    " 0x40282000 __psram_cma_heap_start = .",
-    " 0x40380000 __psram_sw_heap_start = .",
+    " 0x60200000 0x100000 generated/pocket_bin.o",
+    " 0x40020000 __psram_cma_heap_start = .",
+    " 0x40100200 __psram_sw_heap_start = .",
   ].join("\n") + "\n",
   elf: fixtureElf(),
-  imageConfig: `{"spi-nor": {"partitions": {"os": {"size": "3072k"},},},} // SDK comment\n`,
+  imageConfig: `{"spi-nor": {"partitions": {"spl": {"size": "512k"}, "env": {"size": "128k"},` +
+    ` "env_r": {"size": "128k"}, "userid": {"size": "256k"}, "os": {"size": "3072k"},` +
+    ` "os_r": {"size": "3072k"}},},} // SDK comment\n`,
+  its: [
+    "seg0 {",
+    'data = /incbin/("./seg0.bin");',
+    "load = <0x60100800>;",
+    "entry = <0x60100800>;",
+    "};",
+    "seg1 {",
+    "load = <0x40000000>;",
+    "};",
+  ].join("\n") + "\n",
   itbBytes: 0x282000,
   packageBytes: 0x100000,
-  poolBytes: 4150 * 1024,
+  guestHeapLimitBytes: 5242880,
+  xipFwOffset: 0x100800,
   width: 480,
   height: 272,
 };
@@ -167,13 +187,23 @@ describe("AIC build orchestration", () => {
 });
 
 describe("AIC memory admission", () => {
-  test("accounts for static CMA, both framebuffers, TLSF and flash", () => {
+  test("accounts for XIP flash sections, framebuffers and the unified heap", () => {
     const report = memoryReport(input);
-    expect(report.staticCmaBytes).toBe(0x282000);
+    expect(report.staticCmaBytes).toBe(0x20000);
     expect(report.framebufferBytes).toBe(522240);
-    expect(report.swAfterPoolBytes).toBe(458 * 1024);
+    expect(report.cmaAfterFramebuffersBytes).toBe(0x100000 - 0x20000 - 522240);
+    expect(report.xip).toMatchObject({
+      fwOffsetBytes: 0x100800,
+      flashLoadAddress: 0x60100800,
+      flashSectionBytes: 0x100000 + 0x180000,
+      ramSectionBytes: 0x2000,
+    });
+    // 0x700000 region minus the 0x200 min-heap stub, minus guest quota and
+    // the fixed system reserve.
+    expect(report.swAfterReservesBytes)
+      .toBe(0x700000 - 0x200 - 5242880 - (384 * 1024 + 256 * 1024));
     expect(report.osHeadroomBytes).toBe(0x300000 - input.itbBytes);
-    expect(report.sections[".rodata"]).toEqual({ address: 0x40100000, size: 0x180000 });
+    expect(report.sections[".rodata"]).toEqual({ address: 0x60200000, size: 0x180000 });
     expect(budgetErrors(report)).toEqual([]);
   });
 
@@ -183,8 +213,8 @@ describe("AIC memory admission", () => {
     const report = memoryReport({
       ...input,
       itbBytes: 0x300001, // OS partition exceeded
-      poolBytes: 0x480001, // SW pool budget exceeded
-      map: input.map.replace("0x40282000", "0x40370000"),
+      guestHeapLimitBytes: 0x700001, // SW unified heap budget exceeded
+      map: input.map.replace("0x40020000", "0x40081000"),
     });
     expect(budgetErrors(report)).toHaveLength(3);
   });
@@ -201,13 +231,44 @@ describe("AIC memory admission", () => {
     new DataView(malformed.buffer).setUint32(32, 500, true);
     expect(() => elfSections(malformed)).toThrow("invalid ELF section table");
   });
+
+  test("rejects a non-XIP link and mismatched XIP addresses", () => {
+    const psramElf = fixtureElf();
+    {
+      // Relink the fixture into PSRAM copy-mode addresses.
+      const view = new DataView(psramElf.buffer);
+      const move = (index: number, address: number) =>
+        view.setUint32(64 + index * 40 + 12, address, true);
+      move(2, 0x40000000); // .text
+      move(3, 0x40100000); // .rodata
+      expect(() => memoryReport({ ...input, elf: psramElf }))
+        .toThrow("not XIP-linked");
+    }
+
+    // An XIP segment loading somewhere other than window+offset is a
+    // misconfigured XIP_FW_OFFSET.
+    const wrongLoad = input.its.replace(/0x60100800/g, "0x60100900");
+    expect(() => memoryReport({ ...input, its: wrongLoad }))
+      .toThrow("does not match window+offset");
+
+    // Offset that disagrees with the os partition start plus the ITB header
+    // would execute different flash bytes than the linker assumed.
+    expect(() =>
+      memoryReport({
+        ...input,
+        its: input.its.replace(/0x60100800/g, "0x60100900"),
+        xipFwOffset: 0x100900,
+      })
+    ).toThrow("plus the 2048-byte ITB header");
+  });
 });
 
 describe("AIC flash plan", () => {
   // Partition table + target components mirroring the d12x demo68-nor pack
   // config, JSONC comments and trailing commas included. Offsets accumulate
   // in declaration order: spl@0, env@0x80000, env_r@0xA0000, userid@0xC0000,
-  // os@0x100000.
+  // os@0x100000. The former "data" partition is gone; the spare tail is
+  // unmapped.
   const imageConfig = `{
     "spi-nor": { // Device, name matches image:info:media:type
         "size": "16m",
@@ -218,7 +279,6 @@ describe("AIC flash plan", () => {
             "userid": { "size": "256k" },
             "os":     { "size": "3072k" },
             "os_r":   { "size": "3072k" },
-            "data":   { "size": "9216k" },
         },
     },
     "image": {
@@ -257,5 +317,42 @@ describe("AIC flash plan", () => {
     expect(() =>
       flashPlan(imageConfig.replace('"512k"', '"512x"'), "all"),
     ).toThrow("invalid size for partition spl");
+  });
+});
+
+
+describe("AIC bundle compaction", () => {
+  test("preserves host property names, callbacks and Unicode with deterministic output", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocketcom-compact-"));
+    try {
+      const entry = join(dir, "app.js");
+      const source = `(() => {
+        const longApplicationLabel = "串口调试";
+        const hostContract = { serialOpen: () => longApplicationLabel };
+        globalThis.frame = () => hostContract.serialOpen();
+      })();`;
+      writeFileSync(entry, source);
+      const first = readFileSync(await compactBundle(entry, join(dir, "one")), "utf8");
+      const second = readFileSync(await compactBundle(entry, join(dir, "two")), "utf8");
+      expect(first).toBe(second);
+      expect(first.length).toBeLessThan(source.length);
+      expect(first).toContain("serialOpen");
+      const context: { frame?: () => string } = {};
+      runInNewContext(first, context);
+      expect(context.frame?.()).toBe("串口调试");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("propagates invalid bundle errors", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pocketcom-compact-"));
+    try {
+      const entry = join(dir, "broken.js");
+      writeFileSync(entry, "(() => {");
+      await expect(compactBundle(entry, join(dir, "out"))).rejects.toThrow("AIC compaction failed");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

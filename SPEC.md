@@ -239,10 +239,11 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 - PocketCOM 负责产品源码、板端 manifest/host profile、启动入口和构建编排；PocketJS fork 的 `hosts/aic` 负责 QuickJS、触摸、RGB565 渲染和帧循环；luban-lite SDK 负责 RT-Thread、MPP、硬件驱动、链接与镜像打包。
 - `vendor/pocketjs` 跟踪 `kaidegit/pocketjs` 的 `feat/aic`，`vendor/luban-lite` 跟踪局域网 Gitea `yekai/luban-lite` 的 `feat/pocketjs`。显式 `git submodule update --remote` 更新分支；构建不拉取更新。父仓库 gitlink 仍按 Git 机制记录提交。
 - `host/rtthread/` 放产品配置与接入文档；复用 SDK 的 `application/rt-thread/pocketjs` 和 `d12x_demo68-nor_rt-thread_pocketjs_defconfig`，不复制通用宿主，不修改 vendor 已跟踪文件。
-- 板端 Vue Vapor 应用使用 480×272、native presentation、density 1、60Hz；共享现有 UI，启动前初始化视口。当前接受小屏布局不完整，`com.*` 缺失时沿用能力探测降级；本期不提供 UART/网络/MCP、持久化或软键盘。
+- 板端 Vue Vapor 应用使用 480×272、native presentation、density 1、60Hz，启动前初始化视口。完整共享 UI 在真机 bundle eval 阶段 OOM，当前板端入口暂改为精简启动验证页：标题、能力边界说明、帧计数和触摸计数；不导入桌面 App、session、终端、连接配置面板或设置弹窗。共用 i18n 和主题令牌，桌面入口保持完整功能。本期不提供 UART/网络/MCP、持久化或软键盘；完整 UI 恢复需先通过板端内存验证。
 - `check:aic` 校验配置/类型；`package:aic` 生成 JS/PAK/.pocket、宿主契约头和内联 C 数组；`build:aic` 重新打包后经 SCons 构建固件。默认 SDK 为 submodule，支持 `--sdk <路径>` 和 `-- <scons 参数>`，工具链遵循 `RTT_EXEC_PATH`。产物在 `dist/aic`，中间文件在 `.pocket/aic`，宿主生成文件在其已忽略的 `hosts/aic/generated`。
-- 内联包暂不恢复文件系统分区：当前 `.rodata` 链接进 PSRAM，bootloader 随固件加载；宿主文件加载则整包分配 heap，PAK 长期借用，不能自动减少 PSRAM。构建报告实际 ELF/map 的包大小、静态段、CMA/SW 边界、framebuffer/TLSF 预算及 OS 分区占用；超限失败，不自动调整分区或提高 heap，不自动烧录。
-- 字体 UI 使用 MiSans，mono 使用 JetBrains Mono；显式烘焙中英文语言包字符，未知字形遵守 §5.4。未来桥接仍由产品宿主实现，设备事件仅在 tick 边界进入 JS，core 保持纯 TS。
+- 板端固件 XIP 运行：`.text/.rodata`（含内联包）链接进 SPI NOR 的 0x60000000 XIP 窗口原地执行，仅 `.data/.bss` 由 bootloader 拷入/清零 PSRAM；分区表去掉未使用的 `data` 分区，QSPI0 运行期归 XIP 缓存，OS 侧不挂 spinor 设备（无 FAL/SFUD/userid 运行时 flash 访问）。
+- PSRAM 8 MiB 统一堆：底部约 1 MiB 为 CMA 区（`.data/.bss` + 双 RGB565 framebuffer），其余约 7 MiB 为 RT-Thread 系统堆，算法为 TLSF（SDK `RT_USING_USERHEAP` + `bsp/artinchip/drv/mem/rt_tlsf_heap.c`），QuickJS/Rust guest 与系统线程共用，不再划分 PocketJS 私有池；guest JS 配额 5 MiB 为软上限。构建报告实际 ELF/map 的包大小、XIP/PSRAM 段拆分、CMA/SW 边界、framebuffer 与统一堆预算（guest 配额 + 系统预留）及 OS 分区占用，并校验 ITS XIP 段地址与 `XIP_FW_OFFSET = os 分区偏移 + 0x800` 一致；超限失败，不自动调整分区或提高配额，不自动烧录。
+- 字体 UI 使用 MiSans，mono 使用 JetBrains Mono；显式烘焙中英文语言包字符，未知字形遵守 §5.4。AIC 包独立压缩标识符与空白（不折叠表达式、不改宿主属性名、不再套一层 IIFE），降低 QuickJS 编译峰值；桌面构建不变。未来桥接仍由产品宿主实现，设备事件仅在 tick 边界进入 JS，core 保持纯 TS。
 
 ## 5. 关键专项设计
 

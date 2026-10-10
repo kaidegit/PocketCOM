@@ -1,7 +1,7 @@
 // Build-orchestration helpers for host/rtthread/aic.ts, split out so the pure
 // parts (argument parsing, generated C sources, ELF/map parsing, memory
 // budgeting) can be unit-tested headless in test/host/rtthread/ without an SDK
-// checkout. run() is the only side effect here.
+// checkout. run() and compactBundle() execute build steps.
 import { spawn } from "bun";
 import type { PocketAicHostProfile } from "../../vendor/pocketjs/contracts/spec/aic-host.ts";
 import { hashPocketAicHostProfile } from "../../vendor/pocketjs/framework/src/manifest/aic-host.ts";
@@ -242,18 +242,34 @@ export function partitionSizeBytes(value: string, partition: string): number {
 
 /**
  * Static memory budget of the freshly linked firmware. The SDK map supplies
- * PSRAM region/heap boundaries and the inline package size, the ELF supplies
- * section sizes, and the SDK image config supplies the OS partition size.
- * Every input must come from the same build — the checks below fail loudly
- * rather than let the report describe a stale link.
+ * PSRAM region/heap boundaries, the ELF supplies section sizes and the XIP
+ * split (text/rodata linked at the 0x60000000 flash window), the ITS pins
+ * the XIP segment load address, and the SDK image config supplies the OS
+ * partition size. Every input must come from the same build — the checks
+ * below fail loudly rather than let the report describe a stale link.
  */
+
+/** Headroom the unified system heap must keep for everything outside the
+ * JS guest quota: the PocketJS host task stack (384 KiB) plus kernel
+ * threads, drivers and other non-guest allocations. */
+export const SYSTEM_RESERVE_BYTES = 384 * 1024 + 256 * 1024;
+
+/** Fixed ITB header: mk_image.py packs external data block-aligned to
+ * 0x800, so the XIP firmware offset is the os partition offset plus this. */
+export const ITB_HEADER_BYTES = 0x800;
+
+/** First flash address of the QSPI XIP execution window. */
+export const XIP_WINDOW_BASE = 0x60000000;
+
 export function memoryReport(input: {
   map: string;
   elf: Uint8Array;
   imageConfig: string;
+  its: string;
   itbBytes: number;
   packageBytes: number;
-  poolBytes: number;
+  guestHeapLimitBytes: number;
+  xipFwOffset: number;
   width: number;
   height: number;
 }) {
@@ -292,8 +308,9 @@ export function memoryReport(input: {
     "os",
   );
 
-  // Both heaps are placed by the linker inside a PSRAM region; each boundary
-  // symbol must land within its own region or the map layout changed.
+  // Both heap boundaries are placed by the linker inside a PSRAM region;
+  // each boundary symbol must land within its own region or the map layout
+  // changed.
   const cma = region("PSRAM_CMA");
   const sw = region("PSRAM_SW");
   const cmaHeapStart = symbol("__psram_cma_heap_start");
@@ -305,17 +322,62 @@ export function memoryReport(input: {
     throw new Error("heap boundary outside PSRAM region");
   }
 
-  // The double RGB565 framebuffer (2 bytes/px) is the first charge on CMA;
-  // the host TLSF pool is the first charge on SW.
-  const framebufferBytes = input.width * input.height * 2 * 2;
-
   const sections = elfSections(input.elf);
   for (const name of [".text", ".rodata", ".data", ".bss"]) {
     if (!sections[name]) throw new Error(`missing ELF section ${name}`);
   }
 
+  // XIP link check: text and rodata must execute from the flash window, not
+  // from a copied PSRAM image.
+  for (const name of [".text", ".rodata"] as const) {
+    if (sections[name].address < XIP_WINDOW_BASE) {
+      throw new Error(
+        `${name} at 0x${sections[name].address.toString(16)} is not XIP-linked; ` +
+          "expected CONFIG_AIC_XIP with rodata in FLASH_XIP",
+      );
+    }
+  }
+
+  // The XIP segment in the ITS must load exactly at the flash window plus
+  // the configured firmware offset, and that offset must match the os
+  // partition start plus the fixed ITB header — otherwise the linked code
+  // would not sit at the physical flash bytes the CPU fetches.
+  const itsLoads = [...input.its.matchAll(/load = <0x([\da-f]+)>/gi)].map(
+    match => parseInt(match[1], 16),
+  );
+  const flashLoads = itsLoads.filter(load => load >= XIP_WINDOW_BASE);
+  if (flashLoads.length === 0) {
+    throw new Error("ITB has no XIP segment; the firmware is not XIP-linked");
+  }
+  const expectedLoad = XIP_WINDOW_BASE + input.xipFwOffset;
+  if (!flashLoads.every(load => load === expectedLoad)) {
+    throw new Error(
+      `ITB XIP segment load 0x${flashLoads[0].toString(16)} does not match ` +
+        `window+offset 0x${expectedLoad.toString(16)}`,
+    );
+  }
+  const osOffset = partitionOffsets(input.imageConfig).os;
+  if (input.xipFwOffset !== osOffset + ITB_HEADER_BYTES) {
+    throw new Error(
+      `XIP firmware offset 0x${input.xipFwOffset.toString(16)} is not the os ` +
+        `partition offset 0x${osOffset.toString(16)} plus the ${ITB_HEADER_BYTES}-byte ITB header`,
+    );
+  }
+
+  // The double RGB565 framebuffer (2 bytes/px) is the first charge on CMA;
+  // the unified system heap in SW carries the guest quota plus the system
+  // reserve before anything else may claim it.
+  const framebufferBytes = input.width * input.height * 2 * 2;
+
   const cmaAvailableBytes = cma.address + cma.size - cmaHeapStart;
   const swAvailableBytes = sw.address + sw.size - swHeapStart;
+
+  const flashSectionBytes = Object.values(sections)
+    .filter(section => section.address >= XIP_WINDOW_BASE)
+    .reduce((total, section) => total + section.size, 0);
+  const ramSectionBytes = Object.values(sections)
+    .filter(section => section.address < XIP_WINDOW_BASE)
+    .reduce((total, section) => total + section.size, 0);
 
   return {
     packageBytes: input.packageBytes,
@@ -328,9 +390,17 @@ export function memoryReport(input: {
     framebufferBytes,
     cmaAvailableBytes,
     cmaAfterFramebuffersBytes: cmaAvailableBytes - framebufferBytes,
-    tlsfPoolBytes: input.poolBytes,
+    guestHeapLimitBytes: input.guestHeapLimitBytes,
+    systemReserveBytes: SYSTEM_RESERVE_BYTES,
     swAvailableBytes,
-    swAfterPoolBytes: swAvailableBytes - input.poolBytes,
+    swAfterReservesBytes:
+      swAvailableBytes - input.guestHeapLimitBytes - SYSTEM_RESERVE_BYTES,
+    xip: {
+      fwOffsetBytes: input.xipFwOffset,
+      flashLoadAddress: expectedLoad,
+      flashSectionBytes,
+      ramSectionBytes,
+    },
     itbBytes: input.itbBytes,
     osPartitionBytes,
     osHeadroomBytes: osPartitionBytes - input.itbBytes,
@@ -349,10 +419,28 @@ export function budgetErrors(report: ReturnType<typeof memoryReport>): string[] 
   if (report.cmaAfterFramebuffersBytes < 0) {
     errors.push(`CMA framebuffer budget short by ${-report.cmaAfterFramebuffersBytes} bytes`);
   }
-  if (report.swAfterPoolBytes < 0) {
-    errors.push(`SW TLSF pool budget short by ${-report.swAfterPoolBytes} bytes`);
+  if (report.swAfterReservesBytes < 0) {
+    errors.push(`SW unified heap budget short by ${-report.swAfterReservesBytes} bytes`);
   }
   return errors;
+}
+
+/**
+ * Partition start offsets accumulated from the spi-nor partition sizes in
+ * declaration order — the same layout the bootloader's own table and
+ * aic-isp write addresses follow.
+ */
+export function partitionOffsets(imageConfig: string): Record<string, number> {
+  const config = parseImageConfig(imageConfig);
+  const partitions = config["spi-nor"]?.partitions;
+  if (!partitions) throw new Error("image config has no spi-nor partition table");
+  const offsets: Record<string, number> = {};
+  let cursor = 0;
+  for (const [name, entry] of Object.entries(partitions)) {
+    offsets[name] = cursor;
+    cursor += partitionSizeBytes(String((entry as { size?: string })?.size ?? ""), name);
+  }
+  return offsets;
 }
 
 /**
@@ -368,14 +456,7 @@ export function flashPlan(
   selection: "app" | "all",
 ): { partition: string; file: string; offset: number }[] {
   const config = parseImageConfig(imageConfig);
-  const partitions = config["spi-nor"]?.partitions;
-  if (!partitions) throw new Error("image config has no spi-nor partition table");
-  const offsets: Record<string, number> = {};
-  let cursor = 0;
-  for (const [name, entry] of Object.entries(partitions)) {
-    offsets[name] = cursor;
-    cursor += partitionSizeBytes(String((entry as { size?: string })?.size ?? ""), name);
-  }
+  const offsets = partitionOffsets(imageConfig);
 
   const targets = config.image?.target;
   if (!targets) throw new Error("image config has no target components");
@@ -387,4 +468,16 @@ export function flashPlan(
     if (!file) throw new Error(`image config has no component for partition ${partition}`);
     return { partition, file, offset: offsets[partition] };
   });
+}
+
+/** Compact the already self-contained IIFE without adding another closure. */
+export async function compactBundle(entrypoint: string, outdir: string): Promise<string> {
+  const result = await Bun.build({
+    entrypoints: [entrypoint], outdir, target: "browser", format: "esm",
+    minify: { identifiers: true, whitespace: true, syntax: false },
+    throw: false,
+  });
+  if (!result.success) throw new Error(`AIC compaction failed: ${result.logs.join("\n")}`);
+  if (result.outputs.length !== 1) throw new Error("expected one compacted AIC bundle");
+  return result.outputs[0].path;
 }
