@@ -212,6 +212,26 @@ PocketJS 私有 4150 KiB TLSF 池 + 系统 memheap 堆"切换为：
   （启动日志 `XIP flash ID: 0x852018`），不在 SDK 原 XIP 支持表内——已在
   `bsp/artinchip/drv_bare/spinor/aic_flash_xip_def.c` 补表项
   （QIO EBh + 0x77 wrap，参数随 GD25Q128E 16 MiB 模板）。
+- **WiFi（RTL8189FTV，2026-10-11）**：产品 defconfig 开启 SDK Realtek 驱动
+  （`AIC_WLAN_REALTEK` + `AIC_USING_RTL8189_WLAN0`，SDIO 探测 VID `0x024c`/
+  PID `0xf179`，链接闭源 `libwlan_rtl8189_e907f.a`，芯片固件内嵌于库中）。
+  配置依据 SDK 文档 `doc/topics/sdk/peripheral/wifi_rtl8189.html`：Realtek
+  粘合层喂的是 **third-party lwIP 包**（`LPKG_USING_LWIP`，v2.1.3，
+  `os/wlan_lwip/ethernetif_wlan.c` 适配，netif 名 `WL0`），**不是** RT-Thread
+  wlan 框架/内核 lwIP（`RT_USING_WIFI`/`RT_USING_LWIP` 均关闭，那条
+  `adapt_to_rtt` 路径是 AIC8800 用的）；`wlan wifi_on/wifi_scan/wifi_connect`
+  命令来自 `api/wifi_interactive_mode.c`，`dhcpc`/`ifconfig`/`ping` 来自
+  lwIP 包 nettools（`LPKG_LWIP_EXAMPLES` 提供 `netif_startup.c` 的
+  `init_wlan_netif`）。模组接 SDMC0（PB.6–PB.11，4-bit SDIO @40MHz，
+  `AIC_WIFI_SDMC_ID=0`），SDMC1 关闭（原默认开、只贡献 /sdcard 挂载失败
+  噪音）。模组 EN 与 SoC 断开（用户硬件决策，使能由载板保证），固件不做
+  电源控制：`AIC_WIRELESS_PWR_GPIO` 置空，`general_wireless_pin/pm` 胶水
+  对无效脚只打 "pwr pin not configured" 告警并跳过（pinmux 表同样安全跳过）。
+  注意：PD.17 原本与 `AIC_PRGB_24BIT` LCD 数据线（PD.0–PD.27）冲突，
+  EN 断开后该矛盾解除；若 `wlan wifi_on` 超时且 SDIO 无探测日志，优先查
+  模组 EN 是否确有定义的高电平。PM 约束同前：`general_wireless_pm.c` 无
+  `#ifdef RT_USING_PM` 保护故 `RT_USING_PM` 保持 y，但 `AIC_USING_PM` 为
+  n、PM 睡眠驱动未编入，固件不进睡眠。
 
 本次本地构建（精简页包 526568 bytes）预算全过：
 
