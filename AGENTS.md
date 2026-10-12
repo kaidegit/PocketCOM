@@ -19,6 +19,7 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 | 板端构建/烧录/内存报告 | skill `aic-build`（.agents/skills/aic-build/SKILL.md） |
 | 板端接入全记录（XIP/TLSF/WiFi） | [host/rtthread/README.md](host/rtthread/README.md) |
 | 板端内存优化方案（A–G、P0–P3） | [docs/aic-memory-optimization.md](docs/aic-memory-optimization.md) |
+| 共享 UI / TS 内存优化与编译期裁剪提案 | [docs/shared-ui-memory-optimization.md](docs/shared-ui-memory-optimization.md) |
 | e2e 脚本用法 / 控件坐标 | [docs/e2e.md](docs/e2e.md) / [docs/coords.md](docs/coords.md) |
 | MCP 服务手册 | [docs/mcp.md](docs/mcp.md) |
 | 只读参考代码库 | COMTool、umeko_serial_mcp（见文末） |
@@ -116,10 +117,11 @@ SPEC.md         # 功能规格（权威）
 
 ### 恢复路线（内存约束下的推进顺序）
 
-方案 A（板端专用装配 + 紧凑 UI）是唯一可行主路线：共用纯 TS `core/`，会话装配显式化，
-日志/回滚/IO 队列设板端上限（方案 D 为收发前置）；字节码（B）与 realloc（C）作为配套优化。
-推进阶段 **P0 分阶段测量 → P1 板端收发闭环 → P2 选定功能恢复 → P3 平台优化或取舍**；
-每步以板端实测峰值/稳态验收，桌面大容量默认值不得直接照搬。
+后续按[共享 UI 与编译期裁剪提案](docs/shared-ui-memory-optimization.md)推进：AIC / macOS 共用
+`app/`、`core/` 和控件，优化 TS 节点表示与显式装配，通过构建功能标记、共享窄屏布局和容量配置
+控制板端工作集，不另起一套产品 UI。现有 `app/aic.tsx` 保留作诊断基线；提案实施前先更新 SPEC
+相应平台差异，未经真机内存验证不切换正式入口。原内存方案的数据、全链路限额（D）及字节码（B）/
+realloc（C）研究仍有效，每步以板端实测峰值/稳态验收，桌面大容量默认值不得直接照搬。
 
 ### 构建与烧录
 

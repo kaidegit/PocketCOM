@@ -1,6 +1,6 @@
 # PocketCOM on AIC + RT-Thread
 
-本期接入 D12x demo68-nor：PocketCOM 应用包、固件构建与静态内存预算。固件 **XIP 运行**（`.text/.rodata` 在 SPI NOR 的 0x60000000 窗口原地执行，仅 `.data/.bss` 进 PSRAM），PSRAM 为 **统一 TLSF 系统堆**（不再划分 PocketJS 私有池）。当前使用 480×272 精简验证页（标题、帧计数、触摸计数），完整共享 UI 因启动 OOM 暂停挂载；没有 UART/网络/MCP `com.*` 桥、持久化或软键盘。构建不自动烧录；完整应用恢复路线见 [D12x 8 MiB PSRAM 内存优化方案](../../docs/aic-memory-optimization.md)。
+本期接入 D12x demo68-nor：PocketCOM 应用包、固件构建与静态内存预算。固件 **XIP 运行**（`.text/.rodata` 在 SPI NOR 的 0x60000000 窗口原地执行，仅 `.data/.bss` 进 PSRAM），PSRAM 为 **统一 TLSF 系统堆**（不再划分 PocketJS 私有池）。当前使用 480×272 精简验证页（标题、帧计数、触摸计数），完整共享 UI 因启动 OOM 暂停挂载；没有 UART/网络/MCP `com.*` 桥、持久化或软键盘。构建不自动烧录；实测基线见 [D12x 8 MiB PSRAM 内存优化方案](../../docs/aic-memory-optimization.md)，后续应用恢复方向见[共享 UI 与编译期裁剪提案](../../docs/shared-ui-memory-optimization.md)（尚未实施，复用现有组件）。
 
 ## 分层
 

@@ -23,6 +23,8 @@ git submodule update --init --depth 1 vendor/luban-lite   # 需访问局域网 G
 
 权威细节见 **host/rtthread/README.md**（接入记录、XIP/TLSF/WiFi 改造全文）与
 **docs/aic-memory-optimization.md**（内存优化方案 A–G、P0–P3 推进阶段）。
+后续 UI 恢复方向见 **docs/shared-ui-memory-optimization.md**：共享现有应用 / 控件、TS 内存优化与
+编译期功能裁剪提案；原方案 A 的独立产品页方向由该提案接替，当前入口与构建命令未变。
 
 ## 命令
 
@@ -109,5 +111,6 @@ npm run typecheck && bun test test/
 npm run check && npm run build  # 桌面回归（allocator/字节码类改动需加对应宿主测试）
 ```
 
-完整恢复路线（方案 A 板端紧凑装配 → P0 测量 → P1 收发闭环 → P2 功能恢复 → P3 取舍）见
-docs/aic-memory-optimization.md §11。
+后续恢复按 docs/shared-ui-memory-optimization.md §9 的共享 UI 路线推进；实测基线、诊断阶段和
+容量 / allocator 研究继续参考 docs/aic-memory-optimization.md。实施前更新 SPEC，正式入口切换
+以真机内存验收为前提，不能直接将未裁剪的完整 App 挂回 AIC。

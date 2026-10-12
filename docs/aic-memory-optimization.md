@@ -2,6 +2,8 @@
 
 日期：2026-10-10，2026-10-12 修订。范围：当前 AIC / RT-Thread / Vue Vapor / QuickJS-NG 方案。
 
+> 2026-10-12 路线补充：后续方案 A 的实现方向调整为[共享 UI 与编译期裁剪](shared-ui-memory-optimization.md)，复用现有 `app/`、`core/` 和控件，优化 TS 对象表示并按功能 / 容量裁剪，不再从精简验证页扩写独立产品 UI。本文的历史实测、诊断工具和 B–G 评估继续保留；涉及“独立入口扩展为板端产品页”的建议由新提案接替。当前固件仍运行精简诊断页，尚未实施该提案。
+
 平台侧这三天动了三次大手术，先交代清楚，免得读者拿旧布局对号：
 
 - **2026-10-10：XIP + 统一堆。** 固件改为 SPI NOR XIP（`.text/.rodata` 原地执行）、删掉从没用过的 data 分区、PSRAM 统一为 RT-Thread TLSF 系统堆（PocketJS 私有池移除），guest 配额 4→5 MiB。新布局与预算语义见 [host/rtthread/README.md](../host/rtthread/README.md) 的"产物与内存"。
