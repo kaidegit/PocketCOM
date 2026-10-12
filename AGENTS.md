@@ -123,7 +123,7 @@ SPEC.md         # 功能规格（权威）
 
 ### 构建与烧录
 
-命令、产物、内存报告解读、烧录要点全部在 skill `aic-build`；板端测试 `bun test test/host/rtthread/`。
+命令、产物、内存报告解读、烧录要点全部在 skill `aic-build`；`npm run probe:aic` 为离板内存探针（字段与板端 `[PJS-DIAG]` 一致，粗测不替代板端验收）；板端测试 `bun test test/host/rtthread/`。
 
 ## 构建与测试索引
 
@@ -134,6 +134,7 @@ SPEC.md         # 功能规格（权威）
 | 桌面构建/运行/打包/安装 | skill `desktop-build` |
 | 单测/typecheck/e2e/MCP 集成/性能复测 | skill `desktop-test` |
 | 板端校验/打包/构建/烧录/内存报告 | skill `aic-build` |
+| 离板内存探针（无板粗测包占用/峰值/裁剪对比） | skill `mem-probe` |
 
 ## 参考代码库（只读，禁止修改）
 

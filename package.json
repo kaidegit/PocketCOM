@@ -13,7 +13,8 @@
     "check:aic": "bun host/rtthread/aic.ts check",
     "package:aic": "bun host/rtthread/aic.ts package",
     "build:aic": "bun host/rtthread/aic.ts build",
-    "flash:aic": "bun host/rtthread/aic.ts flash"
+    "flash:aic": "bun host/rtthread/aic.ts flash",
+    "probe:aic": "bun host/rtthread/probe.ts"
   },
   "repository": {
     "type": "git",

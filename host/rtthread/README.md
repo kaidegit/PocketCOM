@@ -147,6 +147,18 @@ pjs_mem reset        # 记账峰值回落到当前 live，用于增量测量
 - **`t=` 只看相邻差值**：暖复位（External-PIN-Reset）后 `rt_tick` 计数不归零，绝对值带重启前会话的偏移（本例 ~70 min）；帧节奏差值与 60fps 一致，可信。
 - **banner "Built on" 日期在增量构建下可能过期**（scons 不重生成版本文件）；判断固件新旧以 `[PJS-DIAG]` 输出为准。
 
+### 离板内存探针（无 AIC 快测）
+
+`npm run probe:aic` 把与固件同一套可移植组件（guest / ui_core / ui_qjs / package / render_rgb565 + 同一 QuickJS）编成原生二进制，`heap_caps` 走 malloc shim（与 port 同款 3 槽包装头 + live/peak/块数记账），加载路径走与固件相同的 `pocketjs_guest_eval_stages` 拆分。输出 `[PJS-PROBE]` 行，字段名与 `[PJS-DIAG]` 一致，可与 §2.1.3/§2.1.4 真机数据并排对比；共享 UI / 裁剪提案的每一步都可以先在这里量再上板。
+
+```sh
+npm run probe:aic                    # 测 dist/aic 当前包
+npm run probe:aic -- --heap 7340032  # 注入统一堆预算，粗找断点
+npm run probe:aic -- --heap 3m --turns 600
+```
+
+前置：`npm run package:aic`（探针读 `.pocket` 包与生成的契约头）、cc、cargo。对象缓存在 `.pocket/aic/probe-host/`，重复运行只重链。**口径与偏差**：caps/js/guest/rloc 字段含义同板；64 位指针使数字系统性偏大（实测精简页 caps 峰值 +10%、js +15%，realloc 次数与板几乎一致），malloc 无碎片/无系统侧共享——回答"这个包大概吃多少、峰值在哪"，不替代板端验收。
+
 ## 验证
 
 ```sh

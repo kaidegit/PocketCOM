@@ -1,0 +1,22 @@
+# Host-arch static build of the fork's native UI crates for the off-device
+# probe: the same Rust core the firmware links, compiled for the development
+# machine so probe runs need no board. Paths are relative to this checkout;
+# the vendored fork must be initialized (see AGENTS.md).
+[package]
+name = "pocketcom-aic-probe-native"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+pocketjs-idf-abi = { path = "../../../../vendor/pocketjs/hosts/esp-idf/native/abi", default-features = false }
+pocketjs-idf-runtime = { path = "../../../../vendor/pocketjs/hosts/esp-idf/native/runtime", default-features = false }
+pocketjs-idf-ui-core = { path = "../../../../vendor/pocketjs/hosts/esp-idf/native/ui-core", default-features = false }
+pocketjs-idf-render-rgb565 = { path = "../../../../vendor/pocketjs/hosts/esp-idf/native/render-rgb565", default-features = false }
+
+[profile.release]
+panic = "abort"
+
+[workspace]
