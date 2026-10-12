@@ -289,7 +289,7 @@ function connectCommand(cmd: McpCommand, ctx: McpContext): McpResult {
     case "serial": {
       s.openSerial({
         path: needString(cmd.args, "path"),
-        baudRate: optInt(cmd.args, "baudRate", 115200, 1, 4500000),
+        baudRate: optInt(cmd.args, "baudRate", 115200, 1, 6000000),
         dataBits: optInt(cmd.args, "dataBits", 8, 5, 8) as 5 | 6 | 7 | 8,
         parity: parityArg(cmd.args),
         stopBits: optInt(cmd.args, "stopBits", 1, 1, 2) as 1 | 2,

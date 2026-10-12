@@ -146,7 +146,7 @@ function normSerial(v: unknown): SerialConnParams {
   const r = asRecord(v);
   return {
     path: asString(r.path, ""),
-    baudRate: asInt(r.baudRate, 115200, 1, 4500000),
+    baudRate: asInt(r.baudRate, 115200, 1, 6000000),
     dataBits: asOneOfNum(r.dataBits, [5, 6, 7, 8] as const, 8),
     parity: asOneOf(r.parity, ["none", "odd", "even", "mark", "space"] as const, "none"),
     stopBits: asOneOfNum(r.stopBits, [1, 2] as const, 1),
