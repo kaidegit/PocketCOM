@@ -1,8 +1,8 @@
 # PocketCOM 规格说明书
 
-版本：v0.1（草案）  
-日期：2026-09-04  
-状态：待评审
+版本：v0.2（草案）  
+日期：2026-10-12  
+状态：随实现持续更新（M1–M4 已交付并真机验证，M5 板端构建/渲染已交付，详见 §8）
 
 ## 1. 概述
 
@@ -24,7 +24,17 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 - 波形图、协议解析插件脚本、SSH 连接（COMTool 有，均砍掉）
 - WebSocket server 模式（仅 client）
 - 自动更新、多窗口
-- RT-Thread UART/网络/MCP 桥、紧凑布局和软键盘（本期不实现）
+- RT-Thread UART/网络/MCP 桥、紧凑布局和软键盘（本期不实现）。板端 WiFi（RTL8189FTV + lwIP）已于 2026-10-11 点亮至 AP 扫描，但设备 IO 桥仍不做
+
+**待实现清单**（SPEC 已声明、代码尚未实现，保留描述供后续版本）：
+
+- 接收区日志保存（指定路径追加 / 按连接时间戳建新文件；`logPath` 配置字段已预留）
+- TCP Client 目标 host:port 下拉历史
+- 左配置面板折叠
+- 自动换行"间隔 ms 可配"（当前为按像素宽度软折行）
+- 串口拔出自动重开（依赖 `serial.added/removed` 事件，见 §4.2）
+- 串口列表显示厂商 / VID/PID（宿主已上报，UI 未渲染）
+- 连接历史上限 50 条（当前仅有每类型一份 `lastConn`，发送历史上限 50 已实现）
 
 ## 2. 技术栈与平台约束
 
@@ -32,7 +42,7 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 
 | 项 | 选择 | 说明 |
 |---|---|---|
-| 运行时 | PocketJS 0.11.x（vendor 在 `vendor/pocketjs/`，git checkout） | QuickJS guest + Rust `no_std` 核心；npm 包 `@pocketjs/framework` 不含桌面宿主，必须保留 checkout |
+| 运行时 | PocketJS 0.14.0（vendor 在 `vendor/pocketjs/`，git checkout） | QuickJS guest + Rust `no_std` 核心；npm 包 `@pocketjs/framework` 不含桌面宿主，必须保留 checkout |
 | 工具链 | **bun**（构建/测试/serve 全部依赖 Bun API，node 不可替代）+ `@pocketjs/cli` + Rust stable | wasm32 target 仅浏览器宿主与金样测试需要，桌面开发可不装 |
 | UI 框架 | **Vue Vapor 适配器**（约束，不用 Solid/Octane） | `vue` + `vue-jsx-vapor` + `@pocketjs/framework/vue-vapor` 组件 |
 | 字体 | **MiSans**（Regular/Medium/Semibold/Bold 四个字重） | 源文件 vendor 进 `assets/fonts/`（来自 `/Users/kai/Downloads/MiSans`，本机路径不入库），构建期烘焙字形 |
@@ -42,7 +52,7 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 
 ### 2.2 PocketJS 平台约束（本规格的重要前提）
 
-调研自 PocketJS 源码（`vendor/pocketjs`，0.11.x）与官方文档，以下约束直接决定架构设计：
+调研自 PocketJS 源码（`vendor/pocketjs`，0.14.0）与官方文档，以下约束直接决定架构设计：
 
 1. **无 DOM、无运行时 CSS**。UI 仅 `View` / `Text` / `Image` 原语 + flexbox；样式为编译期的 Tailwind 子集，动态样式必须用 `style={{…}}` 对象或"整体 class 字面量的三元表达式"，运行期拼接 class 片段是编译错误。
 2. **字体烘焙（baked font atlas）为默认路径**。构建时扫描源码中出现的字符与字号生成字形图集，设备端没有字体光栅化器。**但 gpui 桌面宿主支持 per-app 声明 `enhances: ["text.layout.native"]`**：改走 CoreText 运行时排版（`TEXT_RUN`），字形覆盖 = OS 字体回退链（CJK/emoji 全有），任意 Unicode 可显示。嵌入式目标仍受烘焙约束。对策见 §5.4。
@@ -87,7 +97,7 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 └────────────────────────────────────────────────────────────────┘
 ```
 
-- **左配置、右收发**：左侧为固定宽度配置面板（约 260–320px，可折叠以让出主区空间）；右侧为主工作区，随模式开关整体切换。
+- **左配置、右收发**：左侧为固定宽度配置面板（272px；可折叠让出主区空间——未实现，见 §1.2 待实现清单），右侧为主工作区，随模式开关整体切换。
 - 模式开关在**收发模式 / 终端模式**间切换，**切换不断开连接**，已有接收数据保留（终端模式有独立屏幕缓冲）。
 - 连接状态四态：`DISCONNECTED / CONNECTING / CONNECTED / LOST`（对齐 COMTool 的 `ConnectionStatus`），状态灯：灰/黄/绿/橙，同时显示在左面板与状态栏。
 - 通用设置（语言/主题/字号/终端回滚行数、导入/导出）收入**"应用配置"模态弹窗**：入口为左面板页脚"应用配置"按钮（"打开/关闭"下方、同样式）；弹窗为 msgbox 形态——四周半透明遮罩（点击丢弃）、中间居中圆角框；**草稿模式**：框内修改先暂存，点"应用"一次性生效并关闭，"取消"/点遮罩/Escape 丢弃；状态栏只读展示当前值。
@@ -98,22 +108,22 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 
 **串口参数**（对齐 COMTool `conn_serial`）：
 
-- 端口枚举（显示 `设备名 - 描述 - 厂商 - VID/PID`；**macOS 仅枚举 `/dev/cu.*` 设备**——`/dev/tty.*` 与蓝牙串口不出现在列表中）。启动与下拉展开时自动刷新（无手动刷新按钮）；保存的上次端口不在枚举结果中时启动显示为未选择（`lastConn` 配置保留，设备插回后下次启动仍恢复）
-- 波特率：预设 9600–4500000 + 可编辑自定义
-- 数据位 5/6/7/8；校验 None/Odd/Even/Mark/Space；停止位 1/1.5/2
+- 端口枚举（显示 `设备名 - 描述`；厂商/VID/PID 宿主已上报但 UI 未渲染——未实现，见 §1.2 待实现清单。**macOS 仅枚举 `/dev/cu.*` 设备**——`/dev/tty.*` 与蓝牙串口不出现在列表中）。启动与下拉展开时自动刷新（无手动刷新按钮）；保存的上次端口不在枚举结果中时启动显示为未选择（`lastConn` 配置保留，设备插回后下次启动仍恢复）
+- 波特率：预设 9600–6000000 + 可编辑自定义
+- 数据位 5/6/7/8；校验 None/Odd/Even（**Mark/Space 不支持**：serialport 4 无该能力，UI 选项禁用、宿主打开与 MCP connect 均拒绝；config 类型保留五值备用）；停止位 1/2（**1.5 不支持**，同因）
 - 流控 None / XON-XOFF / RTS-CTS / DSR-DTR
 - DTR / RTS 电平复选框（连接前后均可切换）
 
-**TCP Client**：目标 `host:port`（下拉历史）、本地地址显示、自动重连开关 + 间隔秒数。  
+**TCP Client**：目标 `host:port`（下拉历史——未实现，见 §1.2 待实现清单）、本地地址显示、自动重连开关 + 间隔秒数。  
 **TCP Server**：监听端口、客户端列表（可指定单客户端发送或广播、可踢除）。  
 **UDP**：本地 bind 端口 + 目标 `host:port`（COMTool 的 UDP 模型）。  
-**WebSocket Client**：URL（`ws://` / `wss://`）、子协议（可选）、自动重连。  
+**WebSocket Client**：URL（`ws://` / `wss://`）、子协议（可选；输入框已存在但**尚未接线**——app 打开连接时不传 `protocols`、不持久化，修复前不生效）、自动重连。  
 **回环（Loopback）**：无参数的纯核心层测试连接（不触宿主 IO），打开即 CONNECTED；发送的字节在下一帧原样回灌为一帧 RX（走与真实连接相同的合流/总线/字节计数路径），供无硬件/无网络的 e2e 与功能验证；MCP `connect` 同样支持 `type: "loopback"`。
 
 **通用行为**：
 
 - 切换连接类型时自动断开旧连接。
-- 断线检测：TCP/WS 断开进入 `LOST` 并按配置自动重连；串口拔出进入 `LOST`，端口重新出现时自动重开（可关）。
+- 断线检测：TCP/WS 断开进入 `LOST` 并按配置自动重连；串口拔出进入 `LOST`（端口重新出现时自动重开——未实现，见 §1.2 待实现清单）。
 - **帧合流（RX 分帧策略，对齐 COMTool）**：串口按"静默超过 2× 单字节传输时间"合帧（`单字节时间 = 1 / (baud / (bytesize + 2 + stopbits))`）；网络连接按固定 1ms 间隔合帧。合帧在纯 TS 核心层完成，宿主只上报原始字节流。
 
 ### 3.3 收发模式
@@ -122,16 +132,16 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 
 - ASCII / HEX 显示切换（HEX 大写、空格分隔；仅作用于 RX/TX 数据帧——系统消息（`[系统]` 标记，i18n）为 UI 生成的完整 UTF-8 文本，不受 HEX/转义开关影响，始终按文本显示）
 - 时间戳开关：`[YYYY-MM-DD HH:MM:SS.mmm]`（开启则强制自动换行）
-- 自动换行开关：按帧合流边界换行，间隔 ms 可配（默认 200ms）
+- 自动换行开关：按帧合流边界换行（"间隔 ms 可配（默认 200ms）"未实现，当前为按像素宽度软折行，见 §1.2 待实现清单）
 - 转义显示开关：不可见字节显示为 `\x01` 形式
 - 帧内换行符拆分：ASCII 非转义显示下，数据帧内嵌的 `\r\n` / `\n` / `\r` 按硬换行拆成独立显示行（拆分出的后续行与折行续行一致：无方向前缀）；帧末换行不产生多余空行。HEX / 转义显示下换行字节以 `\x0A` 等形式可见，不受影响。行内禁止出现控制字符直接渲染（多行文本会在固定行高内溢出，与后续行重叠）
 - 接收区显示行数可调：设置项 `receive.historyLines`，默认 10000 行，范围 1–100000，修改即时生效（超出新上限的旧行按新上限裁剪）。用于格式切换重放的原始历史与显示行同上限（帧数 ≤ 行数设置），字节预算 = max(256 KiB, 行数 × 256 B)（含隐藏 TX），超限逐出最旧整帧并同步释放对应显示行。单帧超出预算不保留，不截断为伪完整帧；历史裁剪不计接收丢帧。ANSI 历史头保留解析状态，重排不会丢失已消费的颜色状态。新增数据增量排版，内容变化独立于行数净增量通知 UI。终端模式仍消费有界日志历史，但推迟日志排版至重新可见；暂停仍不消费，恢复时检测消息断档。
 - ANSI 颜色开关：勾选后数据行默认色切换为主题正文色（深色白/浅色黑），内容解析 `\x1b[31m` 等 SGR 序列按前景色着色（30–37 / 90–97 / 38;5 与 38:5 的 256 色 / 38;2 与 38:2 的 24-bit RGB，`0`/`39`/`ESC[m` 复位；仅前景，背景与加粗等属性忽略；调色板与终端视图共用 §3.7 token）；行尾被截断的不完整序列跨包缓冲，与后续帧续接；状态跨行/跨帧持续，sys 行不参与解析；HEX / 转义显示下无原始 ESC 可解析（序列以 `\x1B` 字节可见），仅默认色生效
-- 方向标记：记录发送时 `=>` 发送 / `<=` 接收（开启则强制自动换行）
+- 方向标记：记录发送时 `=>` 发送 / `<=` 接收；显示与否按 §3.5 的 MCP 运行态门控（无独立开关）
 - 暂停显示（数据继续入缓冲）、清屏、滚动锁定（用户上翻时不强制贴底）
 - Rx / Tx 字节计数（状态栏，清屏归零）
 - 日志文本鼠标拖动选中，`Cmd/Ctrl+C` 复制（按行拼接；新数据入流时已选行号随内容滚动）
-- 日志保存：指定文件路径追加；可选"每次连接按时间戳建新文件"
+- 日志保存：指定文件路径追加；可选"每次连接按时间戳建新文件"（**未实现**，`logPath` 配置字段已预留，见 §1.2 待实现清单）
 
 **发送区**：
 
@@ -170,7 +180,7 @@ interface Message {
 }
 ```
 
-- UI 接收区的收发显示**按 MCP server 运行态分档**。运行中：RX 行显 `<=` 方向标记，TX 行显 **`[手动发送]` / `[MCP发送]`** 来源前缀（i18n 文案，见 §3.6）；`timer`/`history` 归入"手动发送"类（前缀文案按用户语义只分两类：手动/MCP，规格冻结为两类）。未运行（开关关闭 / 启动失败 / 终端模式门控停服）时全部收发均为本地手动行为，接收区**只显示接收数据与系统事件**：TX 行整行不显示，RX 行不显示 `<=` 标记；已显示的收发历史行随开关切换隐藏/恢复。
+- UI 接收区的收发显示**按 MCP server 运行态分档**。运行中：RX 行显 `<=` 方向标记，TX 行显 **`[手动发送]` / `[MCP发送]`** 来源前缀（i18n 文案，见 §3.6）；`timer`/`history` 归入"手动发送"类（前缀文案按用户语义只分两类：手动/MCP，规格冻结为两类；当前实现仅 `manual`/`mcp`/`system` 三个 source 被实际发出，`timer`/`history` 为预留枚举）。未运行（开关关闭 / 启动失败 / 终端模式门控停服）时全部收发均为本地手动行为，接收区**只显示接收数据与系统事件**：TX 行整行不显示，RX 行不显示 `<=` 标记；已显示的收发历史行随开关切换隐藏/恢复。
 - 系统消息（连接/断开/错误）恒显示 `[系统]` 标记（i18n：zh `系统` / en `SYS`；旧 `[--]` 紧跟时间戳易被误读为损坏的时间占位，已废弃）。
 - 消息进入两处消费：UI 视图 + MCP 读缓冲（§6），单一事实源。
 - 缓冲：消息总线为**有界环形缓冲**（默认 1000 帧 / 256 KiB，可配），溢出丢最旧帧属正常历史裁剪，**不注入事件**。真实丢帧由消费端按消息 id 连续性检测（断档 = 有帧在消费前被裁）：UI 接收区记一条 i18n `sys` 提示（`[系统] 缓冲溢出，已丢弃 N 帧`）；MCP 读行前置一条 `[SYS] buffer overflow, dropped N frame(s)`（稳定英文，§6.3）。规避 umeko_serial_mcp 缓冲无上限的缺陷。
@@ -195,7 +205,7 @@ interface Message {
 - 内容：语言、主题、字体大小、接收区历史行数（`receive.historyLines`）、终端回滚行数（`terminal.scrollbackLines`）、最近连接参数（按类型）、发送历史、接收区开关项、日志路径、MCP 端口与 token。
 - 支持配置导出 / 导入（JSON 文件）。
 - **"应用配置"弹窗语义**（§3.1）：弹窗内修改为草稿、不落盘，点"应用"才写入各状态并触发既有防抖回写；导入/导出是即时动作（不经草稿），导入成功后立即生效并把弹窗草稿重同步为导入值（未应用的其它草稿修改被丢弃）；回滚行数缩小导致的终端历史裁剪不可逆（§3.4）。
-- 发送历史、连接历史上限各 50 条。
+- 发送历史上限 50 条（已实现）；连接历史上限 50 条**未实现**（当前仅有每类型一份 `lastConn` 当前参数，见 §1.2 待实现清单）。
 
 ## 4. 架构
 
@@ -220,8 +230,8 @@ interface Message {
 
 PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-specific runtime 自持 adapter"的模式自研。契约要点：
 
-- **Ops**（JS → 宿主，请求/响应）：`serial.list / serial.open / serial.close / serial.write / serial.setSignals(DTR/RTS) / net.tcpConnect / net.tcpListen / net.udpBind / net.wsConnect / conn.write / conn.close`（统一连接句柄）。
-- **Events**（宿主 → JS，tick 边界成批投递）：`conn.data(handle, bytes) / conn.closed(handle, reason) / conn.error(handle, code, msg) / serial.added / serial.removed`。
+- **Ops**（JS → 宿主，请求/响应；实际清单以 `bridge/com.ts` 为准）：`serialList / serialOpen / write(handle) / setSignals / close / poll / tcpConnect / tcpListen / udpBind / wsConnect / cfgRead / cfgWrite / cfgExport / cfgImport / mcpStart / mcpStop / mcpFeed / mcpCmds / mcpResults`（cfg.* 为设置持久化桥，mcp.* 为 MCP server 桥，M2/M4 后补；四类连接共用统一 `write(handle)`）。
+- **Events**（宿主 → JS，tick 边界成批投递）：`conn.data(handle, bytes) / conn.closed(handle, reason) / conn.error(handle, code, msg) / conn.opened / conn.accepted（TCP Server 新客户端）/ appearance（系统外观）/ mcp（server 运行态与客户端数）`。`serial.added / serial.removed`（热插拔通知）**未实现**，串口拔出自动重开依赖该能力（见 §1.2 待实现清单）。
 - 统一 `handle` 抽象：四类连接对核心层暴露同一 `IConnection` 接口（`write(bytes)`、`close()`、事件回调），对齐 COMTool 的 `COMM` 基类设计。
 - 宿主线程绝不直接回调 JS，所有事件经队列在 tick 边界 drain（遵循 PocketJS 帧契约）。
 
@@ -239,7 +249,8 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 - PocketCOM 负责产品源码、板端 manifest/host profile、启动入口和构建编排；PocketJS fork 的 `hosts/aic` 负责 QuickJS、触摸、RGB565 渲染和帧循环；luban-lite SDK 负责 RT-Thread、MPP、硬件驱动、链接与镜像打包。
 - `vendor/pocketjs` 跟踪 `kaidegit/pocketjs` 的 `feat/aic`，`vendor/luban-lite` 跟踪局域网 Gitea `yekai/luban-lite` 的 `feat/pocketjs`。显式 `git submodule update --remote` 更新分支；构建不拉取更新。父仓库 gitlink 仍按 Git 机制记录提交。
 - `host/rtthread/` 放产品配置与接入文档；复用 SDK 的 `application/rt-thread/pocketjs` 和 `d12x_demo68-nor_rt-thread_pocketjs_defconfig`，不复制通用宿主，不修改 vendor 已跟踪文件。
-- 板端 Vue Vapor 应用使用 480×272、native presentation、density 1、60Hz，启动前初始化视口。完整共享 UI 在真机 bundle eval 阶段 OOM，当前板端入口暂改为精简启动验证页：标题、能力边界说明、帧计数和触摸计数；不导入桌面 App、session、终端、连接配置面板或设置弹窗。共用 i18n 和主题令牌，桌面入口保持完整功能。本期不提供 UART/网络/MCP、持久化或软键盘；完整 UI 恢复需先通过板端内存验证。
+- 板端 Vue Vapor 应用使用 480×272、native presentation、density 1、60Hz，启动前初始化视口。完整共享 UI 在真机 OOM（2026-10-10 实测：编译阶段已通过，但 mount 阶段分配失败以 `TypeError: not a function` 伪装抛出；本机 probe 判定完整 UI 常驻工作集 ≈8.1 MiB，超出板上 guest 可用约 6.0–6.4 MiB），当前板端入口为精简启动验证页：标题、能力边界说明、帧计数和触摸计数；不导入桌面 App、session、终端、连接配置面板或设置弹窗。共用 i18n 和主题令牌，桌面入口保持完整功能。本期不提供 UART/网络/MCP、持久化或软键盘；完整 UI 恢复只能走板端紧凑装配路线（方案 A，见 docs/aic-memory-optimization.md），须先通过板端内存验证。
+- **板端 WiFi（2026-10-11 点亮，验证至 AP 扫描）**：RTL8189FTV（SDIO 接 SDMC0，4-bit @40MHz）+ third-party lwIP（netif `WL0`，`AIC_WLAN_REALTEK`/`AIC_USING_RTL8189_WLAN0` 配置链，非 RT-Thread wlan 框架/内核 lwIP）。驱动 `.bss` ≈259 KiB 静态落在 PSRAM，运行时收发缓冲吃统一堆；恢复网络功能前必须补 WiFi 开/关、连 AP/断开状态下的堆基线与峰值测量。模组 EN 与 SoC 断开（载板保证使能），固件不做电源控制；PM 睡眠驱动未编入。
 - `check:aic` 校验配置/类型；`package:aic` 生成 JS/PAK/.pocket、宿主契约头和内联 C 数组；`build:aic` 重新打包后经 SCons 构建固件。默认 SDK 为 submodule，支持 `--sdk <路径>` 和 `-- <scons 参数>`，工具链遵循 `RTT_EXEC_PATH`。产物在 `dist/aic`，中间文件在 `.pocket/aic`，宿主生成文件在其已忽略的 `hosts/aic/generated`。
 - 板端固件 XIP 运行：`.text/.rodata`（含内联包）链接进 SPI NOR 的 0x60000000 XIP 窗口原地执行，仅 `.data/.bss` 由 bootloader 拷入/清零 PSRAM；分区表去掉未使用的 `data` 分区，QSPI0 运行期归 XIP 缓存，OS 侧不挂 spinor 设备（无 FAL/SFUD/userid 运行时 flash 访问）。
 - PSRAM 8 MiB 统一堆：底部约 1 MiB 为 CMA 区（`.data/.bss` + 双 RGB565 framebuffer），其余约 7 MiB 为 RT-Thread 系统堆，算法为 TLSF（SDK `RT_USING_USERHEAP` + `bsp/artinchip/drv/mem/rt_tlsf_heap.c`），QuickJS/Rust guest 与系统线程共用，不再划分 PocketJS 私有池；guest JS 配额 5 MiB 为软上限。构建报告实际 ELF/map 的包大小、XIP/PSRAM 段拆分、CMA/SW 边界、framebuffer 与统一堆预算（guest 配额 + 系统预留）及 OS 分区占用，并校验 ITS XIP 段地址与 `XIP_FW_OFFSET = os 分区偏移 + 0x800` 一致；超限失败，不自动调整分区或提高配额，不自动烧录。
@@ -343,6 +354,8 @@ MCP server 实现于**宿主层**（fork 的桌面宿主 crate 内的原生线�
 | M4 | MCP 服务 | §6 全项 + 集成测试 |
 | M5 | AIC + RT-Thread 构建与宿主接入 | 应用包、固件构建、内存报告；设备 IO 桥/紧凑布局后续实现 |
 
+M5 当前状态（2026-10-12）：应用打包、固件构建、内存报告、**XIP 固件 + 统一 TLSF 堆（2026-10-10 真机验证）**、精简验证页真机通过（启动/出帧/触摸）、**WiFi RTL8189FTV + lwIP 点亮至 AP 扫描（2026-10-11）**均已交付；UART/网络/MCP 设备桥、紧凑布局、软键盘仍为后续。完整 UI 因常驻工作集超 PSRAM 预算，按 docs/aic-memory-optimization.md 方案 A 推进。
+
 ## 9. 风险与开放问题
 
 M0 桌面宿主调研已完成（2026-09-04），#1/#3 已关闭：
@@ -354,12 +367,13 @@ M0 桌面宿主调研已完成（2026-09-04），#1/#3 已关闭：
 | 3 | 烘焙字体不支持任意字符 | ✅ 已关闭（桌面端） | gpui 后端 `enhances: ["text.layout.native"]` 走 CoreText，任意 Unicode 可显示；烘焙约束仅剩嵌入式目标（§5.4） |
 | 4 | 终端网格渲染性能 | 开放 | M0 压测；native text 路径下按行渲染 `TEXT_RUN`，备选 `Image` 位图自绘网格 |
 | 5 | MCP 多读缓冲的会话语义 | 开放 | 首版共享缓冲，v1.1 按 session 隔离 |
-| 6 | AIC/RT-Thread 设备 IO 与内存预算 | 开放 | Rust/固件构建已接入；真机启动、lwIP/UART 桥及紧凑布局待验证/实现 |
+| 6 | AIC/RT-Thread 设备 IO 与内存预算 | 部分关闭 | Rust/固件构建与真机启动已验证（精简页，XIP + 统一 TLSF 堆）；WiFi/lwIP 已 bring-up 至 AP 扫描；UART 桥、紧凑布局、软键盘待实现；完整 UI 常驻工作集超预算（≈8.1 MiB vs 可用约 6.0–6.4 MiB），走板端紧凑装配路线恢复 |
 | 7 | 金样测试需要 wasm32 target + headless Bun host；native text 路径放弃跨宿主字节确定性 | 开放 | UI 金样在 gpui 宿主或 wasm host 二选一，M3 前定 |
 
 ## 10. 附录
 
 - PocketJS 文档：https://pocketjs.dev/docs/ 、NET 模块说明：https://pocketjs.dev/docs/net/
-- PocketJS 源码（vendor，`vendor/pocketjs/`，0.11.x）关键路径：`engine/backends/gpui/`（桌面渲染后端）、`hosts/desktop/`（桌面宿主，fork 起点）、`contracts/spec/net.ts`（surface 契约样板）、`engine/crates/pocket-net/`（transport trait + tick drain 样板）、`docs/RUNTIMES.md`（Runtime = ⟨Cores, Surfaces, Guest⟩ 扩展模型）、`docs/BACKENDS.md`（native text 说明）。
+- PocketJS 源码（vendor，`vendor/pocketjs/`，0.14.0）关键路径：`engine/backends/gpui/`（桌面渲染后端）、`hosts/desktop/`（桌面宿主，fork 起点）、`contracts/spec/net.ts`（surface 契约样板）、`engine/crates/pocket-net/`（transport trait + tick drain 样板）、`docs/RUNTIMES.md`（Runtime = ⟨Cores, Surfaces, Guest⟩ 扩展模型）、`docs/BACKENDS.md`（native text 说明）。
+- 本项目文档导航：`docs/e2e.md`（脚本化 UI 验证）、`docs/coords.md`（控件坐标速查）、`docs/mcp.md`（MCP 服务手册）、`docs/aic-memory-optimization.md`（D12x 内存优化方案）、`docs/rtthread-d12x.md`（移植预研）、`docs/performance/`（性能基准原始数据）。
 - COMTool 调研要点：连接/插件/装配三层解耦、帧合流公式、终端基于 pyte 的 headless 模型（本项目以纯 TS 重写等价物）。
 - umeko_serial_mcp 调研要点：6 个 tool 的划分、来源标签（LLM/HARDWARE/USER_OVERRIDE/SYSTEM）、UI 发送回灌 agent 读缓冲；缺陷清单见 §1.1/§3.5/§6。
