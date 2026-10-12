@@ -106,6 +106,47 @@ SW 统一堆预算扣 guest JS 配额（fork SConscript 的 `CONFIG_POCKETJS_GUE
 分配、对齐、驱动和碎片开销，不构成运行稳定性证明。OS 预算按 ITB 对比实际分区大小。
 任一预算不足时，报告仍保存，但命令非零退出；不自动扩大分区或调高配额。
 
+## P0 内存分阶段诊断（2026-10-12）
+
+固件默认编入分阶段内存诊断（[内存优化方案](../../docs/aic-memory-optimization.md) §3 的 P0 工具）。环境变量 `POCKETJS_DIAG=0` 构建时整体关闭：fork `hosts/aic/SConscript` 据此省去 `-DPOCKETJS_AIC_DIAG -DCONFIG_POCKETJS_GUEST_ALLOC_STATS`，阶段采样与 `pjs_mem` 命令编译为空，宿主改走与拆分路径语义一致的原 eval 行为；`heap_caps` 计数与失败环形记录始终保留（每笔分配两次加法）。
+
+启动时在各阶段边界打印一组 `[PJS-DIAG]` 行，阶段名同时是分配失败记录的标签：
+
+| 阶段 | 边界 |
+|---|---|
+| S0-boot / S0-task | 统一堆统计打印后 / pocketjs 任务入口（384 KiB 栈已分配） |
+| S1-display / S1-touch | 显示契约校验通过后 / 触摸打开后 |
+| S2-package / S2-guest / S2-uibind | 包解析并选定变体后 / guest 创建后 / PAK 挂载后 |
+| S3-compile / S4-mount | `JS_EVAL_FLAG_COMPILE_ONLY` 返回后 / `JS_EvalFunction` + frame 获取后 |
+| S5-renderer / S5-frame1 / S5-frame120 | 渲染器与双 target 创建后 / 首帧 / 第 120 帧 |
+
+字段速查（同一阶段名多行）：
+
+- `sys=used/total sys_max`：TLSF 系统堆（`rt_memory_info`）；`walk_free/walk_maxfree/walk_frags`：空闲块遍历（SDK `rt_tlsf_heap.c` 新增 `rt_memory_walk`，锁内 `tlsf_walk_pool`，只在采样点调用）。`maxfree` 是物理块大小，实际可分配的最大请求略小于它。
+- `caps_live/caps_peak/caps_blocks/caps_fails`：本 port `heap_caps` 全量记账（QuickJS + Rust UI + 3 槽包装头 + 对齐余量），即"guest+Rust"口径。
+- `cma=used/total cma_max`：`heap_cma` memheap（framebuffer 所在区）；`stack_pjs=used/size`：宿主任务栈 '#' 填充高水位。
+- `js=malloc_size/limit`、`atoms/str/obj/shape/func_code/frames`：`JS_ComputeMemoryUsage`；`guest_live/guest_peak`、`rloc=reallocs/shrinks`：QuickJS 分配器侧记账与 copy-realloc 统计（方案 C 第一步的数据）。
+- `[PJS-DIAG] heap-fail #N charged=… align=… stage=…`：最近 8 条 `rt_malloc` NULL 记录（固定缓冲，失败路径不分配）；eval 失败时随 `pocketjs_diag_dump()` 打印。QuickJS 配额拒绝（`JS_SetMemoryLimit`）不经过该路径——ring 为空而 `js=` 逼近 limit 即可区分"配额拒绝 vs 底层分配失败"。
+
+运行期（S6，含 WiFi 状态维度）用 msh 命令按需采样：
+
+```console
+pjs_mem              # 排队一个采样，下一 tick 在 guest 任务上打印（标签 manual）
+pjs_mem wifi_on      # 带标签采样；建议 wlan wifi_on / 连 AP / 断开 / 流量前后各一次
+pjs_mem reset        # 记账峰值回落到当前 live，用于增量测量
+```
+
+`pjs_mem` 只排队请求，采样由帧循环在自己的任务边界执行——`JS_ComputeMemoryUsage` 和栈扫描不能与运行中的帧并发。host 加载链始终走 `pocketjs_guest_eval_stages`（编译一次、执行一次，回调为空时行为等同原 `pocketjs_guest_eval`），避免"诊断路径 ≠ 生产路径"。
+
+### P0 诊断真机首采（2026-10-12）
+
+精简页（WiFi 构建、未 `wifi_on`）首次全阶段采样：S3 编译为启动峰值——sys_max 3,369,880 / caps_peak 2,930,837 / guest_peak 2,335,161，编译 2,749 ms、realloc 109→63,085 次、瞬时双份开销 ≈ 985 KiB；S4 后稳态 sys 2.46 MiB / js 0.95 MiB，120 帧零错误，fps 60–62，`caps_fails=0`。
+
+同日完整 UI 断点实测（入口临时挂完整 App，测毕恢复）：编译通过（5,065 ms，caps_peak 5.03 MiB），挂载执行段死于碎片化枯竭——sys_max 6,876,604 触顶、总空闲 ~463 KiB 碎成数千个 <380 B 块、`caps_fails=6` 全是小请求、js 2.95 MiB 远未触 5 MiB 配额（排除配额拒绝）；板上缺口修正为 sys 口径 ~2.0 MiB。完整数据表与结论见 [内存优化方案 §2.1.3/§2.1.4](../../docs/aic-memory-optimization.md)。两个采集坑：
+
+- **`t=` 只看相邻差值**：暖复位（External-PIN-Reset）后 `rt_tick` 计数不归零，绝对值带重启前会话的偏移（本例 ~70 min）；帧节奏差值与 60fps 一致，可信。
+- **banner "Built on" 日期在增量构建下可能过期**（scons 不重生成版本文件）；判断固件新旧以 `[PJS-DIAG]` 输出为准。
+
 ## 验证
 
 ```sh

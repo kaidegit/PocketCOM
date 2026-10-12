@@ -4,120 +4,136 @@
 
 ## 项目简介
 
-PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调试助手（参考 COMTool 精简复刻）。单页面、收发/终端双模式开关切换；连接支持串口/TCP/UDP/WebSocket/回环（loopback，测试用）；i18n + 深色模式；内置 MCP server 供 AI agent 共享收发。首期平台 macOS；AIC D12x + RT-Thread 已接入应用打包/固件构建，设备 IO 桥与紧凑布局后续实现。
+PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调试助手（参考 COMTool 精简复刻）。单页面、收发/终端双模式开关切换；连接支持串口/TCP/UDP/WebSocket/回环（loopback，测试用）；i18n + 深色模式；内置 MCP server 供 AI agent 共享收发。
+
+- **桌面（macOS）**：全功能已交付并经真机 e2e 验证（M1–M4）。
+- **板端（AIC D12x + RT-Thread）**：应用打包/固件构建/XIP/统一堆/WiFi 已接入，当前为精简验证页（详见下文"AIC port"）。
+
+## 总览
+
+| 事项 | 位置 |
+|---|---|
+| 功能与架构权威定义 | [SPEC.md](SPEC.md) |
+| 桌面构建/运行/打包 | skill `desktop-build`（.agents/skills/desktop-build/SKILL.md） |
+| 桌面测试/e2e/MCP 集成 | skill `desktop-test`（.agents/skills/desktop-test/SKILL.md） |
+| 板端构建/烧录/内存报告 | skill `aic-build`（.agents/skills/aic-build/SKILL.md） |
+| 板端接入全记录（XIP/TLSF/WiFi） | [host/rtthread/README.md](host/rtthread/README.md) |
+| 板端内存优化方案（A–G、P0–P3） | [docs/aic-memory-optimization.md](docs/aic-memory-optimization.md) |
+| e2e 脚本用法 / 控件坐标 | [docs/e2e.md](docs/e2e.md) / [docs/coords.md](docs/coords.md) |
+| MCP 服务手册 | [docs/mcp.md](docs/mcp.md) |
+| 只读参考代码库 | COMTool、umeko_serial_mcp（见文末） |
+
+技术栈一句话：TypeScript（strict）+ PocketJS **Vue Vapor 适配器**（不用 Solid/Octane），无 DOM/运行时 CSS，UI 仅 `View/Text/Image` 原语。
+分层依赖单向：`app → core → bridge`，`host/*` 实现 bridge 的 `com.*` HostOps 契约；core 保持纯 TS、可在 Bun/Node 下单测。
 
 ## 技术栈与硬性约束
 
-- TypeScript（strict）+ PocketJS **Vue Vapor 适配器**（`vue` + `vue-jsx-vapor` + `@pocketjs/framework/vue-vapor`），不使用 Solid/Octane。
-- **引擎布局怪癖（实测，勿踩坑）**：
-  - 嵌套 flex-col 的流式堆叠在组件深层会失效（子项重叠同位）；规避模式——**面板/列表内容一律 absolute + insetT 显式定位**（见 `app/panel.tsx` 的 layoutInfo 布局表、接收区行、TextField 行），flex 只用于浅层行容器。
-  - **zIndex 只在兄弟间重排**，对孙层无效 → 下拉弹层不做内联 zIndex 抬升，一律走 `Portal`（overlay 根，zIndex 1000）+ 全屏透明遮罩（`#00000001`）+ 屏幕绝对坐标锚点（`Select` 的 `anchor` prop，由布局表算出）。参考 `app/widgets.tsx` 的 `PopupLayer`/`Select`。
-  - **命中 = 绘制的 ink**：节点只在其真实绘制的像素上参与 hitTest——透明 View 不命中、Text 只在字形上命中。凡需整格可点的控件（下拉项、SegCtrl 分段、CheckRow 整行）必须给不透明或 `#00000001` 的底色，否则只能点到文字。
-  - **style 对象 diff 只增不删**：条件性样式 key（如 borderWidth）必须常设、用透明色隐藏，不能时有时无。
-  - **Vue Vapor 组件不得返回 null**（宿主 JSX 运行时 anchor 崩溃）；空态用 0 尺寸占位 View，条件渲染放在父级的表达式子节点里。
-  - **焦点必须跟随指针**：mouse 事件分发时 `focusNode(hitFocusable(x, y))` 无条件调用（落空也要清焦点）——否则点空白处会把 CIRCLE press 发到上一次聚焦的控件上（"点空白触发了别处的选中"）。
-  - **Vue Vapor 的 `Portal` host 固定为规格屏 480×272**（`components-vue-vapor.ts` 的 `createPortalRoot` 用静态 `SCREEN_W/H`，不读实时视口）→ 全屏遮罩等"铺满窗口"的弹层内容不能 `inset 0` 寄生于 portal host 盒子，必须按 `viewportSize` 显式给 width/height 自撑（见 `app/widgets.tsx` 的 `PopupLayer` 遮罩），否则视口超出 480×272 的区域点空白收不掉弹层。
-  - **条件读取 getter 会漏注册响应式依赖**：`style` 里 `show() ? top() : 0` 这类写法，若 `top()` 仅在 show 为 true 时才执行，其内部读到的 ref 在 show=false 的首帧不被追踪，后续数据源变化不再触发重跑（实测：Scrollbar 因此 0 宽永不渲染）。数据源为非响应式宿主对象（logView.rows、terminal.totalLines）的纯指示组件，用 **onFrame 轮询 + 本地 ref**（TextField 光标闪烁同款模式；值不变不写 ref，重绘不空转），见 `app/widgets.tsx` 的 `Scrollbar`。
-- **无 DOM、无运行时 CSS**：只用 `View/Text/Image` 原语；动态样式用 `style={{…}}` 或整体 class 字面量三元，**禁止拼接 class 片段**（编译错误）。
-- **字体**：UI 统一使用 MiSans（Regular/Medium/Semibold/Bold，vendor 在 `assets/fonts/`）；**mono 槽（接收区/终端网格）用 JetBrains Mono**（同目录 vendor，OFL）——MiSans 非等宽，终端网格必须严格等宽。桌面端经 `text.layout.native`（pocket.json 已声明）走 CoreText 运行时排版，任意 Unicode 可显示；**烘焙字形约束只对嵌入式目标成立**——嵌入式视图只允许使用已烘焙字符集，未知字形回退替换符并保证 HEX 视图无损（SPEC §5.4）。
+- **字体**：UI 统一 MiSans（Regular/Medium/Semibold/Bold，vendor 在 `assets/fonts/`）；**mono 槽（接收区/终端网格）用 JetBrains Mono**——MiSans 非等宽，终端网格必须严格等宽。桌面端经 `text.layout.native` 走 CoreText 运行时排版，任意 Unicode 可显示；**烘焙字形约束只对嵌入式目标成立**（SPEC §5.4）。
 - **无内置串口/WebSocket/raw socket**：所有 IO 走 `bridge/` 的 `com.*` HostOps 契约，核心层不得直接 import 任何平台 API。
 - 宿主事件只能在 **tick 边界**投递进 JS（FIFO 队列 drain），不得直接回调。
-- i18n：所有用户可见文案必须走 `assets/i18n/` 语言包 key，禁止硬编码。当前语言：`zh-CN`、`en`。**同一 key 不得既是字符串又是嵌套对象**（JSON 重复 key 后者覆盖前者，label 会退化成显示原始 key，如 `conn.parity` vs `conn.parityOpt.*`）。
+- **无 DOM、无运行时 CSS**：动态样式用 `style={{…}}` 或整体 class 字面量三元，**禁止拼接 class 片段**（编译错误）。
+- i18n：所有用户可见文案必须走 `assets/i18n/` 语言包 key，禁止硬编码。当前语言 `zh-CN`、`en`。**同一 key 不得既是字符串又是嵌套对象**（JSON 重复 key 后者覆盖前者）。
 
-## 目录结构（规划）
+### 引擎布局怪癖（实测，勿踩坑）
+
+以下均为 PocketJS/Vue Vapor 引擎实测行为，示例实现见所指文件：
+
+1. **深层嵌套 flex-col 流式堆叠会失效**（子项重叠同位）→ 面板/列表内容一律 absolute + inset 显式定位（`app/panel.tsx` layoutInfo 布局表）；flex 只用于浅层行容器。
+2. **zIndex 只在兄弟间重排** → 下拉弹层不做内联 zIndex，一律走 `Portal` + 全屏透明遮罩 + 屏幕绝对坐标锚点（`app/widgets.tsx` PopupLayer/Select）。
+3. **命中 = 绘制的 ink**：透明 View 不命中、Text 只在字形上命中 → 整格可点控件必须给不透明或 `#00000001` 底色（下拉项/SegCtrl/CheckRow）。
+4. **style 对象 diff 只增不删**：条件性样式 key 必须常设、用透明色隐藏，不能时有时无。
+5. **Vue Vapor 组件不得返回 null**（宿主 JSX 运行时 anchor 崩溃）→ 空态用 0 尺寸占位 View，条件渲染放父级表达式子节点。
+6. **焦点必须跟随指针**：mouse 分发时 `focusNode(hitFocusable(x, y))` 无条件调用（落空也要清焦点），否则点空白会把 press 发到上一次聚焦的控件。
+7. **Portal host 固定为规格屏 480×272**（不读实时视口）→ 全屏遮罩弹层须按 `viewportSize` 显式给 width/height 自撑，不能 `inset 0` 寄生（`PopupLayer` 遮罩）。
+8. **条件读取 getter 会漏注册响应式依赖**：数据源为非响应式宿主对象（logView.rows、terminal.totalLines）的纯指示组件，用 **onFrame 轮询 + 本地 ref**（值不变不写 ref），见 `Scrollbar`。
+
+## 架构与目录结构
 
 ```
 app/            # Vue Vapor 组件与页面状态（仅渲染 + 输入），pocket.json manifest 也在此
-                #   app.tsx 主界面/onFrame 分发 + 弹层/设置弹窗挂载（终端模式下键盘/粘贴直发、
-                #   终端区/文本域/日志区鼠标选区与 Cmd+C 复制路由；右键路由——终端有
-                #   选区时按下即复制、收发模式接收区弹复制/全选菜单；浮层门控
-                #   overlayOpen = 下拉弹层 ∪ 设置弹窗）；panel.tsx 左配置
-                #   面板（layoutInfo 布局表：absolute 块定位 + 弹层锚点 + 滚动总高 +
-                #   文本框选区命中区，四合一；块集合随连接类型/客户端列表动态伸缩；
-                #   页脚"应用配置"按钮 = 设置弹窗入口）；settings-modal.tsx "应用配置"
-                #   模态弹窗（草稿模式：打开快照、应用一次性写回、取消/遮罩/Escape
-                #   丢弃；语言/主题/字号/接收区历史行数/回滚行数/导入导出，导入成功重同步草稿；
-                #   settings-modal-layout.ts 为其纯几何，headless 可测）；
-                #   transfer.tsx 接收区/发送区（字号三档/发送历史/tcps 定向发送/
-                #   日志拖动选区）；terminal.tsx 终端视图（M3：字符网格按 run 合并
-                #   渲染/光标/拖拽选区/滚轮回滚，几何与选区 helper 导出给 app.tsx 命中）；
-                #   widgets.tsx 基础控件（Btn/CheckRow/SegCtrl/Select+Portal 弹层/
-                #   TextField（monoSize 字号档、selRegion 命中区注册的拖动选区）/
-                #   Scrollbar…）；textsel.ts 文本选区纯几何 helper（mono 前缀度量
-                #   px↔列号映射）；sendlayout.ts 发送区选项行流式几何（Select
-                #   弹层锚点 x 按标签实测宽累计，防弹层与控件脱节）；
-                #   session.ts 会话接线单例 + 连接参数仓库 + 设置持久化（加载/防抖回写/
-                #   导入导出）+ uiMode/终端模型装配（bus→term 持续灌入、DSR/DA 应答泵、
-                #   scrollbackLines/historyLines 设置）；theme.ts 主题令牌（深色/浅色/跟随系统 +
-                #   终端独立调色板）；i18n.ts/locale.ts 语言包；fontsize.ts 字号档位常量
-                #   （mono 槽 12/14/16px）；fields.ts 活跃文本域路由；wheel.ts 滚轮分区
-                #   路由；layout.ts 布局常量；statusbar.tsx 状态栏；svc.ts 宿主事件行封装
-core/           # 纯 TS：连接状态机(connection)、帧合流(framing：分块缓冲并批量拷贝)、消息总线(bus)、编解码(codec)、
-                #   格式化(format)、日志视图(logview：增量排版、行数/字节上限运行时可调（字节预算 = max(256 KiB, 行数 × 256 B)）、ANSI 头检查点、隐藏时延迟排版)、ANSI 前景色扫描（ansicolor：接收区
-                #   颜色转义的 SGR 解析/剥离，跨包续接截断序列，色编码复用 term）、
-                #   发送组装(send)、base64、统一会话
-                #   （session：串口+四类网络+回环+tcps 客户端表+自动重连）、设置持久化
-                #   （config：schema/归一化/历史封顶 50）、headless 终端模型
-                #   （term：VT100/xterm 解析 + 网格/光标/属性/滚动区域/alt 屏/环形回滚 +
-                #   按键/粘贴编码 + DSR/DA 应答队列，SPEC §3.4，M3）、MCP 命令执行器/
-                #   读行格式化/终端模式门控/config 白名单（mcp，SPEC §6，M4）
-bridge/         # com.* HostOps 契约：com.ts 命名空间探测/共享事件/枢纽 +
-                #   serial.ts（串口）/net.ts（四类网络）/cfg.ts（设置持久化）
-test/           # 单测，按源码分层镜像（test/core/* 对应 core/ 各模块；test/bridge/* 对应 bridge/；
-                #   test/app/* 对应 app/ 少量可 headless 化的响应式约定（如焦点身份语义）；
-                #   test/host/<系统>/* 对应 host/* 的 Rust 测试，经 #[path] 纳入宿主 crate 的
-                #   cfg(test) 编译，cargo 过滤器不变；testutil.ts 为测试专用工具）
-host/macos/     # macOS 宿主：串口/TCP/UDP/WS 原生 IO、设置持久化+外观事件、
-                #   MCP server（fork 自 vendor hosts/desktop）。com.rs 只留命名空间
-                #   挂载与共享设施（句柄计数/连接注册表/事件流），实现按协议分文件：
-                #   com_serial.rs（串口）/com_tcp.rs（TCP+TCP Server）/com_udp.rs（UDP）/
-                #   com_ws.rs（WebSocket）/com_env.rs（配置+外观）/com_mcp.rs（MCP server，
-                #   M4：手写 Streamable HTTP + JSON-RPC，仅绑 127.0.0.1 + Bearer token，
-                #   读缓冲有界 256KiB，工具命令经 mcpCmds/mcpResults 在 tick 边界进
-                #   guest 核心层执行，read 由宿主缓冲直答；客户端数变化经
-                #   {t:"mcp",on,clients} 事件回推 UI）。fork 差异：on_key_down
-                #   把 Ctrl 修饰的单字符键以 key 行（ctl 标志）转发给 guest（上游只会发
-                #   命名键/纯文本，终端模式的控制码如 Ctrl+C 依赖此路径；Alt 不转发，
-                #   保留 Option 组合字符的 insertText 输入）；右键鼠标事件（b:2 行）
-                #   对 pocketcom companion 放行（上游仅 system-ui；接收区右键菜单与
-                #   终端选中右键复制依赖此路径）
-host/rtthread/  # AIC/RT-Thread 产品接入：manifest/profile、构建编排与内存报告；复用 fork hosts/aic 和 SDK pocketjs 应用；UART/lwIP 桥后续实现
-assets/i18n/    # 语言包
-assets/fonts/   # MiSans（UI）+ JetBrains Mono（mono 槽）字体文件（vendor，构建期烘焙字形）
-docs/           # 调研、移植与脚本化 UI 验证文档（e2e.md）、e2e 控件坐标速查
-                #   （coords.md：各按钮/勾选框/弹层项实测点击坐标，配复验工具
-                #   tools/coords-probe.py；改布局后重测）、MCP 服务手册（mcp.md）、
-                #   D12x RT-Thread 移植方案（rtthread-d12x.md，M5 预研）、AIC 内存
-                #   优化方案（aic-memory-optimization.md，OOM 基线/候选路线/验收）、性能审阅
-                #   （performance-review-2026-09-17.md；performance/ 保存原始基准数据）
+                #   app.tsx 主界面/onFrame 分发 + 弹层/设置弹窗挂载（键盘/粘贴直发、鼠标选区与
+                #   Cmd+C 复制路由、右键路由、overlayOpen 浮层门控）；panel.tsx 左配置面板
+                #   （layoutInfo 布局表四合一：absolute 块定位 + 弹层锚点 + 滚动总高 + 文本框选区
+                #   命中区）；settings-modal.tsx "应用配置"草稿模态（settings-modal-layout.ts 纯几何
+                #   headless 可测）；transfer.tsx 接收区/发送区；terminal.tsx 终端视图（字符网格
+                #   按 run 合并渲染/光标/拖拽选区/滚轮回滚，几何与选区 helper 导出给 app.tsx 命中）；
+                #   widgets.tsx 基础控件（Btn/CheckRow/SegCtrl/Select+Portal/TextField（拖动选区）/
+                #   Scrollbar）；textsel.ts 文本选区纯几何；sendlayout.ts 发送区选项行流式几何；
+                #   session.ts 会话接线单例 + 连接参数仓库 + 设置持久化 + uiMode/终端模型装配
+                #   （bus→term 持续灌入、DSR/DA 应答泵）；theme.ts 主题令牌（深色/浅色/跟随系统 +
+                #   终端独立调色板）；i18n.ts/locale.ts 语言包；fontsize.ts 字号档位（mono 槽
+                #   12/14/16px）；fields.ts 活跃文本域路由；wheel.ts 滚轮分区路由；layout.ts 布局
+                #   常量；statusbar.tsx 状态栏；svc.ts 宿主事件行封装
+core/           # 纯 TS：连接状态机(connection)、帧合流(framing)、消息总线(bus)、编解码(codec)、
+                #   格式化(format)、日志视图(logview：增量排版、行数/字节上限运行时可调、ANSI 头
+                #   检查点、隐藏时延迟排版)、ANSI 前景色扫描(ansicolor)、发送组装(send)、base64、
+                #   统一会话（session：串口+四类网络+回环+tcps 客户端表+自动重连）、设置持久化
+                #   （config：schema/归一化/历史封顶 50）、headless 终端模型（term：VT100/xterm
+                #   解析 + 网格/光标/属性/滚动区域/alt 屏/环形回滚 + 按键/粘贴编码 + DSR/DA 应答
+                #   队列，SPEC §3.4）、MCP 命令执行器/读行格式化/终端模式门控/config 白名单
+                #   （mcp，SPEC §6）
+bridge/         # com.* HostOps 契约：com.ts 命名空间探测/共享事件/枢纽 + serial.ts（串口）/
+                #   net.ts（四类网络）/cfg.ts（设置持久化）
+test/           # 单测，按源码分层镜像（test/core/* ↔ core/；test/bridge/* ↔ bridge/；
+                #   test/app/* ↔ app/ 少量 headless 约定；test/host/<系统>/* ↔ host/* 的 Rust
+                #   测试经 #[path] 编入宿主 crate；testutil.ts 测试工具）
+host/macos/     # macOS 宿主：串口/TCP/UDP/WS 原生 IO、设置持久化+外观事件、MCP server。
+                #   com.rs 只留命名空间挂载与共享设施，实现按协议分文件：com_serial.rs /
+                #   com_tcp.rs（TCP+TCP Server）/ com_udp.rs / com_ws.rs / com_env.rs /
+                #   com_mcp.rs（手写 Streamable HTTP + JSON-RPC，仅绑 127.0.0.1 + Bearer token，
+                #   工具命令经 mcpCmds/mcpResults 在 tick 边界进 guest，读缓冲有界 256KiB，
+                #   客户端数变化经 {t:"mcp",on,clients} 事件回推 UI）
+                #   fork 差异：on_key_down 转发 Ctrl 修饰单字符键（终端控制码如 Ctrl+C 依赖此）；
+                #   右键鼠标事件（b:2 行）对 pocketcom companion 放行
+host/rtthread/  # AIC/RT-Thread 产品接入：manifest/profile、构建编排与内存报告（详见下文"AIC port"）
+assets/i18n/    # 语言包；assets/fonts/ MiSans + JetBrains Mono（构建期烘焙字形）
 vendor/pocketjs # kaidegit/pocketjs fork（submodule，feat/aic；桌面引擎与 AIC 宿主）
 vendor/luban-lite # 局域网 yekai/luban-lite SDK（submodule，feat/pocketjs；RT-Thread/驱动/镜像）
+docs/           # 调研、移植、脚本化 UI 验证与性能文档
 SPEC.md         # 功能规格（权威）
 ```
 
-分层依赖单向：`app → core → bridge`，`host/*`（host/macos；host/rtthread 设备桥后续实现）实现 bridge 契约。core 必须保持纯 TS、可在 Bun/Node 下单测。
+## AIC port（D12x + RT-Thread）
 
-## 构建与测试
+权威细节在 [host/rtthread/README.md](host/rtthread/README.md)（接入与改造全文）和
+[docs/aic-memory-optimization.md](docs/aic-memory-optimization.md)（内存路线），此处只汇总工作约定。
 
-前置：bun（`~/.bun/bin` 需在 PATH）；首次克隆后执行 `git submodule update --init --depth 1 vendor/pocketjs`，根目录 `npm ci` 后再 `(cd vendor/pocketjs && bun install --frozen-lockfile)`（npm 会移除链接包的嵌套依赖，编译器需要 vendor runtime bundles）；板端另外执行 `git submodule update --init --depth 1 vendor/luban-lite`（需访问局域网 Gitea）。根 framework 为本地 fork，Vue/Vapor 与 fork 一致；npm peer 解析见 `.npmrc`。显式升级用 `git submodule update --remote vendor/pocketjs vendor/luban-lite` 跟踪 `.gitmodules` 分支；构建不拉取更新，Git gitlink 仍记录实际提交。wasm32 target 仅浏览器宿主/金样测试需要，桌面开发不必装。
+### 现状
 
-- 核心层单测：`bun test test/`（源码在 `test/core/`、`test/bridge/` 与 `test/app/`，与源码分层分离）
-- 核心性能复测：`bun tools/perf-audit.ts`；桌面 QuickJS 基准用 `tools/perf-quickjs.c` 链接既有 release 引擎库，命令与测量边界见 [性能审阅](docs/performance-review-2026-09-17.md)。只测核心层，不代表完整 UI 帧耗时。
-- 类型检查：`npm run typecheck`（tsc --noEmit，tsconfig 严格度对齐上游，不要私自加严 flags——构建会用同一份 tsconfig 编译上游框架源码）
-- Manifest 校验：`npm run check`（= `bun vendor/pocketjs/tools/pocket.ts check --target macos-app --manifest app/pocket.json --project-root .`）
-- 构建 app bundle：`npm run build`（输出 `dist/pocketcom-main.js` + `.pak`）
-- 构建桌面宿主（fork 自 `vendor/pocketjs/hosts/desktop` + 自研 `com.*` 串口/网络/配置桥）：`cargo build --release --manifest-path host/macos/Cargo.toml`（输出 `host/macos/target/release/pocketcom-host`；首次全量编译 15–25 分钟；网络桥依赖 tungstenite(rustls)）
-- 宿主桥接单测：`cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host`（测试源在 `test/host/macos/`：serial_tests.rs 参数校验/事件格式/端口过滤、tcp_tests.rs 参数校验 + 127.0.0.1 TCP 回环（监听/接入/定向/广播/踢除/关停级联）、udp_tests.rs UDP 回环、ws_tests.rs 参数校验/握手失败/子协议头、env_tests.rs 配置原子写 0600/导出剥 token（`POCKETCOM_CONFIG` 重定向路径）、main_tests.rs 调度/repaint hash/脚本 flags 解析（含 `--no-native-mouse-keyboard`）、shot_tests.rs PNG 头校验、mcp_tests.rs HTTP 解析/401 鉴权/JSON-RPC 分发/读缓冲有界/命令往返/mcpStop 语义等，经 `#[path]` 编入宿主 crate；`--release` 复用既有 release 产物免 15–25 分钟全量重编）
-- 宿主串口硬件回环测试（需 TX↔RX 短接的真实串口；未设 `POCKETCOM_LOOPBACK_PORT` 时自动跳过）：
-  `POCKETCOM_LOOPBACK_PORT=/dev/cu.xxx POCKETCOM_LOOPBACK_BAUD=3000000 cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host com_serial::loopback -- --nocapture`
-  （校验 serialList 枚举/打开/信号冒烟/回环逐字节（512B ramp、2048B 全字节域、64KiB 分块突发）/空闲 poll=None/close 语义/立即重开；波特率缺省 115200）
-- 桌面运行：`node tools/dev.mjs`（默认用 fork 产物 `host/macos/target/release/pocketcom-host`，未构建时回退 vendor 的 `pocket-desktop-host` 并警告 `com.*` 不可用；flags 取自 `.pocket/macos-app/plan.json`）
-- 打包分发：`tools/package-macos.sh`（前置 `npm run build` + `cargo build` 产物；组装 `dist/PocketCOM.app` 并打 `dist/PocketCOM-<版本>-macos-arm64.dmg`。launcher 设 `POCKETJS_DIST` 指向 `Resources/dist` 后 exec 宿主二进制，flags 从 `.pocket/macos-app/plan.json` 推导（同 dev.mjs）；`VERSION=x.y.z` 覆盖版本号。**仅 ad-hoc 签名**（未公证）：首次打开需右键→打开或 `xattr -cr`。不启用沙盒故无 entitlement；`NSLocalNetworkUsageDescription`（含 zh/en InfoPlist.strings）为未来 TCP/UDP/WS 连局域网设备的授权弹窗预留，监听 `127.0.0.1` 不触发该弹窗）。安装到本机 `/Applications`：`pnpm install:macos`（先自动重建两份产物 `npm run build` + `cargo build --locked --release`，再跑 `tools/package-macos.sh` 与 `tools/install-macos.sh` 安装，ditto 整包替换 + 去 quarantine 兜底；单独重装既有包可直接跑 `tools/install-macos.sh`）
-- CI/CD：`.github/workflows/macos.yml`（macos-latest=arm64；push main/PR/tag `v*`/手动触发。跑 typecheck + check + 核心单测 + 全量构建 + 打包；产物上传 artifact，`v*` tag 额外创建 GitHub Release 附 .dmg 与 .app.zip；宿主编译用 `Swatinem/rust-cache` 缓存）
-- 脚本化 UI 验证：宿主脚本 flags（`--mouse` `--click` `--wheel` `--key` `--type` `--press` `--storm` `--screenshot` `--quit-after` `--announce-ready` `--no-native-mouse-keyboard`（丢弃原生鼠标/滚轮/键盘事件，e2e 必加以防物理输入污染）；`@T` 为 60Hz 虚拟时钟 tick 序号）经 `node tools/dev.mjs -- <flags…>` 原样转发给宿主二进制（不带 `--` 行为不变）。**各参数详解、tick/坐标系、拖拽与组合键配方、截图机制与坑位见 [docs/e2e.md](docs/e2e.md)**；观测用 `POCKETCOM_TRACE=1`。本机真机 e2e 已验证：串口全链路（M1）、TCP Client 回环（M2）、`--screenshot`/`--wheel`/`--key cmd+enter`、终端模式（M3，滚轮/拖拽选区/Ctrl 控制码均可脚本注入）、MCP 全链路含终端模式门控（M4，见上）、"应用配置"设置弹窗全链路（打开→草稿→应用/Escape/遮罩关闭，coords.md §3）；截图为 opt-in flag，CI 不触发。
-- UI 金样测试：PocketJS headless Bun host（byte-exact PNG golden，待落地）
-- MCP 集成测试：`bun test host/macos/mcp/`（前置 `npm run build` + `cargo build --release`；脚本化 MCP client 经原生 fetch 走真实宿主+guest 全链路：401 鉴权 → initialize 会话 → tools/list → connect（bun TCP echo + loopback 回环）→ send → read 前缀断言（`[RX]`/`[SYS]`/i18n 手动前缀）→ force 语义 → disconnect → config 白名单（token 不可触）→ 会话 DELETE；终端模式门控（SPEC §6.1）经 `--click` 脚本切模式验证停服/重启。产物缺失自动跳过，CI 在前置步骤产出两者）。同目录 `flood.test.ts` 为大流量 e2e：loopback + MCP 灌入 400 条小帧 + 6×48KiB 突发（超环形缓冲 256KiB 触发逐出），断言收/发字节对称、洪峰后连接与 MCP 存活、渲染收据出帧，并落 3 张窗口截图供检查接收框（无屏幕录制权限的会话里截图断言降级为警告跳过，见 docs/e2e.md 常见坑 6）
-- AIC + RT-Thread：`npm run check:aic` 校验，`npm run package:aic` 打包；`RTT_EXEC_PATH=/path/to/riscv-none-elf/bin npm run build:aic -- --sdk /path/to/sdk -- -j4` 构建（默认 SDK=`vendor/luban-lite`、SCons=`-j8`）；`npm run flash:aic` 用 SDK `tools/aic-isp` 烧录已构建镜像（默认仅 app→os 分区，`--all` 先烧 bootloader→spl 分区，其余参数透传 aic-isp；烧写偏移由 pack image_cfg.json 分区表推导，产物缺失时报错提示先 build:aic，上传工具缺失时自动 cargo 构建）。复用 SDK pocketjs 应用与 fork `hosts/aic`；已跟踪 bootloader.bin 含 XIP Boot 与 GET_MEDIA_CRC（2026-10-10 重编进 SDK），构建时只生成地址元数据不重编。固件 XIP：`.text/.rodata` 于 SPI NOR 0x60000000 窗口原地执行（`XIP_FW_OFFSET = os 偏移 0x100000 + 0x800`），PSRAM 为统一 TLSF 系统堆（SDK `RT_USING_USERHEAP`，CMA 底部 1 MiB 留 framebuffer），无 PocketJS 私有池，运行时无 FAL/SFUD/userid flash 访问。应用包/内存报告在 `dist/aic/`，SDK 镜像在其 `output/`。板端入口 `app/main.aic.tsx` 暂挂载 `app/aic.tsx` 精简验证页（帧/触摸计数），不得重新引入完整 App/session 启动图而未经内存验证。AIC 独立压缩 JS 标识符与空白（不折叠表达式/改宿主属性名），桌面构建不变；内联包随 `.rodata` XIP 常驻 flash；预算超限失败，不调分区/配额、不烧录。完整架构、前置环境与限制见 [host/rtthread/README.md](host/rtthread/README.md)。测试 `bun test test/host/rtthread/`，目录与宿主分层镜像。桌面 CI 仅初始化 PocketJS，不访问局域网 SDK。
+- 固件 **XIP 运行**：`.text/.rodata`（含内联包）链接进 SPI NOR 0x60000000 窗口原地执行，
+  仅 `.data/.bss` 由 bootloader 拷入/清零 PSRAM；QSPI0 运行期归 XIP 缓存，无 FAL/SFUD/userid
+  运行时 flash 访问。
+- **统一 TLSF 系统堆**：PSRAM 8 MiB = CMA 1 MiB（`.data/.bss` + 双 RGB565 framebuffer）+
+  SW 7 MiB（RT-Thread TLSF，QuickJS/Rust guest 与系统线程共用，无 PocketJS 私有池）；
+  guest JS 配额 5 MiB。
+- 板端入口 `app/main.aic.tsx → app/aic.tsx` 是 **480×272 精简验证页**（帧计数 + 触摸计数），
+  真机验证通过（启动/持续出帧/触摸一致，无 OOM）。**不得未经内存验证重新引入完整
+  App/session 启动图**：完整桌面 UI 常驻工作集 ≈8.1 MiB，超出板上 guest 可用约 6.0–6.4 MiB
+  （WiFi 前口径），挂载失败会伪装成 `TypeError: not a function`。
+- **WiFi 已点亮**（2026-10-11）：RTL8189FTV（SDIO/SDMC0，4-bit @40MHz）+ third-party lwIP
+  （netif `WL0`），验证至 AP 扫描；驱动 `.bss` ≈259 KiB 进 PSRAM，运行时缓冲吃统一堆——
+  恢复收发功能前必须补 WiFi 开/连 AP/断开状态下的堆基线测量。
+
+### 恢复路线（内存约束下的推进顺序）
+
+方案 A（板端专用装配 + 紧凑 UI）是唯一可行主路线：共用纯 TS `core/`，会话装配显式化，
+日志/回滚/IO 队列设板端上限（方案 D 为收发前置）；字节码（B）与 realloc（C）作为配套优化。
+推进阶段 **P0 分阶段测量 → P1 板端收发闭环 → P2 选定功能恢复 → P3 平台优化或取舍**；
+每步以板端实测峰值/稳态验收，桌面大容量默认值不得直接照搬。
+
+### 构建与烧录
+
+命令、产物、内存报告解读、烧录要点全部在 skill `aic-build`；板端测试 `bun test test/host/rtthread/`。
+
+## 构建与测试索引
+
+命令细节按场景进 skill，不要在本文件复制：
+
+| 场景 | 入口 |
+|---|---|
+| 桌面构建/运行/打包/安装 | skill `desktop-build` |
+| 单测/typecheck/e2e/MCP 集成/性能复测 | skill `desktop-test` |
+| 板端校验/打包/构建/烧录/内存报告 | skill `aic-build` |
 
 ## 参考代码库（只读，禁止修改）
 
@@ -131,4 +147,4 @@ SPEC.md         # 功能规格（权威）
 3. 消息一律经消息总线并携带 `source` 标记（`manual`/`mcp`/…），UI 前缀文案只分"手动发送 / MCP发送"两类，且仅 MCP server 运行中显示；未运行时接收区只显示接收数据与系统事件（TX 行整行隐藏，RX 行无 `<=` 标记）；sys 事件标记为 i18n `[系统]`/`[SYS]`。
 4. 安全默认：MCP 监听只绑 `127.0.0.1` + token 鉴权；不引入无鉴权监听。（TCP Server 监听 `0.0.0.0` 是用户显式打开连接的行为，对齐 COMTool，属例外；配置文件权限 0600，导出配置剥离 `mcp.token`。）
 5. 提交信息：Conventional Commits，英文（如 `feat(core): add frame coalescing`）。
-6. 修改了本文件提及的结构、命令、约定时，同步更新本文件。
+6. 修改了本文件提及的结构、命令、约定时，同步更新本文件与各 skill（`.agents/skills/*/SKILL.md`）。
