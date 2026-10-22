@@ -1,17 +1,113 @@
 {
   "version": 1,
   "module": "@pocketcom/features",
-  "resources": ["assets/i18n/zh-CN.json", "assets/i18n/en.json"],
+  "resources": [
+    "assets/i18n/zh-CN.json",
+    "assets/i18n/en.json"
+  ],
   "features": {
     "terminal": {
-      "modules": ["app/terminal.tsx", "core/term.ts"],
-      "i18n": ["terminal", "mode", "panel.mode", "settings.scrollbackLines", "mcp.terminalHint"]
+      "status": "implemented",
+      "modules": [
+        "app/terminal.tsx",
+        "core/term.ts"
+      ],
+      "i18n": [
+        "terminal",
+        "mode",
+        "panel.mode",
+        "settings.scrollbackLines",
+        "mcp.terminalHint"
+      ]
+    },
+    "transport.serial": {
+      "status": "planned"
+    },
+    "transport.tcp-client": {
+      "status": "planned"
+    },
+    "transport.tcp-server": {
+      "status": "planned"
+    },
+    "transport.udp": {
+      "status": "planned"
+    },
+    "transport.websocket": {
+      "status": "planned"
+    },
+    "receive.hex": {
+      "status": "planned"
+    },
+    "receive.escape": {
+      "status": "planned"
+    },
+    "receive.timestamp": {
+      "status": "planned"
+    },
+    "receive.ansi": {
+      "status": "planned"
+    },
+    "receive.file-log": {
+      "status": "planned"
+    },
+    "send.hex": {
+      "status": "planned"
+    },
+    "send.escape": {
+      "status": "planned"
+    },
+    "send.repeat": {
+      "status": "planned"
+    },
+    "send.history": {
+      "status": "planned"
+    },
+    "send.file": {
+      "status": "planned"
+    },
+    "mcp.server": {
+      "status": "planned"
+    },
+    "ui.selection": {
+      "status": "planned"
+    },
+    "ui.clipboard": {
+      "status": "planned"
+    },
+    "ui.context-menu": {
+      "status": "planned"
+    },
+    "ui.shortcuts": {
+      "status": "planned"
+    },
+    "ui.language-switch": {
+      "status": "planned"
+    },
+    "ui.theme-switch": {
+      "status": "planned"
+    },
+    "ui.theme-system": {
+      "status": "planned"
+    },
+    "ui.font-size-switch": {
+      "status": "planned"
+    },
+    "ui.soft-keyboard": {
+      "status": "planned"
     }
   },
   "profiles": {
-    "desktop": { "terminal": true },
-    "aic-diagnostic": { "terminal": false },
-    "terminal-on": { "terminal": true },
-    "terminal-off": { "terminal": false }
+    "desktop": {
+      "terminal": true
+    },
+    "aic-diagnostic": {
+      "terminal": false
+    },
+    "terminal-on": {
+      "terminal": true
+    },
+    "terminal-off": {
+      "terminal": false
+    }
   }
 }

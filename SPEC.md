@@ -262,7 +262,8 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 
 ### 4.5 产品 feature 与离板裁剪实验
 
-- 根目录 `pocket.features.json` 是产品功能、依赖、模块所有权、文案归属和 profile 的唯一来源；首轮只接入 `terminal`，不把尚未接入裁剪的 MCP 等声明为可关闭。
+- 根目录 `pocket.features.json` 是产品功能、依赖、模块所有权、文案归属和 profile 的唯一来源；`status: "implemented"` 表示已接入裁剪（缺省兼容该状态），`status: "planned"` 仅登记待接入项，和功能本身是否已经实现无关。当前只有 `terminal` 接入裁剪，其余产品功能目录以该 JSON 为准。
+- profile 必须且只能为所有 implemented 项提供布尔值；planned 项不能写入 profile、拥有裁剪模块/文案或用于 `hasAppFeature()`，避免产生无效开关。implemented 项也不能依赖 planned 项；依赖名称与循环对整个目录校验。文档不得另行定义非 terminal 的平台启停组合，代码不得增加独立产品开关常量或环境变量。用户运行时设置和真实宿主能力探测保持各自语义，不充当编译裁剪配置。
 - `desktop` 启用终端，`aic-diagnostic` 关闭终端但仍使用原诊断入口；`terminal-on` / `terminal-off` 是离板实验组合，使用同一共享 App、480×272、相同宿主能力、容量与字体，仅终端功能取值不同。实验不切换正式板端入口，不代表 UART/网络桥或软键盘已实现。
 - 产品功能通过 `@pocketcom/features` 的字面量 `hasAppFeature()` 调用引用；构建必须显式选择 profile，未知功能、缺项、依赖冲突与动态功能名报错。宿主 capability 与内存容量不与产品开关混用。
 - PJS 在 Vue 转换、样式/字形收集和依赖遍历之前对 TS/TSX 作 AST 特化；禁用终端同时关闭模型创建、RX 订阅、应答泵、版本同步、输入/鼠标/滚轮路由、模式切换与回滚设置。桌面开启时保持持续消费 RX 和查询应答语义。

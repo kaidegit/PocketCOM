@@ -12,7 +12,7 @@ bun test test/          # 核心层单测（test/core/*、test/bridge/*、test/a
 npm run typecheck       # tsc --noEmit；tsconfig 严格度对齐上游，不要私自加严 flags
 ```
 
-`test/app/features.test.ts` 覆盖统一 feature 配置校验、依赖冲突/循环、AST 特化、
+`test/app/features.test.ts` 覆盖统一 feature 配置校验、依赖冲突/循环、planned 登记项禁止配置/调用/拥有资源、AST 特化、
 作用域与动态调用拒绝、Vue 转换前的资源移除、热缓存隔离、模块副作用保护与终端启动路径裁剪。
 `npm run probe:features` 运行真实 QuickJS terminal 开/关对比，详见 skill `mem-probe`。
 

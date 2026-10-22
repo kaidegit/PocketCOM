@@ -1,4 +1,5 @@
-// Names derive from the single product registry; no runtime config import.
+// Callable feature names derive from validated profiles, excluding planned entries.
 declare module "@pocketcom/features" {
-  export function hasAppFeature(name: keyof typeof import("../pocket.features.json").features): boolean;
+  type Profiles = typeof import("../pocket.features.json").profiles;
+  export function hasAppFeature(name: keyof Profiles[keyof Profiles]): boolean;
 }

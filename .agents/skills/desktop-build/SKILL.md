@@ -29,7 +29,8 @@ cargo build --release --manifest-path host/macos/Cargo.toml
 
 `npm run check/build` 显式传入根目录 `pocket.features.json` 和 `desktop` profile；
 编译器在 Vue 转换前特化 `hasAppFeature()`，保留终端完整语义，输出
-`dist/pocketcom-main.features.json` 供审查。修改功能值不需要手动同步布尔常量或类型枚举。
+`dist/pocketcom-main.features.json` 供审查。仅 `implemented` 项允许写入 profile；`planned` 项只登记。类型直接从有效 profile 推导，
+修改目录不需要手动同步常量/枚举，代码和文档不另设产品启停表。
 
 `macos-gpui` 是 fork 保留的 GPUI/CoreText 宿主契约（plan identity 仍为 `macos-app`，
 输出仍在 `.pocket/macos-app/`）。上游 `macos-app` 描述软件渲染宿主，不适用于 PocketCOM；

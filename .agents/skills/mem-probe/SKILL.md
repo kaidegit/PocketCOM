@@ -41,7 +41,7 @@ npm run probe:aic -- path/to/other.pocket --limit 4m   # 测其它包 / 改 Quic
 npm run probe:features
 ```
 
-统一配置在根目录 `pocket.features.json`；首轮只有 `terminal` 是已接通的功能开关。
+统一配置在根目录 `pocket.features.json`；目录中的裁剪状态和 profile 值以此文件为准，`planned` 仅登记，不能配置或用于编译条件。
 脚本先顺序生成正常诊断包/契约，再用同一 `app/main.feature-probe.tsx`、AIC plan、480×272、
 MiSans/JetBrains Mono 和容量构建 `terminal-on` / `terminal-off`，每组独立进程运行三次、每次 120 turns。
 默认 JS 配额 5 MiB，caps 不注入预算，以完整测得峰值。关闭组必须排除解析器和视图模块；

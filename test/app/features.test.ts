@@ -39,6 +39,40 @@ describe("product features", () => {
     await expect(loadAppFeatures(await config({ ...registry, features: { terminal: { requires: ["base"] }, base: {} }, profiles: { bad: { terminal: true, base: false } } }), "bad")).rejects.toThrow("requires base");
   });
 
+  test("planned catalog entries cannot become effective switches", async () => {
+    const declared = {
+      version: 1, module: "test/features", features: { live: {}, future: { status: "planned" } },
+      profiles: { test: { live: true } },
+    };
+    const planned = await loadAppFeatures(await config(declared), "test");
+    expect(planned.definitions.future?.status).toBe("planned");
+    expect(planned.values).toEqual({ live: true });
+    expect(planned.disabledModules.size).toBe(0);
+    await expect(specializeAppSource(join(dir, "planned.ts"),
+      'import {hasAppFeature} from "test/features"; export const value=hasAppFeature("future");', planned))
+      .rejects.toThrow("only planned, not integrated");
+    for (const flag of [false, true]) {
+      await expect(loadAppFeatures(await config({ ...declared, profiles: { test: { live: true, future: flag } } }), "test"))
+        .rejects.toThrow("planned feature cannot be configured");
+    }
+    for (const future of [{ status: "typo" }, { status: "planned", modules: [] }, { status: "planned", i18n: [] }])
+      await expect(loadAppFeatures(await config({ ...declared, features: { live: {}, future } }), "test")).rejects.toThrow();
+    await expect(loadAppFeatures(await config({ ...declared, features: { ...declared.features, live: { requires: ["future"] } } }), "test"))
+      .rejects.toThrow("requires planned feature");
+  });
+
+  test("product profiles expose only integrated features", async () => {
+    for (const profile of Object.keys(registry.profiles)) {
+      const product = await load(profile);
+      expect(Object.keys(product.values)).toEqual(["terminal"]);
+      for (const [name, definition] of Object.entries(product.definitions)) if (definition.status === "planned") {
+        expect(product.values).not.toHaveProperty(name);
+        expect(definition.modules).toBeUndefined();
+        expect(definition.i18n).toBeUndefined();
+      }
+    }
+  });
+
   test("folds aliases before Vapor, collects only live styles/text and isolates warm caches", async () => {
     const source = `import {hasAppFeature as feature} from "@pocketcom/features";
       import {View, Text} from "@pocketjs/framework/components";

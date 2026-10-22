@@ -51,7 +51,7 @@ npm run probe:features
 全部原始读数和逐阶段差值。各 profile 子目录保存 JS/PAK/.pocket、feature receipt、构建日志与三份探针日志。
 
 配置的当前受支持组合：`desktop`（终端开）、`aic-diagnostic`（终端关，诊断入口不变）、
-`terminal-on` / `terminal-off`（同一共享 App 的离板实验）。其余产品功能还没有接入开关。
+`terminal-on` / `terminal-off`（同一共享 App 的离板实验）。其余功能目录与裁剪接入状态以 `pocket.features.json` 为准；`planned` 项仅登记，尚不能配置。
 
 验证：290 项单测、TypeScript 检查、桌面完整构建、AIC 诊断包构建、5 项真实宿主 MCP e2e
 （含切入终端停服/切回收发恢复）及通过 `tools/dev.mjs` 启动的界面截图检查。
