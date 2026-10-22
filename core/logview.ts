@@ -15,7 +15,7 @@ import type { MessageBus } from "./bus";
 import { DEFAULT_MAX_BYTES, type Message, type MessageDir } from "./message";
 import { utf8Decode } from "./codec";
 import { ParamError } from "./errors";
-import { TERM_DEFAULT_COLOR } from "./term";
+import { TERM_DEFAULT_COLOR } from "./term-color";
 import { AnsiFgScanner } from "./ansicolor";
 import { formatLogParts, formatTimestamp, type LogFormatOptions, type LogLineLabels } from "./format";
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { loadAppFeatures, filterFeatureResource } from "../../vendor/pocketjs/framework/compiler/app-features.ts";
 // AIC (D12x demo68-nor) build orchestration. Three commands over one pipeline:
 //
 //   check    validate manifest/profile via the fork CLI, then stop.
@@ -105,6 +106,8 @@ async function main() {
     rmSync(join(OUT, "memory-report.json"), { force: true });
   }
 
+  const appFeatures = await loadAppFeatures(join(ROOT, "pocket.features.json"), "aic-diagnostic");
+
   // --- Phase 1: manifest/profile validation. "check" stops here. ---
   await run([
     process.execPath,
@@ -113,6 +116,7 @@ async function main() {
     "--host-profile", PROFILE,
     "--manifest", MANIFEST,
     "--project-root", ROOT,
+    "--app-features", appFeatures.file, "--app-profile", appFeatures.profile,
   ], ROOT);
   if (options.command === "check") return;
 
@@ -158,7 +162,7 @@ async function main() {
   };
   for (const language of ["en", "zh-CN"]) {
     const strings = JSON.parse(readFileSync(join(ROOT, `assets/i18n/${language}.json`), "utf8"));
-    collect(strings);
+    collect(filterFeatureResource(strings, appFeatures));
   }
 
   // --- Phase 2: compile the app and assemble the .pocket package. ---
@@ -169,6 +173,7 @@ async function main() {
     `--project-root=${ROOT}`,
     `--outdir=${WORK}`,
     `--hz=${profile.tickHz}`,
+    `--app-features=${appFeatures.file}`, `--app-profile=${appFeatures.profile}`,
     `--font-regular=${join(ROOT, "assets/fonts/MiSans-Regular.ttf")}`,
     `--font-bold=${join(ROOT, "assets/fonts/MiSans-Bold.ttf")}`,
     `--extra-chars=${[...chars].sort().join("")}`,

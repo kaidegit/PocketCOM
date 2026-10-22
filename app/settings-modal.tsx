@@ -1,3 +1,4 @@
+import { hasAppFeature } from "@pocketcom/features";
 // app/settings-modal.tsx — "应用配置"模态弹窗（SPEC §3.1/§3.8）。
 // msgbox 形态：全屏半透明遮罩（点击丢弃）+ 居中圆角框；草稿模式：打开时
 // 快照当前设置，框内修改只写草稿，"应用"一次性写回（持久化由 session.ts
@@ -102,7 +103,7 @@ export function modalWheel(dy: number): void {
  *  抬起事件总放行，保证拖选跨出输入框后能正常释放。 */
 export function settingsFieldMouse(x: number, y: number, down: boolean): boolean {
   if (!down) return textFieldMouse(x, y, false);
-  for (const r of [historyFieldRegion(), scrollFieldRegion()]) {
+  for (const r of [historyFieldRegion(), ...(hasAppFeature("terminal") ? [scrollFieldRegion()] : [])]) {
     if (r !== null && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
       return textFieldMouse(x, y, true);
     }
@@ -118,8 +119,10 @@ function applyDrafts(): void {
   applyLogFormat(); // 字号变化重排日志行宽
   const h = Number.parseInt((historyField?.text() ?? "").trim(), 10);
   setHistoryLines(Number.isFinite(h) ? h : 10000);
-  const n = Number.parseInt((scrollField?.text() ?? "").trim(), 10);
-  setScrollbackLines(Number.isFinite(n) ? n : 10000);
+  if (hasAppFeature("terminal")) {
+    const n = Number.parseInt((scrollField?.text() ?? "").trim(), 10);
+    setScrollbackLines(Number.isFinite(n) ? n : 10000);
+  }
   closeSettingsModal();
 }
 
@@ -324,23 +327,25 @@ function SettingsBox() {
           </View>
 
           {/* 终端回滚行数（0–100000，应用时生效，SPEC §3.4/§3.8） */}
-          <View class="absolute" style={{ insetT: modalRowY(4), insetL: 0, insetR: 0, height: MODAL_ROW_H }}>
-            <Text
-              class="absolute text-xs"
-              style={{ insetL: 0, insetT: 0, height: MODAL_ROW_H, lineHeight: MODAL_ROW_H, textColor: theme.value.dim }}
-            >
-              {t("settings.scrollbackLines")}
-            </Text>
-            <View class="absolute" style={{ insetL: LABEL_COL_W, insetR: 0, insetT: CTL_TOP_OFF, height: CTL_H }}>
-              <TextField
-                initial={String(scrollbackLines.value)}
-                selRegion={scrollFieldRegion}
-                onHandle={(h) => {
-                  scrollField = h;
-                }}
-              />
+          {hasAppFeature("terminal") ? (
+            <View class="absolute" style={{ insetT: modalRowY(4), insetL: 0, insetR: 0, height: MODAL_ROW_H }}>
+              <Text
+                class="absolute text-xs"
+                style={{ insetL: 0, insetT: 0, height: MODAL_ROW_H, lineHeight: MODAL_ROW_H, textColor: theme.value.dim }}
+              >
+                {t("settings.scrollbackLines")}
+              </Text>
+              <View class="absolute" style={{ insetL: LABEL_COL_W, insetR: 0, insetT: CTL_TOP_OFF, height: CTL_H }}>
+                <TextField
+                  initial={String(scrollbackLines.value)}
+                  selRegion={scrollFieldRegion}
+                  onHandle={(h) => {
+                    scrollField = h;
+                  }}
+                />
+              </View>
             </View>
-          </View>
+          ) : null}
 
           {/* 分隔线 */}
           <View class="absolute" style={{ insetT: DIV_Y, insetL: 0, insetR: 0, height: 1 }}>

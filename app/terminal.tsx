@@ -1,3 +1,4 @@
+import { hasAppFeature } from "@pocketcom/features";
 // app/terminal.tsx — 终端模式视图（SPEC §3.4）。
 // 固定行列字符网格：行绝对定位（引擎怪癖规避，同 transfer.tsx 的窗口化渲染），
 // 每行按 (前景, 背景, 属性) 相同的连续格子合并成 run——一个 run 一个 View+Text，
@@ -26,7 +27,10 @@ import {
   TERM_DEFAULT_COLOR,
   type TermLine,
 } from "../core/term";
-import { fontSize, terminal, termScroll, termVersion } from "./session";
+import { fontSize, terminal as optionalTerminal, termScroll as optionalScroll, termVersion as optionalVersion } from "./session";
+const terminal = optionalTerminal!;
+const termScroll = optionalScroll!;
+const termVersion = optionalVersion!;
 
 /** 网格内边距（px）。 */
 export const TERM_PAD_X = 8;
@@ -36,7 +40,7 @@ export const TERM_PAD_Y = 6;
 // 几何（模块级：hit-test / 键盘路由也要用）
 // ---------------------------------------------------------------------------
 
-const cellWCache = new Map<ConfigFontSize, number>();
+const cellWCache = hasAppFeature("terminal") ? new Map<ConfigFontSize, number>() : undefined!;
 
 /** mono 槽宽（JetBrains Mono 严格等宽，ASCII 任取一格度量，取 "M"）。 */
 export function termCellW(size: ConfigFontSize): number {
@@ -92,8 +96,8 @@ interface TermCellRef {
   col: number;
 }
 
-const selAnchor = ref<TermCellRef | null>(null);
-const selHead = ref<TermCellRef | null>(null);
+const selAnchor = hasAppFeature("terminal") ? ref<TermCellRef | null>(null) : undefined!;
+const selHead = hasAppFeature("terminal") ? ref<TermCellRef | null>(null) : undefined!;
 let dragging = false;
 let dragMoved = false;
 /** 拖拽中最近指针位置（越界自动滚动的帧泵用；抬起清空）。 */
@@ -269,7 +273,7 @@ function rowRuns(line: TermLine, limit: number, cellW: number): TermRun[] {
 // TerminalView
 // ---------------------------------------------------------------------------
 
-const stickBottom = ref(true);
+const stickBottom = hasAppFeature("terminal") ? ref(true) : undefined!;
 
 export function TerminalView() {
   const syncGeometry = (): void => {

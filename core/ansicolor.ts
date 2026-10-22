@@ -8,7 +8,7 @@
  * - 仅解析前景色（30–37 / 90–97 / 38 / 39 / 0）；背景与加粗等属性忽略，
  *   非 SGR 的 CSI 与非 CSI 的 ESC 序列按原样保留（不吞字）。
  */
-import { TERM_DEFAULT_COLOR, termRgb } from "./term";
+import { TERM_DEFAULT_COLOR, termRgb } from "./term-color";
 
 /** 一次 feed 的解析结果：plain 为剥离 SGR 后的文本，fg 与 plain 等长（逐字符前景色）。 */
 export interface AnsiFgText {

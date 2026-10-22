@@ -1,10 +1,12 @@
 # PocketCOM 共享 UI 与编译期裁剪方案
 
-日期：2026-10-12。状态：设计提案，尚未实施。适用范围：PocketCOM 的 TypeScript 应用、PocketJS Vue Vapor 适配层及 AIC / macOS 构建链。
+日期：2026-10-12。状态：部分实施（2026-10-22：统一 feature 配置、terminal 裁剪与离板 A/B）；其余为设计提案。适用范围：PocketCOM 的 TypeScript 应用、PocketJS Vue Vapor 适配层及 AIC / macOS 构建链。
 
 **后续主线采用同一套 `app/`、`core/` 和基础控件，通过编译期功能裁剪、共享实现的内存优化、按需挂载和容量配置适配 AIC。** macOS 保留完整功能，AIC 选择可承受的功能组合。现有 `app/aic.tsx` 保留作启动诊断基线，后续产品界面从现有组件演进，不再以它扩写一套独立 UI。
 
-本文调整[原内存方案](aic-memory-optimization.md)中方案 A 的实现方向；原文的实测数据、全链路限额要求及字节码 / realloc 研究仍有效。本次只记录方案并更新文档入口，未切换板端入口、修改运行时代码或重新测量。正式实现前需按第 10 节更新 [SPEC](../SPEC.md) 中对应的后续路线与平台差异。
+**已实施入口：** 根目录 `pocket.features.json`、`@pocketcom/features` 的字面量 `hasAppFeature()`，以及 `npm run probe:features`。首轮只支持 terminal 开关；正式板端仍是诊断页。实测边界与结果见 [terminal feature heap 对比](terminal-feature-heap.md)。
+
+本文调整[原内存方案](aic-memory-optimization.md)中方案 A 的实现方向；原文的实测数据、全链路限额要求及字节码 / realloc 研究仍有效。原提案后续阶段仍有效；首轮实现已更新 SPEC §4.5，未切换板端入口。
 
 ## 1. 共享的边界
 
@@ -54,12 +56,12 @@
 
 | 当前事实 | 对方案的影响 |
 |---|---|
-| [`app/session.ts`](../app/session.ts) 顶层创建总线、`Terminal`、`LogView`，注册订阅 / watch，并尝试加载配置 | 导入模块即装配应用；需要把可选功能初始化移入明确的工厂和生命周期 |
+| [`app/session.ts`](../app/session.ts) 顶层创建总线、`LogView`，注册订阅 / watch，并尝试加载配置；`Terminal` 和 RX 订阅现已受 terminal feature 门控 | 终端关闭时不创建模型；其余功能仍需逐步提取工厂和生命周期 |
 | `Terminal` 在收发模式也持续消费 RX，查询应答由每帧泵发回 | 只隐藏终端按钮无收益；但桌面端也不能直接改为首次打开终端才接收数据 |
 | [`App`](../app/app.tsx) 已条件挂载收发 / 终端视图；[`SettingsModal`](../app/settings-modal.tsx) 的内容已按打开状态挂载 | 不应把“两个大视图和整个设置内容一直同时挂载”当成现状 |
 | [`ReceivePane`](../app/transfer.tsx) 已只渲染可见行及前后各 3 行 | 保留虚拟列表；继续检查行包装对象、颜色 run 和节点复用，而非再造一套虚拟列表 |
 | [`native-tree.ts`](../vendor/pocketjs/framework/src/native-tree.ts) 的 `decorateNativeNode()` 给每个节点新建访问器、捕获 `node` 的方法以及 `style` / `classList` 对象 | 有明确的 TS 对象与闭包优化入口，收益可同时覆盖两端 |
-| [`theme.ts`](../app/theme.ts)、[`ansicolor.ts`](../core/ansicolor.ts)、[`logview.ts`](../core/logview.ts) 从 `core/term.ts` 导入颜色定义 | 禁用终端时仍有模块依赖；应拆出颜色叶子模块，并检查实际保留代码，不能假定整个终端必然已被裁掉 |
+| [`theme.ts`](../app/theme.ts)、[`ansicolor.ts`](../core/ansicolor.ts)、[`logview.ts`](../core/logview.ts) 已改从 `core/term-color.ts` 导入颜色定义，`term.ts` 保留兼容导出 | terminal-off 的依赖图不再包含解析器和视图模块 |
 | [`locale.ts`](../app/locale.ts) 导入会话单例 | 通用语言工具可间接启动业务装配，需要解除这种依赖 |
 | [`FrameCoalescer`](../core/framing.ts) 仅按静默间隔产帧，没有积累字节上限 | 总线限额不能阻止合流阶段先耗尽内存 |
 | [`LogView`](../core/logview.ts) 有字符宽度 `Map`、整帧格式化和颜色 `subarray` | 长行、未知字符和短切片保活大缓冲必须专项测试 |
@@ -72,7 +74,7 @@
 
 | 信息 | 决定什么 | 建议形式 |
 |---|---|---|
-| 产品构建功能 | 终端、MCP、配置文件等代码是否存在 | 编译期布尔常量，如 `__PC_TERMINAL__` |
+| 产品构建功能 | 终端、MCP、配置文件等代码是否存在 | 字面量 `hasAppFeature("terminal")`，编译时折叠为布尔值 |
 | 宿主能力 | 当前宿主是否提供触摸、剪贴板、串口等接口 | 框架 capability + `com.*` 能力探测；仍处理运行失败 |
 | 内存配置 | 历史、队列和单次操作的上限 | 类型化 `MemoryLimits`，显式传入模型 |
 | 窗口几何 | 侧栏常驻还是折叠、工具栏如何布置 | 共享布局函数，根据 `viewportSize` 计算 |
@@ -103,18 +105,16 @@
 
 ## 4. 编译期裁剪：从现有 PocketJS 编译器扩展
 
-### 4.1 已有机制及其缺口
+### 4.1 当前已实现的产品裁剪与边界
 
-[`platform.ts`](../vendor/pocketjs/framework/src/platform.ts) 已提供 `hasFeature()`，`tools/build.ts` 已注入 `__POCKET_TARGET__` / `__POCKET_FEATURES__`。[`jsx-plugin.ts`](../vendor/pocketjs/framework/compiler/jsx-plugin.ts) 会把来自指定 import、参数为字面量的 `hasFeature()` 调用替换成布尔值，缓存键也已包含框架 feature 集合。
+`framework/compiler/app-features.ts` 提供通用产品 feature 读取、配置校验和 TS/TSX AST 特化；产品功能名由 PocketCOM 的 `pocket.features.json` 声明，不写入框架 capability 注册表。CLI 使用成对的 `--app-features` / `--app-profile` 参数。
 
-但这还不等于 PocketCOM 所需的完整裁剪：
-
-- 当前 feature 集合来自已注册的宿主能力。`terminal`、`mcp` 是产品选择，不应伪装成 `input.touch` 一类框架能力。
-- 现有替换器仅替换调用，本身不删除不可达分支。Vue Vapor 路径仍把原始 `src` 交给 `transformVueJsxVapor()`，随后再处理输出，可能先生成禁用 UI 的模板或辅助代码。
-- pass 1 用原始源码中的 import 遍历模块并收集样式 / 字符；即便最终 JS 被 tree-shaking 删除，资源收集也可能已经发生。
-- AIC 的 `compactBundle()` 只压缩标识符和空白，`syntax: false`，它不是产品功能裁剪器。
-
-因此优先增加通用的“构建常量特化”步骤，不采用字符串替换 `#ifdef` 注释，也不只在最终 IIFE 上压缩。
+- 两个 pass 都在 Vue 转换/资源收集之前替换字面量调用并折叠布尔分支，遍历特化后的模块图。
+- 禁用功能声明拥有的模块若仍被引用或存在顶层执行副作用，构建失败；其非功能依赖保留为副作用导入。不全局关闭副作用分析。
+- `resources` 指定的 JSON 字典按 feature 归属过滤；额外烘焙字形读取同一结果。
+- 配置指纹进入转换缓存；配置和被排除模块进入依赖记录。另输出 feature receipt，不扩展原 host build plan schema。
+- 当前仅覆盖 TS/TSX；启用产品特化时遇到 Vue SFC 明确报错。普通 PJS 宿主 `hasFeature()` 的原有机制不属于这次产品裁剪改造。
+- AIC 的 `compactBundle()` 仍只压缩标识符和空白，不替代前面的产品特化。
 
 ### 4.2 建议的编译流程
 
@@ -138,30 +138,22 @@
 4. **缓存和构建身份包含产品配置。** 新的功能值、容量配置、语言子集和特化器版本纳入相应缓存、依赖记录和产物指纹；框架已有 `features` 哈希不自动覆盖新配置。若扩展 manifest / plan，同步 schema、resolver、hash 和验证测试。
 5. **没有 profile 就失败。** 正式构建不允许未替换的产品标记进入 guest，也不静默按桌面全开回退。单测明确使用测试 profile；两端构建按目标隔离中间产物。
 
-以下仅为拟议写法，标记、类型和模块名当前尚未实现；可选实例在共享装配工厂中创建：
+当前写法由统一文件驱动；未来的 MCP 等功能沿用该机制，但应先接齐实现再登记开关：
 
 ```ts
-declare const __PC_TERMINAL__: boolean;
-declare const __PC_MCP__: boolean;
+import { hasAppFeature } from "@pocketcom/features";
+import { Terminal } from "../core/term";
 
-// 两个模块都必须无顶层装配副作用。
-import { createTerminalFeature } from "./features/terminal";
-import { createMcpFeature } from "./features/mcp";
-
-function attachOptionalFeatures(base: BaseModel, limits: MemoryLimits) {
-  const terminal = __PC_TERMINAL__
-    ? createTerminalFeature(base, limits.terminal)
-    : undefined;
-  const mcp = __PC_MCP__ ? createMcpFeature(base) : undefined;
-  return { terminal, mcp };
-}
+const terminal = hasAppFeature("terminal")
+  ? new Terminal({ scrollback: scrollbackLines.value })
+  : undefined;
 ```
 
-UI 与事件路由使用相同常量包围入口。不要把所有可选工厂先放进运行时注册表再挑选，注册表会保持引用。工厂延迟执行只能省实例内存；当前自包含 IIFE 仍整体编译，不能把工厂或普通动态 import 当成已支持的分段加载。
+UI 与事件路由使用相同 `hasAppFeature("terminal")` 调用包围入口。不要把所有可选工厂先放进运行时注册表再挑选，注册表会保持引用。工厂延迟执行只能省实例内存；当前自包含 IIFE 仍整体编译，不能把工厂或普通动态 import 当成已支持的分段加载。
 
 ### 4.3 裁剪必须能被证明
 
-建议输出一份构建裁剪报告：profile 指纹、参与模块、各模块输出贡献、JS / PAK 大小、字体槽 / 字形数、已禁用功能的检查结果。`tools/build.ts` 已开启 Bun metafile，可在此基础上保存报告。
+已输出 `*.features.json`，包含配置指纹、参与/剔除模块、文案剔除 key、字符数、JS/PAK 字节数与 Bun metafile。其余功能接入仍须满足下述要求。原计划要求：profile 指纹、参与模块、各模块输出贡献、JS / PAK 大小、字体槽 / 字形数、已禁用功能的检查结果。`tools/build.ts` 已开启 Bun metafile，可在此基础上保存报告。
 
 验证至少覆盖：关闭终端 / MCP 后没有初始化、订阅和功能入口；禁用专属模块与资源确实消失；开启时功能完整；切换 profile 的热缓存不会串包；同配置冷 / 热构建可复现。字符串搜索只能辅助定位，混淆后的符号缺失不能单独证明裁剪成功。功能专属测试哨兵、模块报告和运行探针共同验收。
 
@@ -255,7 +247,7 @@ AIC 当前只有触摸输入、没有软键盘。共享 `TextField` 并不会自
 
 ### 8.1 文案和字体使用同一裁剪清单
 
-当前 `app/i18n.ts` 直接导入完整双语 JSON，AIC 打包又从全部语言包提取字形。后续由启用功能生成文案子集，JS 字典与烘焙字符使用同一清单。
+`app/i18n.ts` 继续从同一双语 JSON 导入；构建插件现按 `pocket.features.json` 的文案归属生成字典子集，AIC 额外烘焙字符使用同一过滤结果。首轮只裁 terminal 专属 key，未来功能需补齐归属。
 
 第一步可以只按功能保守保留 key / 前缀集合，避免静态推导所有 `t()` 调用的复杂度。动态 key（如连接选项）、英文回退、占位符、系统错误及未知字符替换符都要覆盖；缺少 key 让构建失败。两份字典仍从现有 `assets/i18n/` 派生，不手工维护板端副本。
 

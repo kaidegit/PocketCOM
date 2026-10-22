@@ -12,6 +12,10 @@ bun test test/          # 核心层单测（test/core/*、test/bridge/*、test/a
 npm run typecheck       # tsc --noEmit；tsconfig 严格度对齐上游，不要私自加严 flags
 ```
 
+`test/app/features.test.ts` 覆盖统一 feature 配置校验、依赖冲突/循环、AST 特化、
+作用域与动态调用拒绝、Vue 转换前的资源移除、热缓存隔离、模块副作用保护与终端启动路径裁剪。
+`npm run probe:features` 运行真实 QuickJS terminal 开/关对比，详见 skill `mem-probe`。
+
 `test/app/desktop-profile.test.ts` 验证 `macos-gpui` 构建计划启用原生文字/输入，且误用
 上游软件宿主 `macos-app` 会因缺少必需的 `text.layout.native` 被拒绝；实际启动须通过
 `node tools/dev.mjs` 复验 plan 派生参数，MCP 测试的显式 `--native-text` 不能覆盖该路径。

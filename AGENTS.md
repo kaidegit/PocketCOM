@@ -14,6 +14,7 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 | 事项 | 位置 |
 |---|---|
 | 功能与架构权威定义 | [SPEC.md](SPEC.md) |
+| 产品 feature / terminal heap 对比 | `pocket.features.json` / `npm run probe:features`（离板实验，详见 skill `mem-probe`） |
 | 桌面构建/运行/打包 | skill `desktop-build`（.agents/skills/desktop-build/SKILL.md） |
 | 桌面测试/e2e/MCP 集成 | skill `desktop-test`（.agents/skills/desktop-test/SKILL.md） |
 | 板端构建/烧录/内存报告 | skill `aic-build`（.agents/skills/aic-build/SKILL.md） |
@@ -120,6 +121,11 @@ SPEC.md         # 功能规格（权威）
   恢复收发功能前必须补 WiFi 开/连 AP/断开状态下的堆基线测量。
 
 ### 恢复路线（内存约束下的推进顺序）
+
+已接入统一 `pocket.features.json` 与 terminal 的编译期裁剪；`desktop` 开启，`aic-diagnostic`
+关闭；`terminal-on` / `terminal-off` 仅供共享 App 离板对比，不替代正式板端入口。产品功能
+用 `@pocketcom/features` 的字面量 `hasAppFeature()`；新增开关必须接齐装配、UI、模块/文案归属和测试，
+不得只登记一个实际不起作用的 false 值。详见 SPEC §4.5 与 `docs/terminal-feature-heap.md`。
 
 后续按[共享 UI 与编译期裁剪提案](docs/shared-ui-memory-optimization.md)推进：AIC / macOS 共用
 `app/`、`core/` 和控件，优化 TS 节点表示与显式装配，通过构建功能标记、共享窄屏布局和容量配置

@@ -1,3 +1,4 @@
+import { hasAppFeature } from "@pocketcom/features";
 // app/panel.tsx — 左侧连接配置面板（SPEC §3.1/§3.2），M2 重写版。
 // 布局：头部（固定）+ 内容滚动区（absolute 布局表，每块 insetT 显式定位，
 // 规避深层 flex-col 堆叠怪癖；同时给 Select 弹层提供精确的屏幕锚点）+
@@ -265,13 +266,15 @@ const layoutInfo = computed(() => {
     put("reconnectSec", CUSTOM_H, SECTION_GAP);
   }
   put("div1", 1, SECTION_GAP);
-  put("mode", FIELD_H, SECTION_GAP);
-  put("div2", 1, SECTION_GAP);
+  if (hasAppFeature("terminal")) {
+    put("mode", FIELD_H, SECTION_GAP);
+    put("div2", 1, SECTION_GAP);
+  }
   put("mcp", CHECK_H, mcpEnabled.value ? BLOCK_GAP : SECTION_GAP);
   if (mcpEnabled.value) {
     put("mcpUrl", FIELD_H, BLOCK_GAP);
-    put("mcpToken", FIELD_H, uiMode.value === "terminal" ? BLOCK_GAP : SECTION_GAP);
-    if (uiMode.value === "terminal") {
+    put("mcpToken", FIELD_H, hasAppFeature("terminal") && uiMode.value === "terminal" ? BLOCK_GAP : SECTION_GAP);
+    if (hasAppFeature("terminal") && uiMode.value === "terminal") {
       put("mcpHint", 16, SECTION_GAP);
     }
   }
@@ -530,29 +533,34 @@ export function LeftPanel() {
           </View>
 
           {/* 模式开关（收发 / 终端，M3；切换不断开连接） */}
-          <View class="absolute" style={{ insetT: top("mode"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
-            <FieldLabel text={() => t("panel.mode")} />
-            <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
-              <SegCtrl
-                options={[
-                  { value: "transfer", label: t("mode.transfer") },
-                  { value: "terminal", label: t("mode.terminal") },
-                ]}
-                value={() => uiMode.value}
-                onPick={(v) => {
-                  if (v === "terminal" || v === "transfer") {
-                    setActiveField(null);
-                    setUiMode(v);
-                  }
-                }}
-              />
+          {hasAppFeature("terminal") ? (
+            <View class="absolute" style={{ insetT: top("mode"), insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
+              <FieldLabel text={() => t("panel.mode")} />
+              <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
+                <SegCtrl
+                  options={[
+                    { value: "transfer", label: t("mode.transfer") },
+                    { value: "terminal", label: t("mode.terminal") },
+                  ]}
+                  value={() => uiMode.value}
+                  onPick={(v) => {
+                    if (v === "terminal" || v === "transfer") {
+                      setActiveField(null);
+                      setUiMode(v);
+                    }
+                  }}
+                />
+              </View>
             </View>
-          </View>
+
+          ) : null}
 
           {/* 分隔线 */}
-          <View class="absolute" style={{ insetT: top("div2"), insetL: PAD_X, width: CONTENT_W, height: 1 }}>
-            <Hairline />
-          </View>
+          {hasAppFeature("terminal") ? (
+            <View class="absolute" style={{ insetT: top("div2"), insetL: PAD_X, width: CONTENT_W, height: 1 }}>
+              <Hairline />
+            </View>
+          ) : null}
 
           {/* MCP 共享开关（M4，SPEC §6.1）：仅收发模式运行，终端模式自动停服 */}
           <View class="absolute" style={{ insetT: top("mcp"), insetL: PAD_X, width: CONTENT_W, height: CHECK_H }}>
@@ -571,7 +579,7 @@ export function LeftPanel() {
             <View>
               <McpInfoRow top={top("mcpUrl")} label={() => t("mcp.url")} value={mcpUrl} copyKey="url" />
               <McpInfoRow top={top("mcpToken")} label={() => t("mcp.token")} value={tokenDisplay} copyKey="token" />
-              {uiMode.value === "terminal" ? (
+              {hasAppFeature("terminal") && uiMode.value === "terminal" ? (
                 <View
                   class="absolute"
                   style={{ insetT: top("mcpHint"), insetL: PAD_X, width: CONTENT_W, height: 16 }}

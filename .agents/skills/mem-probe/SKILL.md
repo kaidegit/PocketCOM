@@ -35,6 +35,24 @@ npm run probe:aic -- path/to/other.pocket --limit 4m   # 测其它包 / 改 Quic
 
 `--heap`/`--limit` 支持纯字节或 `512k`/`3m` 后缀；`--turns` 默认 120。
 
+## terminal feature 对比（共享 App 离板实验）
+
+```sh
+npm run probe:features
+```
+
+统一配置在根目录 `pocket.features.json`；首轮只有 `terminal` 是已接通的功能开关。
+脚本先顺序生成正常诊断包/契约，再用同一 `app/main.feature-probe.tsx`、AIC plan、480×272、
+MiSans/JetBrains Mono 和容量构建 `terminal-on` / `terminal-off`，每组独立进程运行三次、每次 120 turns。
+默认 JS 配额 5 MiB，caps 不注入预算，以完整测得峰值。关闭组必须排除解析器和视图模块；
+入口包含模型存在性/关闭后模式不可切入的运行断言。
+
+结果在 `dist/feature-heap/report.json`，各 profile 子目录保留包、feature receipt、构建日志及三份探针日志。
+`report.json` 按阶段记录中位数、差值和原始三次读数；记录包/配置 hash、版本及工作区 patch。
+当前无 `com.*` 桥，测的是共享 App 的面板 + 桥不可用空态；终端开启组创建模型并保持 RX 订阅，
+但终端网格未挂载，无 IO 或历史增长。只比较这个边界，不能当成完整收发/终端或真机结果。
+正式 AIC 入口不变，不构建/烧录固件。首轮结果见 `docs/terminal-feature-heap.md`。
+
 ## 读数
 
 阶段与板端 `[PJS-DIAG]` 一一对应：

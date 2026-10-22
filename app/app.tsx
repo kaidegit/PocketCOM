@@ -1,3 +1,4 @@
+import { hasAppFeature } from "@pocketcom/features";
 // app/app.tsx — PocketCOM 主界面（SPEC §3.1）：左配置面板 + 右主区 + 底部状态栏。
 // 每帧（onFrame）：svc 事件分发（键盘/IME/粘贴：终端模式无活跃文本域时直发
 // 连接——按键直发无本地回显（SPEC §3.4），否则进活跃文本域；鼠标 hover 聚焦，
@@ -58,7 +59,7 @@ export default () => {
 
   /** 终端模式且键盘/粘贴应直发（无活跃文本域 = 终端持有键盘）。 */
   const termWantsKeys = (): boolean =>
-    uiMode.value === "terminal" && !overlayOpen() && activeField.value === null;
+    hasAppFeature("terminal") && uiMode.value === "terminal" && !overlayOpen() && activeField.value === null;
 
   const dispatch = (ev: HostEvent): void => {
     switch (ev.t) {
@@ -68,15 +69,15 @@ export default () => {
         resizeViewport(ev.w ?? 960, ev.h ?? 640);
         break;
       case "ch":
-        if (termWantsKeys()) {
+        if (hasAppFeature("terminal") && termWantsKeys()) {
           sendTermBytes(strToBytes(ev.s ?? ""));
           break;
         }
         activeField.value?.onCh(ev.s ?? "");
         break;
       case "paste":
-        if (termWantsKeys()) {
-          sendTermBytes(terminal.pasteBytes(ev.text ?? ""));
+        if (hasAppFeature("terminal") && termWantsKeys()) {
+          sendTermBytes(terminal!.pasteBytes(ev.text ?? ""));
           break;
         }
         activeField.value?.onPaste(ev.text ?? "");
@@ -100,8 +101,8 @@ export default () => {
             closeSettingsModal();
             break;
           }
-          if (termWantsKeys()) {
-            sendTermBytes(terminal.keyBytes("Escape")!);
+          if (hasAppFeature("terminal") && termWantsKeys()) {
+            sendTermBytes(terminal!.keyBytes("Escape")!);
             break;
           }
           activeField.value?.onIme("", null);
@@ -111,7 +112,7 @@ export default () => {
         // 选中复制：宿主 Cmd+C 以 "Copy" 键行到达。优先级：终端选区 >
         // 活跃文本域选区 > 接收区日志选区；都没有则原样走后续按键路由。
         if (k === "Copy") {
-          if (uiMode.value === "terminal" && termHasSelection()) {
+          if (hasAppFeature("terminal") && uiMode.value === "terminal" && termHasSelection()) {
             svc?.send({ t: "copy", text: termSelectionText() });
             break;
           }
@@ -125,7 +126,7 @@ export default () => {
             break;
           }
         }
-        if (termWantsKeys()) {
+        if (hasAppFeature("terminal") && termWantsKeys()) {
           // Shift+PageUp/PageDown 本地滚动回滚；其余按键直发（SPEC §3.4）
           if (k === "PageUp" && mods.sh) {
             termScrollPage(-1);
@@ -135,7 +136,7 @@ export default () => {
             termScrollPage(1);
             break;
           }
-          const bytes = terminal.keyBytes(k ?? "", { alt: mods.alt, ctl: mods.ctl, sh: mods.sh });
+          const bytes = terminal!.keyBytes(k ?? "", { alt: mods.alt, ctl: mods.ctl, sh: mods.sh });
           if (bytes) sendTermBytes(bytes);
           break;
         }
@@ -149,7 +150,7 @@ export default () => {
         lastMouse.y = y;
         const down = ev.d ?? false;
         const inTermArea =
-          uiMode.value === "terminal" &&
+          hasAppFeature("terminal") && uiMode.value === "terminal" &&
           !overlayOpen() &&
           x >= PANEL_W &&
           y < viewportSize.value.h - STATUS_H;
@@ -157,7 +158,7 @@ export default () => {
         // 模式 = 接收区弹上下文菜单（复制/全选）。浮层打开时忽略。
         if (ev.b === 2) {
           if (down && !overlayOpen()) {
-            if (inTermArea) {
+            if (hasAppFeature("terminal") && inTermArea) {
               if (termHasSelection()) svc?.send({ t: "copy", text: termSelectionText() });
             } else if (uiMode.value === "transfer") {
               logContextMenu(x, y);
@@ -165,7 +166,7 @@ export default () => {
           }
           break;
         }
-        if (inTermArea) {
+        if (hasAppFeature("terminal") && inTermArea) {
           // 终端区：按下/拖动/抬起驱动选区与借焦；hover 聚焦照常——网格根
           // View 是 focusable 命中体，CIRCLE press 落到它（借焦清文本域），
           // 避免按下事件落到陈旧焦点控件上。
@@ -212,7 +213,7 @@ export default () => {
         const region =
           lastMouse.x >= 0 && lastMouse.x < PANEL_W
             ? "panel"
-            : uiMode.value === "terminal"
+            : hasAppFeature("terminal") && uiMode.value === "terminal"
               ? "term"
               : "log";
         routeWheel(ev.dy ?? 0, region);
@@ -242,7 +243,7 @@ export default () => {
       <LeftPanel />
       <View class="flex-1 flex-col">
         {comAvailable ? (
-          uiMode.value === "terminal" ? (
+          hasAppFeature("terminal") && uiMode.value === "terminal" ? (
             <TerminalView />
           ) : (
             <View class="flex-1 flex-col">

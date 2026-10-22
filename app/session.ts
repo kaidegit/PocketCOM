@@ -1,3 +1,4 @@
+import { hasAppFeature } from "@pocketcom/features";
 // app/session.ts — 会话接线单例：com 桥 + 消息总线 + 统一会话 + 日志视图 +
 // 设置持久化（SPEC §3.8）+ 左面板连接参数仓库。
 // 只放装配与响应式适配（app 层逻辑）；纯逻辑都在 core/（可单测）。
@@ -61,6 +62,7 @@ export const uiMode = ref<"transfer" | "terminal">("transfer");
 /** 切换 UI 模式（连接与终端屏幕缓冲保持，SPEC §3.1）。MCP 仅在收发模式
  *  运行（SPEC §6.1 终端模式门控）：切到终端自动停服，切回自动重启。 */
 export function setUiMode(next: "transfer" | "terminal"): void {
+  if (!hasAppFeature("terminal") && next === "terminal") return;
   uiMode.value = next;
   syncMcpServer();
 }
@@ -80,17 +82,19 @@ function historyByteBudget(): number {
 
 /** 终端模式核心（SPEC §3.4）：RX 帧持续灌入（模式切换不清屏），响应字节经
  *  pumpSession 写回连接。 */
-export const terminal = new Terminal({ scrollback: scrollbackLines.value });
+export const terminal = hasAppFeature("terminal")
+  ? new Terminal({ scrollback: scrollbackLines.value })
+  : undefined;
 /** terminal.version 的渲染镜像：每帧比对，变更才 bump 触发重绘。 */
-export const termVersion = ref(0);
+export const termVersion = hasAppFeature("terminal") ? ref(0) : undefined;
 /** 终端视口滚动偏移（0 = 贴底，向上为正，单位：行）。 */
-export const termScroll = ref(0);
+export const termScroll = hasAppFeature("terminal") ? ref(0) : undefined;
 
 // RX → 终端模型（单一事实源总线；tx/sys 不进终端屏）。
-bus.subscribe((msg) => {
+if (hasAppFeature("terminal")) bus.subscribe((msg) => {
   if (msg.dir !== "rx" || msg.payload.byteLength === 0) return;
   try {
-    terminal.feed(msg.payload);
+    terminal!.feed(msg.payload);
   } catch {
     // 终端模型错误不阻断总线（与订阅者错误隔离同策略）
   }
@@ -98,11 +102,13 @@ bus.subscribe((msg) => {
 
 /** 回滚行数设置（即时生效，越界裁剪，SPEC §3.4）。 */
 export function setScrollbackLines(n: number): void {
-  if (!Number.isFinite(n)) return;
-  const v = Math.min(100000, Math.max(0, Math.floor(n)));
-  scrollbackLines.value = v;
-  terminal.setScrollback(v);
-  termScroll.value = Math.min(termScroll.value, terminal.scrollbackCount);
+  if (hasAppFeature("terminal")) {
+    if (!Number.isFinite(n)) return;
+    const v = Math.min(100000, Math.max(0, Math.floor(n)));
+    scrollbackLines.value = v;
+    terminal!.setScrollback(v);
+    termScroll!.value = Math.min(termScroll!.value, terminal!.scrollbackCount);
+  }
 }
 
 /** 接收区历史行数设置（即时生效，缩小裁剪不可逆，SPEC §3.3）。 */
@@ -116,6 +122,7 @@ export function setHistoryLines(n: number): void {
 
 /** 终端键入/粘贴直发（无本地回显，SPEC §3.4）；未连接静默丢弃。 */
 export function sendTermBytes(bytes: Uint8Array): boolean {
+  if (!hasAppFeature("terminal")) return false;
   if (!session || connState.value !== "CONNECTED" || bytes.byteLength === 0) return false;
   try {
     session.write(bytes, "manual");
@@ -802,7 +809,7 @@ for (const source of [
   locale,
   themeMode,
   fontSize,
-  scrollbackLines,
+  ...(hasAppFeature("terminal") ? [scrollbackLines] : []),
   historyLines,
   rxHex,
   rxEscape,
@@ -857,20 +864,24 @@ export function pumpSession(nowMs: number): void {
     if (rxCount.value !== session.rxBytes) rxCount.value = session.rxBytes;
     if (txCount.value !== session.txBytes) txCount.value = session.txBytes;
     // 终端查询应答（CPR/DA）：连接在场就写回（shell 在等）。
-    const responses = terminal.takeResponses();
-    for (const bytes of responses) {
-      try {
-        session.write(bytes, "system");
-      } catch {
-        break; // 未连接/写入失败：丢弃应答
+    if (hasAppFeature("terminal")) {
+      const responses = terminal!.takeResponses();
+      for (const bytes of responses) {
+        try {
+          session.write(bytes, "system");
+        } catch {
+          break; // 未连接/写入失败：丢弃应答
+        }
       }
     }
     // MCP 中继（SPEC §6.2）：命令 drain→执行→回结果；总线增量→读行 feed。
     pumpMcp();
   }
-  if (terminal.version !== lastTermVersion) {
-    lastTermVersion = terminal.version;
-    termVersion.value++;
+  if (hasAppFeature("terminal")) {
+    if (terminal!.version !== lastTermVersion) {
+      lastTermVersion = terminal!.version;
+      termVersion!.value++;
+    }
   }
   if (!rxPaused.value) {
     const { changed, lost } = logView.sync(bus, uiMode.value === "transfer");

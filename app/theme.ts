@@ -3,7 +3,7 @@
 // appearance 事件经 app/session 注入，见 setSystemAppearance）；样式一律经
 // theme token 的 style 绑定，禁止拼接 class 片段。
 import { computed, ref } from "vue";
-import { isTermRgb, TERM_DEFAULT_COLOR } from "../core/term";
+import { isTermRgb, TERM_DEFAULT_COLOR } from "../core/term-color";
 
 export type ThemeMode = "dark" | "light" | "system";
 

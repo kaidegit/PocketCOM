@@ -3,6 +3,7 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "paths": { "@pocketcom/features": ["./app/features.d.ts"] },
     "lib": ["ESNext"],
     "types": ["bun-types"],
     "jsx": "preserve",
