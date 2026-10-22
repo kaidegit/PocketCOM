@@ -2,6 +2,8 @@ import { hasAppFeature } from "@pocketcom/features";
 // app/statusbar.tsx — 底部状态栏（SPEC §3.1）：连接状态 │ 摘要 │ Rx/Tx 计数 │ MCP 状态。
 import { Text, View } from "@pocketjs/framework/components";
 import { theme } from "./theme";
+import { activeField } from "./fields";
+import { toggleKeyboard } from "./soft-keyboard";
 import { t } from "./i18n";
 import { connState, connSummary, mcpState, rxCount, txCount } from "./session";
 import { Hairline, StatusDot } from "./widgets";
@@ -46,6 +48,9 @@ export function StatusBar(props: { height: number }) {
           Tx: {fmtBytes(txCount.value)}
         </Text>
         <View class="flex-1" />
+        {hasAppFeature("ui.soft-keyboard") && activeField.value !== null ? <View focusable onPress={toggleKeyboard} style={{ width: 48, height: 22, bgColor: theme.value.btnBg }}>
+          <Text class="text-xs" style={{ textColor: theme.value.fg }}>{t("keyboard.title")}</Text>
+        </View> : null}
         {hasAppFeature("mcp.server") ? <Text class="text-xs" style={{ textColor: theme.value.dim }}>
           {mcpState.value.on ? `${t("mcp.on")} (${mcpState.value.clients})` : t("mcp.off")}
         </Text> : null}

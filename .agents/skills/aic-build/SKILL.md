@@ -29,6 +29,7 @@ git submodule update --init --depth 1 vendor/luban-lite   # 需访问局域网 G
 功能名与实际启停值只读取这份 JSON，文档和构建代码不维护另一套开关表。
 共享 App 的 terminal 开/关离板实验用 `npm run probe:features`，MCP 用 `npm run probe:features -- --feature mcp.server`（产物 `dist/mcp-feature-heap/`），产物隔离到 `dist/feature-heap/`，
 传输用 `npm run probe:features -- --feature transport`（产物 `dist/transport-feature-heap/`），
+UI 用 `npm run probe:features -- --feature ui`（产物 `dist/ui-feature-heap/`），
 不切正式入口、不构建或烧录固件，具体边界见 skill `mem-probe`。
 
 ## 命令

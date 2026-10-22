@@ -96,22 +96,25 @@ interface TermCellRef {
   col: number;
 }
 
-const selAnchor = hasAppFeature("terminal") ? ref<TermCellRef | null>(null) : undefined!;
-const selHead = hasAppFeature("terminal") ? ref<TermCellRef | null>(null) : undefined!;
+const selAnchor = hasAppFeature("terminal") && hasAppFeature("ui.selection") ? ref<TermCellRef | null>(null) : undefined!;
+const selHead = hasAppFeature("terminal") && hasAppFeature("ui.selection") ? ref<TermCellRef | null>(null) : undefined!;
 let dragging = false;
 let dragMoved = false;
 /** 拖拽中最近指针位置（越界自动滚动的帧泵用；抬起清空）。 */
 let dragPos: { x: number; y: number } | null = null;
 
 function normSelection(): { a: TermCellRef; b: TermCellRef } | null {
-  const a = selAnchor.value;
-  const b = selHead.value;
-  if (!a || !b) return null;
-  const forward =
-    a.line > b.line || (a.line === b.line && a.col > b.col)
-      ? { a: b, b: a }
-      : { a, b };
-  return forward;
+  if (hasAppFeature("ui.selection")) {
+    const a = selAnchor.value;
+    const b = selHead.value;
+    if (!a || !b) return null;
+    const forward =
+      a.line > b.line || (a.line === b.line && a.col > b.col)
+        ? { a: b, b: a }
+        : { a, b };
+    return forward;
+  }
+  return null;
 }
 
 /** 屏幕坐标 → 网格（行 = 绝对行号，含回滚）。终端区外钳位到边界格。 */
@@ -136,34 +139,40 @@ function termMouseDown(x: number, y: number): void {
 
 /** 拖拽延伸选区。 */
 export function termMouseDrag(x: number, y: number): void {
-  if (!dragging) return;
-  dragPos = { x, y };
-  const cell = termCellAt(x, y);
-  const a = selAnchor.value;
-  if (a && (cell.line !== a.line || cell.col !== a.col)) {
-    dragMoved = true;
-    selHead.value = cell;
+  if (hasAppFeature("ui.selection")) {
+    if (!dragging) return;
+    dragPos = { x, y };
+    const cell = termCellAt(x, y);
+    const a = selAnchor.value;
+    if (a && (cell.line !== a.line || cell.col !== a.col)) {
+      dragMoved = true;
+      selHead.value = cell;
+    }
   }
 }
 
 /** 抬起：未拖动（单击）清除选区。 */
 export function termMouseUp(): void {
-  if (!dragging) return;
-  dragging = false;
-  dragPos = null;
-  if (!dragMoved) {
-    selAnchor.value = null;
-    selHead.value = null;
+  if (hasAppFeature("ui.selection")) {
+    if (!dragging) return;
+    dragging = false;
+    dragPos = null;
+    if (!dragMoved) {
+      selAnchor.value = null;
+      selHead.value = null;
+    }
   }
 }
 
 /** 终端区鼠标事件统一入口（app.tsx 路由）：d=true 的连续事件区分按下与拖拽。 */
 export function termMouseMove(x: number, y: number, down: boolean): void {
-  if (down) {
-    if (dragging) termMouseDrag(x, y);
-    else termMouseDown(x, y);
-  } else {
-    termMouseUp();
+  if (hasAppFeature("ui.selection")) {
+    if (down) {
+      if (dragging) termMouseDrag(x, y);
+      else termMouseDown(x, y);
+    } else {
+      termMouseUp();
+    }
   }
 }
 
@@ -173,7 +182,7 @@ export function termHasSelection(): boolean {
 
 /** 选区文本（每行去尾部空格，行间 \n；宽字符续格跳过）。 */
 export function termSelectionText(): string {
-  const sel = normSelection();
+  const sel = hasAppFeature("ui.selection") ? normSelection() : null;
   if (!sel) return "";
   const out: string[] = [];
   for (let line = sel.a.line; line <= sel.b.line; line++) {
@@ -282,7 +291,7 @@ export function TerminalView() {
     clampScroll();
   };
   watch(viewportSize, syncGeometry);
-  watch(fontSize, syncGeometry);
+  if (hasAppFeature("ui.font-size-switch")) watch(fontSize, syncGeometry);
   syncGeometry();
 
   onWheel("term", (dy) => {
@@ -296,7 +305,7 @@ export function TerminalView() {
 
   // 拖拽选区越界自动滚动：指针停在网格上/下沿外时按帧持续滚动并延伸选区
   // （指针不动时宿主不再发 mouse 事件，必须帧泵驱动；随组件卸载自动注销）。
-  onFrame(() => {
+  if (hasAppFeature("ui.selection")) onFrame(() => {
     if (!dragging || dragPos === null) return;
     const m = termMetrics();
     const { x, y } = dragPos;
@@ -348,7 +357,7 @@ export function TerminalView() {
     if (!line) return null;
     const limit = Math.min(m.cols, line.text.length);
     const runs = rowRuns(line, limit, m.cellW);
-    const sel = normSelection();
+    const sel = hasAppFeature("ui.selection") ? normSelection() : null;
     const selRect = (): { x: number; w: number } | null => {
       if (!sel || abs < sel.a.line || abs > sel.b.line) return null;
       const from = abs === sel.a.line ? sel.a.col : 0;

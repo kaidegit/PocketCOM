@@ -78,7 +78,7 @@ const customBaud = hasAppFeature("transport.serial") ? ref("115200") : undefined
 let customBaudField: TextFieldHandle | undefined;
 
 // MCP URL/token 复制反馈（M4）：1.5s 后恢复按钮文案。
-const copiedKey = hasAppFeature("mcp.server") ? ref<"url" | "token" | null>(null) : undefined!;
+const copiedKey = hasAppFeature("mcp.server") && hasAppFeature("ui.clipboard") ? ref<"url" | "token" | null>(null) : undefined!;
 let copyTimer: ReturnType<typeof setTimeout> | null = null;
 
 function copyMcp(key: "url" | "token", text: string): void {
@@ -371,14 +371,14 @@ export function LeftPanel() {
                 <TextField
                   initial={tcpHost.value}
                   placeholder={() => "127.0.0.1"}
-                  selRegion={fieldRegion(top("tcpHost"))}
+                  selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("tcpHost")) : undefined}
                   {...bindField("tcpHost", tcpHost)}
                 />,
               )}
               {fieldBlock(
                 top("tcpPort"),
                 () => t("conn.remotePort"),
-                <TextField initial={tcpPort.value} selRegion={fieldRegion(top("tcpPort"))} {...bindField("tcpPort", tcpPort)} />,
+                <TextField initial={tcpPort.value} selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("tcpPort")) : undefined} {...bindField("tcpPort", tcpPort)} />,
               )}
               <View
                 class="absolute"
@@ -401,7 +401,7 @@ export function LeftPanel() {
               {fieldBlock(
                 top("tcpsPort"),
                 () => t("conn.listenPort"),
-                <TextField initial={tcpsPort.value} selRegion={fieldRegion(top("tcpsPort"))} {...bindField("tcpsPort", tcpsPort)} />,
+                <TextField initial={tcpsPort.value} selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("tcpsPort")) : undefined} {...bindField("tcpsPort", tcpsPort)} />,
               )}
               {clientList.value.length > 0 ? (
                 <View
@@ -440,7 +440,7 @@ export function LeftPanel() {
                 <TextField
                   initial={udpHost.value}
                   placeholder={() => "127.0.0.1"}
-                  selRegion={fieldRegion(top("udpHost"))}
+                  selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("udpHost")) : undefined}
                   {...bindField("udpHost", udpHost)}
                 />,
               )}
@@ -450,7 +450,7 @@ export function LeftPanel() {
                   <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
                     <TextField
                       initial={udpBindPort.value}
-                      selRegion={fieldRegion(top("udpPair"), 0, PAIR_W)}
+                      selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("udpPair"), 0, PAIR_W) : undefined}
                       {...bindField("udpBindPort", udpBindPort)}
                     />
                   </View>
@@ -460,7 +460,7 @@ export function LeftPanel() {
                   <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
                     <TextField
                       initial={udpPort.value}
-                      selRegion={fieldRegion(top("udpPair"), PAIR_W + PAIR_GAP, PAIR_W)}
+                      selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("udpPair"), PAIR_W + PAIR_GAP, PAIR_W) : undefined}
                       {...bindField("udpPort", udpPort)}
                     />
                   </View>
@@ -478,14 +478,14 @@ export function LeftPanel() {
                 <TextField
                   initial={wsUrl.value}
                   placeholder={() => "ws://127.0.0.1:8080"}
-                  selRegion={fieldRegion(top("wsUrl"))}
+                  selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("wsUrl")) : undefined}
                   {...bindField("wsUrl", wsUrl)}
                 />,
               )}
               {fieldBlock(
                 top("wsProtocols"),
                 () => t("conn.wsProtocols"),
-                <TextField initial={wsProtocols.value} selRegion={fieldRegion(top("wsProtocols"))} {...bindField("wsProtocols", wsProtocols)} />,
+                <TextField initial={wsProtocols.value} selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("wsProtocols")) : undefined} {...bindField("wsProtocols", wsProtocols)} />,
               )}
               <View
                 class="absolute"
@@ -511,7 +511,7 @@ export function LeftPanel() {
               <View class="absolute left-0 right-0" style={{ insetT: 6, height: CTL_H }}>
                 <TextField
                   initial={hasAppFeature("transport.tcp-client") && connType.value === "tcp" ? tcpReconnectSec.value : wsReconnectSec.value}
-                  selRegion={ctlRegion(top("reconnectSec") + 6)}
+                  selRegion={hasAppFeature("ui.selection") ? ctlRegion(top("reconnectSec") + 6) : undefined}
                   {...(hasAppFeature("transport.tcp-client") && connType.value === "tcp"
                     ? bindField("tcpReconnectSec", tcpReconnectSec)
                     : bindField("wsReconnectSec", wsReconnectSec))}
@@ -700,7 +700,7 @@ function SerialBlocks(props: {
           <View class="absolute left-0 right-0" style={{ insetT: FIELD_H + 6, height: CTL_H }}>
             <TextField
               initial={props.customBaud.value}
-              selRegion={ctlRegion(props.top("baud") + FIELD_H + 6)}
+              selRegion={hasAppFeature("ui.selection") ? ctlRegion(props.top("baud") + FIELD_H + 6) : undefined}
               onHandle={(h) => {
                 props.setCustomBaudField(h);
                 h.focus(); // 选"自定义…"后直接可输入
@@ -848,7 +848,7 @@ function McpInfoRow(props: {
         >
           {props.value()}
         </Text>
-        <View class="absolute" style={{ insetR: 0, insetT: LABEL_H + LABEL_GAP, width: 52, height: 22 }}>
+        {hasAppFeature("ui.clipboard") ? (<View class="absolute" style={{ insetR: 0, insetT: LABEL_H + LABEL_GAP, width: 52, height: 22 }}>
           <Btn
             width={52}
             height={22}
@@ -857,7 +857,7 @@ function McpInfoRow(props: {
               copyMcp(props.copyKey, props.copyKey === "url" ? mcpUrl() : mcpToken.value);
             }}
           />
-        </View>
+        </View>) : null}
       </View>
     );
   }

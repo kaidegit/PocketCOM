@@ -29,17 +29,13 @@ import { setActiveField } from "./fields";
 import { applyLogFormat, exportConfig, fontSize, historyLines, importConfig, scrollbackLines, setHistoryLines, setScrollbackLines } from "./session";
 import { applyLocale } from "./locale";
 import {
-  BTN_Y,
   CTL_TOP_OFF,
-  DIV_Y,
-  IO_Y,
   LABEL_COL_W,
-  MODAL_CONTENT_H,
   MODAL_PAD,
   TITLE_H,
   MODAL_ROW_H,
   modalFrame,
-  modalRowY,
+  modalGeometry,
   type ModalFrame,
 } from "./settings-modal-layout";
 
@@ -47,6 +43,13 @@ import {
 // 几何派生（Select 弹层锚点 / TextField 拖选命中区共用；行内偏移见
 // settings-modal-layout.ts）
 // ---------------------------------------------------------------------------
+
+const geometry = modalGeometry([
+  hasAppFeature("ui.language-switch"), hasAppFeature("ui.theme-switch"),
+  hasAppFeature("ui.font-size-switch"), true, hasAppFeature("terminal"),
+]);
+const modalRowY = (i: number): number => geometry.rowY[i]!;
+const { divY: DIV_Y, ioY: IO_Y, btnY: BTN_Y, contentH: MODAL_CONTENT_H } = geometry;
 
 const BTN_GAP = 10;
 
@@ -58,9 +61,9 @@ const settingsOpenRef = ref(false);
 const modalScroll = ref(0);
 
 /** 草稿（打开时快照；只写草稿，"应用"才写回全局状态）。 */
-const draftLocale = ref<Locale>("zh-CN");
-const draftTheme = ref<ThemeMode>("dark");
-const draftFontSize = ref<12 | 14 | 16>(14);
+const draftLocale = hasAppFeature("ui.language-switch") ? ref<Locale>("zh-CN") : undefined!;
+const draftTheme = hasAppFeature("ui.theme-switch") ? ref<ThemeMode>("dark") : undefined!;
+const draftFontSize = hasAppFeature("ui.font-size-switch") ? ref<12 | 14 | 16>(14) : undefined!;
 
 /** 行数输入框句柄（弹窗内容挂载时经 onHandle 注入）：接收区历史 / 终端回滚。 */
 let historyField: TextFieldHandle | undefined;
@@ -73,9 +76,9 @@ export function settingsOpen(): boolean {
 /** 打开弹窗：快照当前设置为草稿。 */
 export function openSettingsModal(): void {
   closePopup();
-  draftLocale.value = locale.value;
-  draftTheme.value = themeMode.value;
-  draftFontSize.value = fontSize.value;
+  if (hasAppFeature("ui.language-switch")) draftLocale.value = locale.value;
+  if (hasAppFeature("ui.theme-switch")) draftTheme.value = themeMode.value;
+  if (hasAppFeature("ui.font-size-switch")) draftFontSize.value = fontSize.value;
   modalScroll.value = 0;
   settingsOpenRef.value = true;
 }
@@ -93,7 +96,7 @@ export function closeSettingsModal(): void {
 /** 弹窗打开时接管滚轮（app.tsx 路由）：小视口夹取后内容超高才可滚。 */
 export function modalWheel(dy: number): void {
   if (!settingsOpenRef.value) return;
-  const f = modalFrame(viewportSize.value.w, viewportSize.value.h);
+  const f = modalFrame(viewportSize.value.w, viewportSize.value.h, MODAL_CONTENT_H);
   const max = Math.max(0, MODAL_CONTENT_H - f.h);
   modalScroll.value = Math.max(0, Math.min(max, modalScroll.value - dy));
 }
@@ -113,9 +116,9 @@ export function settingsFieldMouse(x: number, y: number, down: boolean): boolean
 
 /** 应用草稿：一次性写回全局状态（持久化由 session.ts 的 watch 自动跟随）并关闭。 */
 function applyDrafts(): void {
-  applyLocale(draftLocale.value);
-  themeMode.value = draftTheme.value;
-  fontSize.value = draftFontSize.value;
+  if (hasAppFeature("ui.language-switch")) applyLocale(draftLocale.value);
+  if (hasAppFeature("ui.theme-switch")) themeMode.value = draftTheme.value;
+  if (hasAppFeature("ui.font-size-switch")) fontSize.value = draftFontSize.value;
   applyLogFormat(); // 字号变化重排日志行宽
   const h = Number.parseInt((historyField?.text() ?? "").trim(), 10);
   setHistoryLines(Number.isFinite(h) ? h : 10000);
@@ -129,9 +132,9 @@ function applyDrafts(): void {
 /** 导入配置（即时生效）：成功后草稿重同步为导入值（未应用的其它草稿丢弃）。 */
 function importAndSync(): void {
   if (importConfig()) {
-    draftLocale.value = locale.value;
-    draftTheme.value = themeMode.value;
-    draftFontSize.value = fontSize.value;
+    if (hasAppFeature("ui.language-switch")) draftLocale.value = locale.value;
+    if (hasAppFeature("ui.theme-switch")) draftTheme.value = themeMode.value;
+    if (hasAppFeature("ui.font-size-switch")) draftFontSize.value = fontSize.value;
     historyField?.setText(String(historyLines.value));
     scrollField?.setText(String(scrollbackLines.value));
   }
@@ -141,7 +144,7 @@ function importAndSync(): void {
 // 屏幕坐标派生（Select 弹层锚点 / TextField 拖选命中区共用）
 // ---------------------------------------------------------------------------
 
-const frame = (): ModalFrame => modalFrame(viewportSize.value.w, viewportSize.value.h);
+const frame = (): ModalFrame => modalFrame(viewportSize.value.w, viewportSize.value.h, MODAL_CONTENT_H);
 const ctlX = (): number => frame().x + MODAL_PAD + LABEL_COL_W;
 const ctlW = (): number => frame().w - MODAL_PAD * 2 - LABEL_COL_W;
 const ctlAnchor = (i: number): PopupAnchor => ({
@@ -222,90 +225,96 @@ function SettingsBox() {
           </Text>
 
           {/* 语言 */}
-          <View class="absolute" style={{ insetT: modalRowY(0), insetL: 0, insetR: 0, height: MODAL_ROW_H }}>
-            <Text
-              class="absolute text-xs"
-              style={{ insetL: 0, insetT: 0, height: MODAL_ROW_H, lineHeight: MODAL_ROW_H, textColor: theme.value.dim }}
-            >
-              {t("settings.language")}
-            </Text>
-            <View class="absolute" style={{ insetL: LABEL_COL_W, insetR: 0, insetT: CTL_TOP_OFF, height: CTL_H }}>
-              <Select
-                display={() => t(`settings.langName.${draftLocale.value}`)}
-                value={() => draftLocale.value}
-                options={() => [
-                  { value: "zh-CN", label: t("settings.langName.zh-CN") },
-                  { value: "en", label: t("settings.langName.en") },
-                ]}
-                onPick={(v) => {
-                  draftLocale.value = v as Locale;
-                }}
-                anchor={() => ctlAnchor(0)}
-              />
+          {hasAppFeature("ui.language-switch") ? (
+            <View class="absolute" style={{ insetT: modalRowY(0), insetL: 0, insetR: 0, height: MODAL_ROW_H }}>
+              <Text
+                class="absolute text-xs"
+                style={{ insetL: 0, insetT: 0, height: MODAL_ROW_H, lineHeight: MODAL_ROW_H, textColor: theme.value.dim }}
+              >
+                {t("settings.language")}
+              </Text>
+              <View class="absolute" style={{ insetL: LABEL_COL_W, insetR: 0, insetT: CTL_TOP_OFF, height: CTL_H }}>
+                <Select
+                  display={() => t(`settings.langName.${draftLocale.value}`)}
+                  value={() => draftLocale.value}
+                  options={() => [
+                    { value: "zh-CN", label: t("settings.langName.zh-CN") },
+                    { value: "en", label: t("settings.langName.en") },
+                  ]}
+                  onPick={(v) => {
+                    draftLocale.value = v as Locale;
+                  }}
+                  anchor={() => ctlAnchor(0)}
+                />
+              </View>
             </View>
-          </View>
+          ) : null}
 
           {/* 主题（三态，跟随系统经宿主 appearance 事件） */}
-          <View class="absolute" style={{ insetT: modalRowY(1), insetL: 0, insetR: 0, height: MODAL_ROW_H }}>
-            <Text
-              class="absolute text-xs"
-              style={{ insetL: 0, insetT: 0, height: MODAL_ROW_H, lineHeight: MODAL_ROW_H, textColor: theme.value.dim }}
-            >
-              {t("settings.theme")}
-            </Text>
-            <View class="absolute" style={{ insetL: LABEL_COL_W, insetR: 0, insetT: CTL_TOP_OFF, height: CTL_H }}>
-              <Select
-                display={() =>
-                  draftTheme.value === "light"
-                    ? t("settings.themeLight")
-                    : draftTheme.value === "system"
-                      ? t("settings.themeSystem")
-                      : t("settings.themeDark")
-                }
-                value={() => draftTheme.value}
-                options={() => [
-                  { value: "light", label: t("settings.themeLight") },
-                  { value: "dark", label: t("settings.themeDark") },
-                  { value: "system", label: t("settings.themeSystem") },
-                ]}
-                onPick={(v) => {
-                  draftTheme.value = v as ThemeMode;
-                }}
-                anchor={() => ctlAnchor(1)}
-              />
+          {hasAppFeature("ui.theme-switch") ? (
+            <View class="absolute" style={{ insetT: modalRowY(1), insetL: 0, insetR: 0, height: MODAL_ROW_H }}>
+              <Text
+                class="absolute text-xs"
+                style={{ insetL: 0, insetT: 0, height: MODAL_ROW_H, lineHeight: MODAL_ROW_H, textColor: theme.value.dim }}
+              >
+                {t("settings.theme")}
+              </Text>
+              <View class="absolute" style={{ insetL: LABEL_COL_W, insetR: 0, insetT: CTL_TOP_OFF, height: CTL_H }}>
+                <Select
+                  display={() =>
+                    draftTheme.value === "light"
+                      ? t("settings.themeLight")
+                      : hasAppFeature("ui.theme-system") && draftTheme.value === "system"
+                        ? t("settings.themeSystem")
+                        : t("settings.themeDark")
+                  }
+                  value={() => draftTheme.value}
+                  options={() => [
+                    { value: "light", label: t("settings.themeLight") },
+                    { value: "dark", label: t("settings.themeDark") },
+                    ...(hasAppFeature("ui.theme-system") ? [{ value: "system", label: t("settings.themeSystem") }] : []),
+                  ]}
+                  onPick={(v) => {
+                    draftTheme.value = v as ThemeMode;
+                  }}
+                  anchor={() => ctlAnchor(1)}
+                />
+              </View>
             </View>
-          </View>
+          ) : null}
 
           {/* 字号（收发区 mono 字号，三档） */}
-          <View class="absolute" style={{ insetT: modalRowY(2), insetL: 0, insetR: 0, height: MODAL_ROW_H }}>
-            <Text
-              class="absolute text-xs"
-              style={{ insetL: 0, insetT: 0, height: MODAL_ROW_H, lineHeight: MODAL_ROW_H, textColor: theme.value.dim }}
-            >
-              {t("settings.fontSize")}
-            </Text>
-            <View class="absolute" style={{ insetL: LABEL_COL_W, insetR: 0, insetT: CTL_TOP_OFF, height: CTL_H }}>
-              <Select
-                display={() =>
-                  draftFontSize.value === 12
-                    ? t("settings.fontSizeSmall")
-                    : draftFontSize.value === 16
-                      ? t("settings.fontSizeLarge")
-                      : t("settings.fontSizeMedium")
-                }
-                value={() => String(draftFontSize.value)}
-                options={() => [
-                  { value: "12", label: t("settings.fontSizeSmall") },
-                  { value: "14", label: t("settings.fontSizeMedium") },
-                  { value: "16", label: t("settings.fontSizeLarge") },
-                ]}
-                onPick={(v) => {
-                  draftFontSize.value = Number(v) as 12 | 14 | 16;
-                }}
-                anchor={() => ctlAnchor(2)}
-              />
+          {hasAppFeature("ui.font-size-switch") ? (
+            <View class="absolute" style={{ insetT: modalRowY(2), insetL: 0, insetR: 0, height: MODAL_ROW_H }}>
+              <Text
+                class="absolute text-xs"
+                style={{ insetL: 0, insetT: 0, height: MODAL_ROW_H, lineHeight: MODAL_ROW_H, textColor: theme.value.dim }}
+              >
+                {t("settings.fontSize")}
+              </Text>
+              <View class="absolute" style={{ insetL: LABEL_COL_W, insetR: 0, insetT: CTL_TOP_OFF, height: CTL_H }}>
+                <Select
+                  display={() =>
+                    draftFontSize.value === 12
+                      ? t("settings.fontSizeSmall")
+                      : draftFontSize.value === 16
+                        ? t("settings.fontSizeLarge")
+                        : t("settings.fontSizeMedium")
+                  }
+                  value={() => String(draftFontSize.value)}
+                  options={() => [
+                    { value: "12", label: t("settings.fontSizeSmall") },
+                    { value: "14", label: t("settings.fontSizeMedium") },
+                    { value: "16", label: t("settings.fontSizeLarge") },
+                  ]}
+                  onPick={(v) => {
+                    draftFontSize.value = Number(v) as 12 | 14 | 16;
+                  }}
+                  anchor={() => ctlAnchor(2)}
+                />
+              </View>
             </View>
-          </View>
+          ) : null}
 
           {/* 接收区历史行数（1–100000，应用时生效，SPEC §3.3/§3.8） */}
           <View class="absolute" style={{ insetT: modalRowY(3), insetL: 0, insetR: 0, height: MODAL_ROW_H }}>
@@ -318,7 +327,7 @@ function SettingsBox() {
             <View class="absolute" style={{ insetL: LABEL_COL_W, insetR: 0, insetT: CTL_TOP_OFF, height: CTL_H }}>
               <TextField
                 initial={String(historyLines.value)}
-                selRegion={historyFieldRegion}
+                selRegion={hasAppFeature("ui.selection") ? historyFieldRegion : undefined}
                 onHandle={(h) => {
                   historyField = h;
                 }}
@@ -338,7 +347,7 @@ function SettingsBox() {
               <View class="absolute" style={{ insetL: LABEL_COL_W, insetR: 0, insetT: CTL_TOP_OFF, height: CTL_H }}>
                 <TextField
                   initial={String(scrollbackLines.value)}
-                  selRegion={scrollFieldRegion}
+                  selRegion={hasAppFeature("ui.selection") ? scrollFieldRegion : undefined}
                   onHandle={(h) => {
                     scrollField = h;
                   }}

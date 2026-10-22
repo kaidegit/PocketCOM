@@ -262,16 +262,17 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 
 ### 4.5 产品 feature 与离板裁剪实验
 
-- 根目录 `pocket.features.json` 是产品功能、依赖、模块所有权、文案归属和 profile 的唯一来源；`status: "implemented"` 表示已接入裁剪（缺省兼容该状态），`status: "planned"` 仅登记待接入项，和功能本身是否已经实现无关。当前 `terminal`、`mcp.server` 与五个 `transport.*` 接入裁剪，其余产品功能目录以该 JSON 为准。
+- 根目录 `pocket.features.json` 是产品功能、依赖、模块所有权、文案归属和 profile 的唯一来源；`status: "implemented"` 表示已接入裁剪（缺省兼容该状态），`status: "planned"` 仅登记待接入项，和功能本身是否已经实现无关。当前 `terminal`、`mcp.server`、五个 `transport.*` 与九个 `ui.*` 接入裁剪，其余产品功能目录以该 JSON 为准。
 - profile 必须且只能为所有 implemented 项提供布尔值；planned 项不能写入 profile、拥有裁剪模块/文案或用于 `hasAppFeature()`，避免产生无效开关。implemented 项也不能依赖 planned 项；依赖名称与循环对整个目录校验。文档不得另行维护平台启停表，代码不得增加独立产品开关常量或环境变量。用户运行时设置和真实宿主能力探测保持各自语义，不充当编译裁剪配置。
-- `desktop` 启用已接入功能，`aic-diagnostic` 的配置以 JSON 为准，仍使用原诊断入口；`terminal-on` / `terminal-off` 是离板实验组合，使用同一共享 App、480×272、相同宿主能力、容量与字体，仅终端功能取值不同。实验不切换正式板端入口，不代表 UART/网络桥或软键盘已实现。
+- `desktop` 启用已接入功能，`aic-diagnostic` 的配置以 JSON 为准，仍使用原诊断入口；`terminal-on` / `terminal-off` 是离板实验组合，使用同一共享 App、480×272、相同宿主能力、容量与字体，仅终端功能取值不同。实验不切换正式板端入口，不代表板端 UART/网络桥已实现。
 - 产品功能通过 `@pocketcom/features` 的字面量 `hasAppFeature()` 调用引用；构建必须显式选择 profile，未知功能、缺项、依赖冲突与动态功能名报错。宿主 capability 与内存容量不与产品开关混用。
 - PJS 在 Vue 转换、样式/字形收集和依赖遍历之前对 TS/TSX 作 AST 特化；禁用终端同时关闭模型创建、RX 订阅、应答泵、版本同步、输入/鼠标/滚轮路由、模式切换与回滚设置。桌面开启时保持持续消费 RX 和查询应答语义。
 - 禁用功能声明拥有的模块只有在无存活引用且特化后无顶层执行副作用时才能剔除；被剔除模块的非功能依赖保留为副作用导入，不对全仓库设置 `sideEffects: false`。颜色定义提取为共享叶子模块，保留原 `core/term.ts` 导出兼容性。
 - 文案字典和额外烘焙字符使用同一 feature 过滤结果。构建单独输出含配置指纹、参与/剔除模块、资源与 JS/PAK 字节数的 feature receipt，不改变已有宿主 plan/capability 契约；转换缓存包含特化配置身份，依赖记录包含配置文件。
 - `mcp.server` 关闭时剔除核心命令执行器、服务响应式状态/watcher、启停/配置/每帧中继、面板及状态栏与专属文案；忽略宿主 MCP 事件，配置中的 MCP 字段保留但不激活服务。共享 `com.*` 契约和配置 schema 保持兼容；macOS 原生 server 随宿主保留，产品 profile 控制 guest 装配。`mcp-on` / `mcp-off` 固定关闭终端，仅改变 MCP 取值以测量其独立收益。
 - `transport.*` 在 guest 装配时裁剪协议专属面板、参数 ref、配置恢复/快照、桥接适配器与专属文案；关闭的协议不出现在选择器中，直接调用（含 MCP）须在触及宿主及改变连接状态前拒绝。配置 schema 和已有配置保留，loopback 作为测试连接保持可用；共享会话的帧合流/事件路由/重连状态机保持纯 TS，macOS 原生协议实现随宿主保留。`transport-all` / `transport-serial` 固定关闭 terminal/MCP，用同一共享 App 比较传输裁剪；不切换正式 AIC 入口。
-- `probe:features` 默认顺序生成 terminal 两个独立实验包，`--feature mcp.server` 选择 MCP 对比组，`--feature transport` 选择传输对比组，使用同一原生探针各运行独立进程，记录 S2/S3/S4/S5 live/peak、QuickJS 与失败计数，保存日志/包 hash/版本/配置及对比报告。无板实验不替代 WiFi 开启后的 TLSF 真机验收。
+- `ui.*` 在 Vue 转换前裁剪选区、剪贴板（复制/粘贴）、右键菜单、快捷组合键、语言/主题/字号切换及软键盘。关闭选区保留文本输入与光标；关闭快捷键保留普通编辑键及终端协议按键。右键菜单依赖选区，系统主题依赖主题切换。关闭语言/主题/字号切换固定为 zh-CN/深色/14px，忽略导入及 MCP 对这些设置的修改，但保留原配置字段。关闭系统主题时不订阅外观响应状态，system 配置按深色处理。软键盘为 ASCII 输入浮层，主界面文本域聚焦后可由状态栏展开，支持大小写、数字、符号、空格、退格、回车和收起；按键复用文本域协议，不清除输入焦点。`ui-on` / `ui-off` 仅改变 ui 功能，用共享 App 离板比较；不切换正式板端入口。
+- `probe:features` 默认顺序生成 terminal 两个独立实验包，`--feature mcp.server` 选择 MCP 对比组，`--feature transport` 选择传输对比组，`--feature ui` 选择 UI 对比组，使用同一原生探针各运行独立进程，记录 S2/S3/S4/S5 live/peak、QuickJS 与失败计数，保存日志/包 hash/版本/配置及对比报告。无板实验不替代 WiFi 开启后的 TLSF 真机验收。
 
 ## 5. 关键专项设计
 

@@ -1,3 +1,4 @@
+import { hasAppFeature } from "@pocketcom/features";
 // app/i18n.ts — 运行时语言包（SPEC §3.6）。
 // JSON 直接打进 bundle；t() 在 JSX 表达式里被 Vue Vapor 依赖追踪，
 // 切换 locale 立即全量重渲染。缺 key 回退 en，再回退 key 本身。
@@ -7,7 +8,7 @@ import en from "../assets/i18n/en.json";
 
 export type Locale = "zh-CN" | "en";
 
-const packs: Record<Locale, Record<string, unknown>> = { "zh-CN": zhCN, en };
+const packs: Record<Locale, Record<string, unknown>> = { "zh-CN": zhCN, en: hasAppFeature("ui.language-switch") ? en : zhCN };
 
 /** 当前语言（运行时切换，SPEC §3.6）。 */
 export const locale = ref<Locale>("zh-CN");
@@ -35,5 +36,5 @@ export function t(key: string, params?: Record<string, string | number>): string
 
 /** 切换语言。 */
 export function setLocale(next: Locale): void {
-  locale.value = next;
+  if (hasAppFeature("ui.language-switch")) locale.value = next;
 }

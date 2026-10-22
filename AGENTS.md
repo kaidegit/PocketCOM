@@ -64,7 +64,7 @@ app/            # Vue Vapor 组件与页面状态（仅渲染 + 输入），pock
                 #   headless 可测）；transfer.tsx 接收区/发送区；terminal.tsx 终端视图（字符网格
                 #   按 run 合并渲染/光标/拖拽选区/滚轮回滚，几何与选区 helper 导出给 app.tsx 命中）；
                 #   widgets.tsx 基础控件（Btn/CheckRow/SegCtrl/Select+Portal/TextField（拖动选区）/
-                #   Scrollbar）；textsel.ts 文本选区纯几何；sendlayout.ts 发送区选项行流式几何；
+                #   Scrollbar）；soft-keyboard.tsx 可裁剪 ASCII 软键盘（复用活跃文本域协议）；textsel.ts 文本选区纯几何；sendlayout.ts 发送区选项行流式几何；
                 #   session.ts 会话接线单例 + 连接参数仓库 + 设置持久化 + uiMode/终端模型装配
                 #   （bus→term 持续灌入、DSR/DA 应答泵）；theme.ts 主题令牌（深色/浅色/跟随系统 +
                 #   终端独立调色板）；i18n.ts/locale.ts 语言包；fontsize.ts 字号档位（mono 槽
@@ -123,9 +123,10 @@ SPEC.md         # 功能规格（权威）
 
 ### 恢复路线（内存约束下的推进顺序）
 
-已接入统一 `pocket.features.json` 与 terminal / mcp.server / transport.* 的编译期裁剪；平台启停值只查该 JSON。
-`terminal-on` / `terminal-off`、`mcp-on` / `mcp-off` 和 `transport-all` / `transport-serial` 仅供共享 App
+已接入统一 `pocket.features.json` 与 terminal / mcp.server / transport.* / ui.* 的编译期裁剪；平台启停值只查该 JSON。
+`terminal-on` / `terminal-off`、`mcp-on` / `mcp-off`、`transport-all` / `transport-serial` 和 `ui-on` / `ui-off` 仅供共享 App
 离板对比（传输对比用 `npm run probe:features -- --feature transport`，见 `docs/transport-feature-heap.md`），
+UI 对比用 `npm run probe:features -- --feature ui`，见 `docs/ui-feature-heap.md`；
 不替代正式板端入口。产品功能
 用 `@pocketcom/features` 的字面量 `hasAppFeature()`；产品功能目录和 profile 只以该 JSON 为准，禁止在代码、环境变量或文档中另设启停表。
 新增项可先标记 `status: "planned"`，此时不可写入 profile、调用或声明模块/文案所有权；

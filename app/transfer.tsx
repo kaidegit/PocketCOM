@@ -128,8 +128,8 @@ interface LogSelCell {
   col: number;
 }
 
-const logSelA = ref<LogSelCell | null>(null);
-const logSelB = ref<LogSelCell | null>(null);
+const logSelA = hasAppFeature("ui.selection") ? ref<LogSelCell | null>(null) : undefined!;
+const logSelB = hasAppFeature("ui.selection") ? ref<LogSelCell | null>(null) : undefined!;
 let logDragging = false;
 let logDragMoved = false;
 /** 拖拽中最近指针位置（越界自动滚动的帧泵用；抬起清空）。 */
@@ -137,11 +137,14 @@ let logDragPos: { x: number; y: number } | null = null;
 
 /** 屏幕坐标 → 日志格（行 = logView.rows 下标，列 = 字符下标；越界钳位）。 */
 function logCellAt(x: number, y: number): LogSelCell {
-  const m = logMetrics();
-  const row = Math.max(0, Math.min(logView.rows.length - 1, Math.floor((y - m.y0 + logScroll.value) / m.lineH)));
-  const text = logView.rows[row]?.text ?? "";
-  const col = monoColAt(text, x - (m.x0 + 8), (s) => measureMono(s, MONO_SLOTS[fontSize.value]));
-  return { row, col };
+  if (hasAppFeature("ui.selection")) {
+    const m = logMetrics();
+    const row = Math.max(0, Math.min(logView.rows.length - 1, Math.floor((y - m.y0 + logScroll.value) / m.lineH)));
+    const text = logView.rows[row]?.text ?? "";
+    const col = monoColAt(text, x - (m.x0 + 8), (s) => measureMono(s, MONO_SLOTS[fontSize.value]));
+    return { row, col };
+  }
+  return { row: 0, col: 0 };
 }
 
 function logMouseDown(x: number, y: number): void {
@@ -178,95 +181,112 @@ function logMouseUp(): void {
 /** 日志区鼠标事件统一入口（app.tsx 路由）：d=true 的连续事件区分按下与拖拽。
  *  返回是否命中/接管（按下沿只在窗内起手；抬起沿只在有拖拽时消费）。 */
 export function logMouse(x: number, y: number, down: boolean): boolean {
-  if (down) {
-    if (logDragging) {
-      logMouseDrag(x, y);
+  if (hasAppFeature("ui.selection")) {
+    if (down) {
+      if (logDragging) {
+        logMouseDrag(x, y);
+        return true;
+      }
+      const m = logMetrics();
+      if (x < m.x0 || x >= m.x0 + m.w || y < m.y0 || y >= m.y0 + m.h) return false;
+      logMouseDown(x, y);
       return true;
     }
-    const m = logMetrics();
-    if (x < m.x0 || x >= m.x0 + m.w || y < m.y0 || y >= m.y0 + m.h) return false;
-    logMouseDown(x, y);
-    return true;
-  }
-  if (logDragging) {
-    logMouseUp();
-    return true;
+    if (logDragging) {
+      logMouseUp();
+      return true;
+    }
+    return false;
   }
   return false;
 }
 
 export function logHasSelection(): boolean {
-  const a = logSelA.value;
-  const b = logSelB.value;
-  return a !== null && b !== null && (a.row !== b.row || a.col !== b.col);
+  if (hasAppFeature("ui.selection")) {
+    const a = logSelA.value;
+    const b = logSelB.value;
+    return a !== null && b !== null && (a.row !== b.row || a.col !== b.col);
+  }
+  return false;
 }
 
 /** 选中文本（row.text 按行列切片，行间 \n；无选区返回 ""）。 */
 export function logSelectionText(): string {
-  const a = logSelA.value;
-  const b = logSelB.value;
-  if (a === null || b === null) return "";
-  const fwd =
-    a.row > b.row || (a.row === b.row && a.col > b.col)
-      ? { a: b, b: a }
-      : { a, b };
-  if (fwd.a.row === fwd.b.row && fwd.a.col === fwd.b.col) return "";
-  const out: string[] = [];
-  for (let r = fwd.a.row; r <= fwd.b.row; r++) {
-    const text = logView.rows[r]?.text ?? "";
-    const from = r === fwd.a.row ? fwd.a.col : 0;
-    const to = r === fwd.b.row ? Math.min(fwd.b.col, text.length) : text.length;
-    out.push(text.slice(from, to));
+  if (hasAppFeature("ui.selection")) {
+    const a = logSelA.value;
+    const b = logSelB.value;
+    if (a === null || b === null) return "";
+    const fwd =
+      a.row > b.row || (a.row === b.row && a.col > b.col)
+        ? { a: b, b: a }
+        : { a, b };
+    if (fwd.a.row === fwd.b.row && fwd.a.col === fwd.b.col) return "";
+    const out: string[] = [];
+    for (let r = fwd.a.row; r <= fwd.b.row; r++) {
+      const text = logView.rows[r]?.text ?? "";
+      const from = r === fwd.a.row ? fwd.a.col : 0;
+      const to = r === fwd.b.row ? Math.min(fwd.b.col, text.length) : text.length;
+      out.push(text.slice(from, to));
+    }
+    return out.join("\n");
   }
-  return out.join("\n");
+  return "";
 }
 
 /** 全选日志（右键菜单）。 */
 export function logSelectAll(): void {
-  const n = logView.rows.length;
-  if (n === 0) return;
-  logSelA.value = { row: 0, col: 0 };
-  logSelB.value = { row: n - 1, col: logView.rows[n - 1]!.text.length };
+  if (hasAppFeature("ui.selection")) {
+    const n = logView.rows.length;
+    if (n === 0) return;
+    logSelA.value = { row: 0, col: 0 };
+    logSelB.value = { row: n - 1, col: logView.rows[n - 1]!.text.length };
+  }
 }
 
 /** 接收区右键菜单（复制/全选，app.tsx 的 b:2 路由调用）；返回是否命中日志区。 */
 export function logContextMenu(x: number, y: number): boolean {
-  const m = logMetrics();
-  if (x < m.x0 || x >= m.x0 + m.w || y < m.y0 || y >= m.y0 + m.h) return false;
-  openContextMenu(
-    x,
-    y,
-    [
-      { value: "copy", label: t("menu.copy"), disabled: !logHasSelection() },
-      { value: "selectAll", label: t("menu.selectAll"), disabled: logView.rows.length === 0 },
-    ],
-    (v) => {
-      if (v === "copy") getSvc()?.send({ t: "copy", text: logSelectionText() });
-      else if (v === "selectAll") logSelectAll();
-    },
-  );
-  return true;
+  if (hasAppFeature("ui.context-menu")) {
+    const m = logMetrics();
+    if (x < m.x0 || x >= m.x0 + m.w || y < m.y0 || y >= m.y0 + m.h) return false;
+    openContextMenu(
+      x,
+      y,
+      [
+        ...(hasAppFeature("ui.clipboard") ? [{ value: "copy", label: t("menu.copy"), disabled: !logHasSelection() }] : []),
+        { value: "selectAll", label: t("menu.selectAll"), disabled: logView.rows.length === 0 },
+      ],
+      (v) => {
+        if (hasAppFeature("ui.clipboard") && v === "copy") getSvc()?.send({ t: "copy", text: logSelectionText() });
+        else if (v === "selectAll") logSelectAll();
+      },
+    );
+    return true;
+  }
+  return false;
 }
 
 /** 第 index 行的选区高亮矩形（行内 px；无交叠返回 null）。 */
 function logSelRect(row: LogRow, index: number): { x: number; w: number } | null {
-  const a = logSelA.value;
-  const b = logSelB.value;
-  if (a === null || b === null) return null;
-  const fwd =
-    a.row > b.row || (a.row === b.row && a.col > b.col)
-      ? { a: b, b: a }
-      : { a, b };
-  if (index < fwd.a.row || index > fwd.b.row) return null;
-  if (fwd.a.row === fwd.b.row && fwd.a.col === fwd.b.col) return null;
-  const text = row.text;
-  const from = index === fwd.a.row ? fwd.a.col : 0;
-  const to = index === fwd.b.row ? Math.min(fwd.b.col, text.length) : text.length;
-  if (to <= from) return null;
-  const measure = (s: string): number => measureMono(s, MONO_SLOTS[fontSize.value]);
-  const x = monoXAt(text, from, measure);
-  const w = monoXAt(text, to, measure) - x;
-  return w > 0 ? { x, w } : null;
+  if (hasAppFeature("ui.selection")) {
+    const a = logSelA.value;
+    const b = logSelB.value;
+    if (a === null || b === null) return null;
+    const fwd =
+      a.row > b.row || (a.row === b.row && a.col > b.col)
+        ? { a: b, b: a }
+        : { a, b };
+    if (index < fwd.a.row || index > fwd.b.row) return null;
+    if (fwd.a.row === fwd.b.row && fwd.a.col === fwd.b.col) return null;
+    const text = row.text;
+    const from = index === fwd.a.row ? fwd.a.col : 0;
+    const to = index === fwd.b.row ? Math.min(fwd.b.col, text.length) : text.length;
+    if (to <= from) return null;
+    const measure = (s: string): number => measureMono(s, MONO_SLOTS[fontSize.value]);
+    const x = monoXAt(text, from, measure);
+    const w = monoXAt(text, to, measure) - x;
+    return w > 0 ? { x, w } : null;
+  }
+  return null;
 }
 
 export function ReceivePane() {
@@ -280,7 +300,7 @@ export function ReceivePane() {
     if (logStickBottom.value) logScroll.value = maxScroll();
   });
   // 字号变化：保持贴底语义
-  watch(fontSize, () => {
+  if (hasAppFeature("ui.font-size-switch")) watch(fontSize, () => {
     if (logStickBottom.value) logScroll.value = maxScroll();
   });
 
@@ -304,7 +324,7 @@ export function ReceivePane() {
 
   // 拖拽选区越界自动滚动：指针停在日志区上/下沿外时按帧持续滚动并延伸选区
   // （指针不动时宿主不再发 mouse 事件，必须帧泵驱动；随组件卸载自动注销）。
-  onFrame(() => {
+  if (hasAppFeature("ui.selection")) onFrame(() => {
     if (!logDragging || logDragPos === null) return;
     const m = logMetrics();
     const { x, y } = logDragPos;
@@ -413,7 +433,7 @@ export function ReceivePane() {
           style={{ height: logView.rows.length * lineH() + 8, translateY: -logScroll.value }}
         >
           {visibleRows().map(({ row, index }) => {
-            const rect = logSelRect(row, index);
+            const rect = hasAppFeature("ui.selection") ? logSelRect(row, index) : null;
             return (
               <View class="absolute left-0 right-0" style={{ insetT: index * lineH(), height: lineH() }}>
                 {rect !== null ? (
@@ -711,7 +731,7 @@ export function SendPane() {
               height={56}
               monoSize={fontSize.value}
               placeholder={() => t("send.placeholder")}
-              selRegion={sendFieldRegion}
+              selRegion={hasAppFeature("ui.selection") ? sendFieldRegion : undefined}
               onHandle={(h) => {
                 field = h;
               }}

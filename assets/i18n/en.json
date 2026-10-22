@@ -169,5 +169,13 @@
     "importCanceled": "Import canceled",
     "importFailed": "Import failed",
     "persistFailed": "Failed to save settings"
+  },
+  "keyboard": {
+    "title": "Keys",
+    "shift": "Shift",
+    "space": "Space",
+    "Backspace": "Delete",
+    "Enter": "Enter",
+    "close": "Hide"
   }
 }

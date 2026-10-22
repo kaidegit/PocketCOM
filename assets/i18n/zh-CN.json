@@ -169,5 +169,13 @@
     "importCanceled": "已取消导入",
     "importFailed": "导入失败",
     "persistFailed": "设置保存失败"
+  },
+  "keyboard": {
+    "title": "键盘",
+    "shift": "大小写",
+    "space": "空格",
+    "Backspace": "退格",
+    "Enter": "回车",
+    "close": "收起"
   }
 }

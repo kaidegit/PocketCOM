@@ -23,6 +23,7 @@ import { PopupLayer, closePopup, popupOpen, popupWheel, textFieldMouse } from ".
 import { SettingsModal, closeSettingsModal, modalWheel, settingsFieldMouse, settingsOpen } from "./settings-modal";
 import { pumpSession, refreshPorts, comAvailable, sendTermBytes, terminal, uiMode } from "./session";
 import { t } from "./i18n";
+import { SoftKeyboard, closeKeyboard, keyboardOpen, keyboardHit } from "./soft-keyboard";
 import { strToBytes } from "../core/codec";
 
 /** svc 键名别名：小写/口语名 → 控件层 Pascal 名（宿主 --key 脚本与
@@ -76,6 +77,7 @@ export default () => {
         activeField.value?.onCh(ev.s ?? "");
         break;
       case "paste":
+        if (!hasAppFeature("ui.clipboard")) break;
         if (hasAppFeature("terminal") && termWantsKeys()) {
           sendTermBytes(terminal!.pasteBytes(ev.text ?? ""));
           break;
@@ -91,6 +93,10 @@ export default () => {
         // on_key_down 路径才做 Pascal 化）；svc 是 app 级协议，统一在这里收敛。
         const k = KEY_ALIAS[(ev.k ?? "").toLowerCase()] ?? ev.k;
         if (k === "Escape") {
+          if (hasAppFeature("ui.soft-keyboard") && keyboardOpen()) {
+            closeKeyboard();
+            break;
+          }
           // Escape：先收下拉弹层，再收设置弹窗（丢弃草稿）；终端直发态发给
           // 远端；否则清 IME preedit 并借焦
           if (popupOpen()) {
@@ -111,7 +117,7 @@ export default () => {
         }
         // 选中复制：宿主 Cmd+C 以 "Copy" 键行到达。优先级：终端选区 >
         // 活跃文本域选区 > 接收区日志选区；都没有则原样走后续按键路由。
-        if (k === "Copy") {
+        if (hasAppFeature("ui.clipboard") && hasAppFeature("ui.shortcuts") && k === "Copy") {
           if (hasAppFeature("terminal") && uiMode.value === "terminal" && termHasSelection()) {
             svc?.send({ t: "copy", text: termSelectionText() });
             break;
@@ -128,11 +134,11 @@ export default () => {
         }
         if (hasAppFeature("terminal") && termWantsKeys()) {
           // Shift+PageUp/PageDown 本地滚动回滚；其余按键直发（SPEC §3.4）
-          if (k === "PageUp" && mods.sh) {
+          if (hasAppFeature("ui.shortcuts") && k === "PageUp" && mods.sh) {
             termScrollPage(-1);
             break;
           }
-          if (k === "PageDown" && mods.sh) {
+          if (hasAppFeature("ui.shortcuts") && k === "PageDown" && mods.sh) {
             termScrollPage(1);
             break;
           }
@@ -149,6 +155,10 @@ export default () => {
         lastMouse.x = x;
         lastMouse.y = y;
         const down = ev.d ?? false;
+        if (hasAppFeature("ui.soft-keyboard") && keyboardHit(x, y)) {
+          focusNode(hitFocusable(x, y));
+          break;
+        }
         const inTermArea =
           hasAppFeature("terminal") && uiMode.value === "terminal" &&
           !overlayOpen() &&
@@ -157,9 +167,10 @@ export default () => {
         // 右键：不参与选区/焦点路由。终端模式 = 有选区时按下即复制；收发
         // 模式 = 接收区弹上下文菜单（复制/全选）。浮层打开时忽略。
         if (ev.b === 2) {
+          if (!hasAppFeature("ui.context-menu")) break;
           if (down && !overlayOpen()) {
             if (hasAppFeature("terminal") && inTermArea) {
-              if (termHasSelection()) svc?.send({ t: "copy", text: termSelectionText() });
+              if (hasAppFeature("ui.clipboard") && termHasSelection()) svc?.send({ t: "copy", text: termSelectionText() });
             } else if (uiMode.value === "transfer") {
               logContextMenu(x, y);
             }
@@ -170,7 +181,7 @@ export default () => {
           // 终端区：按下/拖动/抬起驱动选区与借焦；hover 聚焦照常——网格根
           // View 是 focusable 命中体，CIRCLE press 落到它（借焦清文本域），
           // 避免按下事件落到陈旧焦点控件上。
-          termMouseMove(x, y, down);
+          if (hasAppFeature("ui.selection")) termMouseMove(x, y, down);
           focusNode(hitFocusable(x, y));
           break;
         }
@@ -178,7 +189,7 @@ export default () => {
         // 由按下时认领的一方接管（跨区不换目标）；下拉弹层打开时不参与。
         // 设置弹窗打开时只认弹窗内的回滚行数输入框——textFieldMouse 是纯
         // 几何命中，会把遮罩下方的输入框也认领走。
-        if (!popupOpen()) {
+        if (hasAppFeature("ui.selection") && !popupOpen()) {
           if (settingsOpen()) {
             if (settingsFieldMouse(x, y, down)) {
               focusNode(hitFocusable(x, y));
@@ -267,6 +278,7 @@ export default () => {
       <PopupLayer />
       {/* "应用配置"设置模态弹窗（Portal 全屏遮罩，草稿模式） */}
       <SettingsModal />
+      {hasAppFeature("ui.soft-keyboard") ? <SoftKeyboard /> : null}
     </View>
   );
 };

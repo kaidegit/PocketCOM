@@ -129,31 +129,73 @@
       ]
     },
     "ui.selection": {
-      "status": "planned"
+      "status": "implemented",
+      "modules": [
+        "app/textsel.ts"
+      ]
     },
     "ui.clipboard": {
-      "status": "planned"
+      "status": "implemented",
+      "i18n": [
+        "menu.copy"
+      ]
     },
     "ui.context-menu": {
-      "status": "planned"
+      "status": "implemented",
+      "i18n": [
+        "menu.selectAll"
+      ],
+      "requires": [
+        "ui.selection"
+      ]
     },
     "ui.shortcuts": {
-      "status": "planned"
+      "status": "implemented"
     },
     "ui.language-switch": {
-      "status": "planned"
+      "status": "implemented",
+      "modules": [
+        "app/locale.ts"
+      ],
+      "i18n": [
+        "settings.language",
+        "settings.langName"
+      ]
     },
     "ui.theme-switch": {
-      "status": "planned"
+      "status": "implemented",
+      "i18n": [
+        "settings.theme",
+        "settings.themeLight",
+        "settings.themeDark"
+      ]
     },
     "ui.theme-system": {
-      "status": "planned"
+      "status": "implemented",
+      "i18n": [
+        "settings.themeSystem"
+      ],
+      "requires": [
+        "ui.theme-switch"
+      ]
     },
     "ui.font-size-switch": {
-      "status": "planned"
+      "status": "implemented",
+      "i18n": [
+        "settings.fontSize",
+        "settings.fontSizeSmall",
+        "settings.fontSizeMedium",
+        "settings.fontSizeLarge"
+      ]
     },
     "ui.soft-keyboard": {
-      "status": "planned"
+      "status": "implemented",
+      "modules": [
+        "app/soft-keyboard.tsx"
+      ],
+      "i18n": [
+        "keyboard"
+      ]
     }
   },
   "profiles": {
@@ -164,7 +206,16 @@
       "transport.tcp-client": true,
       "transport.tcp-server": true,
       "transport.udp": true,
-      "transport.websocket": true
+      "transport.websocket": true,
+      "ui.selection": true,
+      "ui.clipboard": true,
+      "ui.context-menu": true,
+      "ui.shortcuts": true,
+      "ui.language-switch": true,
+      "ui.theme-switch": true,
+      "ui.theme-system": true,
+      "ui.font-size-switch": true,
+      "ui.soft-keyboard": true
     },
     "aic-diagnostic": {
       "terminal": false,
@@ -173,7 +224,16 @@
       "transport.tcp-client": false,
       "transport.tcp-server": false,
       "transport.udp": false,
-      "transport.websocket": false
+      "transport.websocket": false,
+      "ui.selection": false,
+      "ui.clipboard": false,
+      "ui.context-menu": false,
+      "ui.shortcuts": false,
+      "ui.language-switch": false,
+      "ui.theme-switch": false,
+      "ui.theme-system": false,
+      "ui.font-size-switch": false,
+      "ui.soft-keyboard": false
     },
     "terminal-on": {
       "terminal": true,
@@ -182,7 +242,16 @@
       "transport.tcp-client": true,
       "transport.tcp-server": true,
       "transport.udp": true,
-      "transport.websocket": true
+      "transport.websocket": true,
+      "ui.selection": true,
+      "ui.clipboard": true,
+      "ui.context-menu": true,
+      "ui.shortcuts": true,
+      "ui.language-switch": true,
+      "ui.theme-switch": true,
+      "ui.theme-system": true,
+      "ui.font-size-switch": true,
+      "ui.soft-keyboard": true
     },
     "terminal-off": {
       "terminal": false,
@@ -191,7 +260,16 @@
       "transport.tcp-client": true,
       "transport.tcp-server": true,
       "transport.udp": true,
-      "transport.websocket": true
+      "transport.websocket": true,
+      "ui.selection": true,
+      "ui.clipboard": true,
+      "ui.context-menu": true,
+      "ui.shortcuts": true,
+      "ui.language-switch": true,
+      "ui.theme-switch": true,
+      "ui.theme-system": true,
+      "ui.font-size-switch": true,
+      "ui.soft-keyboard": true
     },
     "mcp-on": {
       "terminal": false,
@@ -200,7 +278,16 @@
       "transport.tcp-client": true,
       "transport.tcp-server": true,
       "transport.udp": true,
-      "transport.websocket": true
+      "transport.websocket": true,
+      "ui.selection": true,
+      "ui.clipboard": true,
+      "ui.context-menu": true,
+      "ui.shortcuts": true,
+      "ui.language-switch": true,
+      "ui.theme-switch": true,
+      "ui.theme-system": true,
+      "ui.font-size-switch": true,
+      "ui.soft-keyboard": true
     },
     "mcp-off": {
       "terminal": false,
@@ -209,7 +296,16 @@
       "transport.tcp-client": true,
       "transport.tcp-server": true,
       "transport.udp": true,
-      "transport.websocket": true
+      "transport.websocket": true,
+      "ui.selection": true,
+      "ui.clipboard": true,
+      "ui.context-menu": true,
+      "ui.shortcuts": true,
+      "ui.language-switch": true,
+      "ui.theme-switch": true,
+      "ui.theme-system": true,
+      "ui.font-size-switch": true,
+      "ui.soft-keyboard": true
     },
     "transport-all": {
       "terminal": false,
@@ -218,7 +314,16 @@
       "transport.tcp-client": true,
       "transport.tcp-server": true,
       "transport.udp": true,
-      "transport.websocket": true
+      "transport.websocket": true,
+      "ui.selection": true,
+      "ui.clipboard": true,
+      "ui.context-menu": true,
+      "ui.shortcuts": true,
+      "ui.language-switch": true,
+      "ui.theme-switch": true,
+      "ui.theme-system": true,
+      "ui.font-size-switch": true,
+      "ui.soft-keyboard": true
     },
     "transport-serial": {
       "terminal": false,
@@ -227,7 +332,52 @@
       "transport.tcp-client": false,
       "transport.tcp-server": false,
       "transport.udp": false,
-      "transport.websocket": false
+      "transport.websocket": false,
+      "ui.selection": true,
+      "ui.clipboard": true,
+      "ui.context-menu": true,
+      "ui.shortcuts": true,
+      "ui.language-switch": true,
+      "ui.theme-switch": true,
+      "ui.theme-system": true,
+      "ui.font-size-switch": true,
+      "ui.soft-keyboard": true
+    },
+    "ui-on": {
+      "terminal": false,
+      "mcp.server": false,
+      "transport.serial": true,
+      "transport.tcp-client": true,
+      "transport.tcp-server": true,
+      "transport.udp": true,
+      "transport.websocket": true,
+      "ui.selection": true,
+      "ui.clipboard": true,
+      "ui.context-menu": true,
+      "ui.shortcuts": true,
+      "ui.language-switch": true,
+      "ui.theme-switch": true,
+      "ui.theme-system": true,
+      "ui.font-size-switch": true,
+      "ui.soft-keyboard": true
+    },
+    "ui-off": {
+      "terminal": false,
+      "mcp.server": false,
+      "transport.serial": true,
+      "transport.tcp-client": true,
+      "transport.tcp-server": true,
+      "transport.udp": true,
+      "transport.websocket": true,
+      "ui.selection": false,
+      "ui.clipboard": false,
+      "ui.context-menu": false,
+      "ui.shortcuts": false,
+      "ui.language-switch": false,
+      "ui.theme-switch": false,
+      "ui.theme-system": false,
+      "ui.font-size-switch": false,
+      "ui.soft-keyboard": false
     }
   }
 }

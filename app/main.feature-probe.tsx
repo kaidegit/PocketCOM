@@ -4,6 +4,9 @@ import App from "./app";
 import { transportKinds } from "./transports";
 import { mount } from "@pocketjs/framework";
 import { setViewport } from "./layout";
+import { locale } from "./i18n";
+import { theme, systemAppearance } from "./theme";
+import { fontSize } from "./session";
 import { connType, setConnType, tcpHost, tcpsPort, udpHost, wsUrl, portPath, terminal, setUiMode, uiMode, mcpEnabled, mcpPort, mcpToken, mcpState, syncMcpServer, pumpSession } from "./session";
 
 if (hasAppFeature("terminal")) {
@@ -42,5 +45,9 @@ if (!hasAppFeature("transport.websocket")) {
 }
 if (connType.value !== initialKind || !transportKinds.includes(initialKind))
   throw new Error("disabled transport accepted by selector");
+if (!hasAppFeature("ui.language-switch") && locale.value !== "zh-CN") throw new Error("disabled language switch changed locale");
+if (!hasAppFeature("ui.theme-switch") && theme.value.bg !== "#0e1116") throw new Error("disabled theme switch changed theme");
+if (!hasAppFeature("ui.theme-system") && systemAppearance !== undefined) throw new Error("disabled system theme allocated state");
+if (!hasAppFeature("ui.font-size-switch") && fontSize.value !== 14) throw new Error("disabled font switch changed size");
 setViewport(480, 272);
 mount(App);

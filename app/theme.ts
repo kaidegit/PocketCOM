@@ -1,3 +1,4 @@
+import { hasAppFeature } from "@pocketcom/features";
 // app/theme.ts — 设计令牌（SPEC §3.7）。
 // 深色/浅色双套令牌；三态模式：浅色 / 深色 / 跟随系统（系统外观由宿主
 // appearance 事件经 app/session 注入，见 setSystemAppearance）；样式一律经
@@ -98,7 +99,7 @@ const dark: ThemeTokens = {
   termPalette: TERM_PALETTE,
 };
 
-const light: ThemeTokens = {
+const light: ThemeTokens | undefined = hasAppFeature("ui.theme-switch") ? {
   bg: "#eef0f4",
   panelBg: "#ffffff",
   panelBorder: "#d8dde6",
@@ -127,27 +128,26 @@ const light: ThemeTokens = {
   termCursor: "#2f6fdd",
   termSelection: "#2f6fdd33",
   termPalette: TERM_PALETTE,
-};
-
-const THEMES: Record<Exclude<ThemeMode, "system">, ThemeTokens> = { dark, light };
+} : undefined;
 
 /** 主题模式（跟随系统 = 宿主上报的系统外观，M2 起）。 */
 export const themeMode = ref<ThemeMode>("dark");
 
 /** 宿主上报的系统外观（appearance 事件驱动；缺省按浅色）。 */
-export const systemAppearance = ref<"light" | "dark">("light");
+export const systemAppearance = hasAppFeature("ui.theme-system") ? ref<"light" | "dark">("light") : undefined!;
 
 /** 宿主 appearance 事件入口（app/session 的事件泵调用）。 */
 export function setSystemAppearance(v: "light" | "dark"): void {
-  systemAppearance.value = v;
+  if (hasAppFeature("ui.theme-system")) systemAppearance.value = v;
 }
 
 /** 当前生效令牌：light/dark 直接取，system 跟随宿主上报的外观。 */
 export const theme = computed<ThemeTokens>(() => {
-  const mode = themeMode.value;
-  if (mode === "light") return THEMES.light;
-  if (mode === "dark") return THEMES.dark;
-  return THEMES[systemAppearance.value];
+  if (hasAppFeature("ui.theme-switch")) {
+    if (themeMode.value === "light") return light!;
+    if (hasAppFeature("ui.theme-system") && themeMode.value === "system") return systemAppearance.value === "light" ? light! : dark;
+  }
+  return dark;
 });
 
 /** 终端色编码 → CSS 色（编码见 core/term.ts：默认哨兵回退 fallback；

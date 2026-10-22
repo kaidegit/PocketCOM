@@ -1,3 +1,4 @@
+import { hasAppFeature } from "@pocketcom/features";
 // app/widgets.tsx — PocketCOM 基础控件集（重写版）。
 // 约束（AGENTS.md）：直接返回 JSX 的函数组件；无 DOM/无运行时 CSS；
 // class 只用编译期字面量，颜色一律走 theme token 的 style 绑定。
@@ -523,33 +524,36 @@ interface FieldSelEntry {
   up(): void;
 }
 
-const fieldSelEntries = new Set<FieldSelEntry>();
+const fieldSelEntries = hasAppFeature("ui.selection") ? new Set<FieldSelEntry>() : undefined!;
 /** 按下沿认领的文本域：拖拽/抬起跨区仍归它（标准文本选择语义）。 */
 let fieldSelDrag: FieldSelEntry | null = null;
 
 /** app.tsx 的 mouse 路由入口。返回是否被文本域命中/接管；弹层打开时由
  *  调用方先行屏蔽（遮罩命中优先）。 */
 export function textFieldMouse(x: number, y: number, down: boolean): boolean {
-  if (!down) {
-    const e = fieldSelDrag;
-    if (e !== null) {
-      fieldSelDrag = null;
-      e.up();
+  if (hasAppFeature("ui.selection")) {
+    if (!down) {
+      const e = fieldSelDrag;
+      if (e !== null) {
+        fieldSelDrag = null;
+        e.up();
+        return true;
+      }
+      return false;
+    }
+    if (fieldSelDrag !== null) {
+      fieldSelDrag.drag(x, y);
       return true;
+    }
+    for (const e of fieldSelEntries) {
+      const r = e.region();
+      if (r !== null && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
+        fieldSelDrag = e;
+        e.down(x, y);
+        return true;
+      }
     }
     return false;
-  }
-  if (fieldSelDrag !== null) {
-    fieldSelDrag.drag(x, y);
-    return true;
-  }
-  for (const e of fieldSelEntries) {
-    const r = e.region();
-    if (r !== null && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
-      fieldSelDrag = e;
-      e.down(x, y);
-      return true;
-    }
   }
   return false;
 }
@@ -572,8 +576,8 @@ export function TextField(props: {
   const text = ref(props.initial ?? "");
   const caret = ref((props.initial ?? "").length);
   /** 拖动选区两端（text 字符索引；相等 = 无选区）。 */
-  const selAnchor = ref((props.initial ?? "").length);
-  const selHead = ref((props.initial ?? "").length);
+  const selAnchor = hasAppFeature("ui.selection") ? ref((props.initial ?? "").length) : undefined!;
+  const selHead = hasAppFeature("ui.selection") ? ref((props.initial ?? "").length) : undefined!;
   /** IME 组合串（未提交，仅显示；提交经 ch 行到达）。 */
   const preedit = ref("");
   const scrollY = ref(0);
@@ -650,13 +654,16 @@ export function TextField(props: {
 
   /** 归一化选区 [from, to)；两端相等（无选区）返回 null。 */
   const selRange = (): [number, number] | null => {
-    const a = selAnchor.value;
-    const b = selHead.value;
-    return a === b ? null : a < b ? [a, b] : [b, a];
+    if (hasAppFeature("ui.selection")) {
+      const a = selAnchor.value;
+      const b = selHead.value;
+      return a === b ? null : a < b ? [a, b] : [b, a];
+    }
+    return null;
   };
   /** 选区收拢（消除；端点保持不动）。 */
   const collapseSelection = (): void => {
-    selHead.value = selAnchor.value;
+    if (hasAppFeature("ui.selection")) selHead.value = selAnchor.value;
   };
   /** 有选区时删除并返回 true（退格/删除/输入替换共用）。 */
   const deleteSelection = (): boolean => {
@@ -683,15 +690,18 @@ export function TextField(props: {
   /** 屏幕坐标 → text 字符索引（命中区外/未给 selRegion 时保持光标原位）。
    *  命中区是控件根盒：内容起点 = 根盒 + 1px 边框 + 内边距；行含 scrollY。 */
   const posAt = (gx: number, gy: number): number => {
-    const r = props.selRegion?.() ?? null;
-    if (r === null) return caret.value;
-    const ls = text.value.split("\n");
-    let line = Math.floor((gy - (r.y + 1 + padT) + scrollY.value) / lineH);
-    line = Math.max(0, Math.min(ls.length - 1, line));
-    let start = 0;
-    for (let i = 0; i < line; i++) start += ls[i]!.length + 1;
-    const col = monoColAt(ls[line]!, gx - (r.x + 1 + FIELD_PAD_X), (s) => measureMono(s, monoSlot));
-    return Math.min(start + col, text.value.length);
+    if (hasAppFeature("ui.selection")) {
+      const r = props.selRegion?.() ?? null;
+      if (r === null) return caret.value;
+      const ls = text.value.split("\n");
+      let line = Math.floor((gy - (r.y + 1 + padT) + scrollY.value) / lineH);
+      line = Math.max(0, Math.min(ls.length - 1, line));
+      let start = 0;
+      for (let i = 0; i < line; i++) start += ls[i]!.length + 1;
+      const col = monoColAt(ls[line]!, gx - (r.x + 1 + FIELD_PAD_X), (s) => measureMono(s, monoSlot));
+      return Math.min(start + col, text.value.length);
+    }
+    return caret.value;
   };
 
   /** 鼠标按下：清 IME、光标定位到点击处、选区锚点就位（未拖动即无选区）。 */
@@ -755,7 +765,7 @@ export function TextField(props: {
     const t = text.value;
     const c = caret.value;
     // Cmd/Ctrl+Enter：发送（不插换行）
-    if (k === "Enter" && (mods.cmd || mods.ctl)) {
+    if (hasAppFeature("ui.shortcuts") && k === "Enter" && (mods.cmd || mods.ctl)) {
       props.onSubmit?.();
       return;
     }
@@ -824,8 +834,10 @@ export function TextField(props: {
       insert(s);
     },
     onPaste: (s) => {
-      preedit.value = "";
-      insert(s);
+      if (hasAppFeature("ui.clipboard")) {
+        preedit.value = "";
+        insert(s);
+      }
     },
     onIme: (s) => {
       preedit.value = s ?? "";
@@ -843,8 +855,10 @@ export function TextField(props: {
     setText: (s) => {
       text.value = s;
       caret.value = s.length;
-      selAnchor.value = s.length;
-      selHead.value = s.length;
+      if (hasAppFeature("ui.selection")) {
+        selAnchor.value = s.length;
+        selHead.value = s.length;
+      }
       preedit.value = "";
       caretPulse();
       revealCaret();
@@ -863,7 +877,7 @@ export function TextField(props: {
 
   // 拖动选中命中区注册（未给 selRegion 的实例不参与）；组件卸载时摘除，
   // 防止切连接类型/切模式后残留幽灵命中区。
-  if (props.selRegion) {
+  if (hasAppFeature("ui.selection") && props.selRegion) {
     const entry: FieldSelEntry = { region: props.selRegion, down: selDown, drag: selDrag, up: () => {} };
     fieldSelEntries.add(entry);
     onScopeDispose(() => {
@@ -890,7 +904,7 @@ export function TextField(props: {
       {/* 内容画布：行绝对定位（规避深层 flex-col 堆叠怪癖），translateY 滚动。
           选区高亮先画（在文字下层），随后占位符与各行文本。 */}
       <View class="absolute" style={{ insetL: FIELD_PAD_X, insetR: FIELD_PAD_X, insetT: padT, translateY: -scrollY.value }}>
-        {selRects().map((r) => (
+        {(hasAppFeature("ui.selection") ? selRects() : []).map((r) => (
           <View
             class="absolute"
             style={{ insetT: r.t, insetL: r.l, width: r.w, height: lineH, bgColor: theme.value.selection }}

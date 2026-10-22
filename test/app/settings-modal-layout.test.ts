@@ -8,6 +8,7 @@ import {
   MODAL_MARGIN,
   MODAL_W,
   modalFrame,
+  modalGeometry,
   modalRowY,
 } from "../../app/settings-modal-layout";
 
@@ -53,4 +54,14 @@ describe("settings-modal-layout.modalRowY", () => {
     expect(modalRowY(3)).toBe(40 + 132);
     expect(modalRowY(4)).toBe(40 + 176);
   });
+});
+
+test("feature-disabled modal rows collapse with matching frame bounds", () => {
+  const all = modalGeometry([true, true, true, true, true]);
+  expect(all.contentH).toBe(MODAL_CONTENT_H);
+  expect(all.rowY).toEqual([0,1,2,3,4].map(modalRowY));
+  const compact = modalGeometry([false, false, false, true, false]);
+  expect(compact.rowY[3]).toBe(modalRowY(0));
+  expect(compact.contentH).toBeLessThan(all.contentH);
+  expect(modalFrame(480, 272, compact.contentH).h).toBe(compact.contentH);
 });

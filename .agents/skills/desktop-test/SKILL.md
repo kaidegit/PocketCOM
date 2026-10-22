@@ -14,7 +14,7 @@ npm run typecheck       # tsc --noEmit；tsconfig 严格度对齐上游，不要
 
 `test/app/features.test.ts` 覆盖统一 feature 配置校验、依赖冲突/循环、planned 登记项禁止配置/调用/拥有资源、AST 特化、
 作用域与动态调用拒绝、Vue 转换前的资源移除、热缓存隔离、模块副作用保护与终端/MCP 启动路径裁剪、MCP 控件/文案的开关隔离。
-`npm run probe:features` 运行真实 QuickJS terminal 开/关对比，MCP 对比用 `npm run probe:features -- --feature mcp.server`，传输对比用 `npm run probe:features -- --feature transport`，详见 skill `mem-probe`。
+`npm run probe:features` 运行真实 QuickJS terminal 开/关对比，MCP 对比用 `npm run probe:features -- --feature mcp.server`，传输对比用 `npm run probe:features -- --feature transport`，UI 对比用 `npm run probe:features -- --feature ui`，详见 skill `mem-probe`。
 
 `test/app/transport-features.test.ts` 覆盖每种协议单独启用、全开/全关、面板/字典特化、参数 ref 与配置保留、网络宿主无串口 ops 的独立探测、直接会话及桥入口拒绝关闭协议。
 
@@ -92,3 +92,10 @@ send → read 前缀断言（`[RX]`/`[SYS]`/i18n 手动前缀）→ force 语义
 ## UI 金样测试
 
 PocketJS headless Bun host（byte-exact PNG golden）待落地；`--screenshot` 输出非确定性，不做 byte-exact 金样。
+
+## UI feature 裁剪验证
+
+`test/app/ui-features.test.ts` 覆盖 UI 全开/全关、九项逐项关闭的 Vapor 编译、控件/文案移除、
+导入配置不激活禁用设置且导出保留、系统主题状态、普通文本编辑/剪贴板/发送快捷键与软键盘输入。
+`settings-modal-layout.test.ts` 覆盖禁用行收拢及内容高/边界同步。软键盘真机 e2e 与坐标见
+`docs/coords.md` 的软键盘条目，`docs/ui-feature-heap.md` 记录离板测量条件和结果。

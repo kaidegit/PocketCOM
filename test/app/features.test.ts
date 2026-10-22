@@ -64,7 +64,7 @@ describe("product features", () => {
   test("product profiles expose only integrated features", async () => {
     for (const profile of Object.keys(registry.profiles)) {
       const product = await load(profile);
-      expect(Object.keys(product.values)).toEqual(["terminal", "mcp.server", "transport.serial", "transport.tcp-client", "transport.tcp-server", "transport.udp", "transport.websocket"]);
+      expect(Object.keys(product.values).sort()).toEqual(Object.entries(registry.features).filter(([, definition]) => definition.status === "implemented").map(([name]) => name).sort());
       for (const [name, definition] of Object.entries(product.definitions)) if (definition.status === "planned") {
         expect(product.values).not.toHaveProperty(name);
         expect(definition.modules).toBeUndefined();

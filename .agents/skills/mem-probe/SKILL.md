@@ -41,6 +41,7 @@ npm run probe:aic -- path/to/other.pocket --limit 4m   # 测其它包 / 改 Quic
 npm run probe:features                      # terminal A/B
 npm run probe:features -- --feature mcp.server # MCP A/B，固定 terminal=false
 npm run probe:features -- --feature transport  # 传输 A/B，其它功能固定
+npm run probe:features -- --feature ui         # UI A/B，其它功能固定
 ```
 
 统一配置在根目录 `pocket.features.json`；目录中的裁剪状态和 profile 值以此文件为准，`planned` 仅登记，不能配置或用于编译条件。
@@ -103,3 +104,12 @@ caps_fails=…)`，stdout 最后一个成功 sample 定位失败阶段。板上�
 - 失败行走 stderr、采样走 stdout，管道重定向时顺序会交错——分开存文件或直接看终端。
 - stderr 的 CHECK 行里 `#call` 是完整调用表达式，看括号里的 caps 计数即可。
 - 探针的 turn 为空输入、无 vsync：稳态数字与板上（GC 空闲节律不同）略有差异，正常。
+
+## UI 裁剪对比
+
+`--feature ui` 使用 `ui-on` / `ui-off`，开关只查 `pocket.features.json`；结果在
+`dist/ui-feature-heap/report.json`，测量说明见 `docs/ui-feature-heap.md`。固定相同 terminal/MCP/
+传输配置及空闲共享 App 边界，每组独立进程三次、每次 120 turns。收据核对选区几何、语言切换和
+软键盘模块的移除；QuickJS 入口断言关闭后的语言/主题/字号固定值和系统主题状态不分配。
+本实验没有聚焦输入域、展开软键盘、打开设置、收发历史或终端网格；反映编译代码、资源及空闲状态
+的差值，交互时分配的额外状态不在此读数内。正式 AIC 入口与真机验收边界保持原约定。

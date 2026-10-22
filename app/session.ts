@@ -214,9 +214,9 @@ export function mcpUrl(): string {
 function buildMcpConfigSnapshot(): Record<string, unknown> {
   if (hasAppFeature("mcp.server")) {
     return {
-      language: locale.value,
-      theme: themeMode.value,
-      fontSize: fontSize.value,
+      language: hasAppFeature("ui.language-switch") ? locale.value : configBase.language,
+      theme: hasAppFeature("ui.theme-switch") ? themeMode.value : configBase.theme,
+      fontSize: hasAppFeature("ui.font-size-switch") ? fontSize.value : configBase.fontSize,
       terminal: { scrollbackLines: scrollbackLines.value },
       receive: {
         hex: rxHex.value,
@@ -241,12 +241,12 @@ function buildMcpConfigSnapshot(): Record<string, unknown> {
 function applyMcpConfigPatch(patch: McpConfigPatch): void {
   if (hasAppFeature("mcp.server")) {
     let needFormat = false;
-    if (patch.language !== undefined && patch.language !== locale.value) {
+    if (hasAppFeature("ui.language-switch") && patch.language !== undefined && patch.language !== locale.value) {
       setLocale(patch.language);
       needFormat = true;
     }
-    if (patch.theme !== undefined) themeMode.value = patch.theme;
-    if (patch.fontSize !== undefined) {
+    if (hasAppFeature("ui.theme-switch") && patch.theme !== undefined) themeMode.value = hasAppFeature("ui.theme-system") ? patch.theme : patch.theme === "system" ? "dark" : patch.theme;
+    if (hasAppFeature("ui.font-size-switch") && patch.fontSize !== undefined) {
       fontSize.value = patch.fontSize;
       needFormat = true;
     }
@@ -688,9 +688,9 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null;
 function buildConfigJson(): string {
   const cfg: AppConfig = {
     ...configBase,
-    language: locale.value,
-    theme: themeMode.value,
-    fontSize: fontSize.value,
+    language: hasAppFeature("ui.language-switch") ? locale.value : configBase.language,
+    theme: hasAppFeature("ui.theme-switch") ? themeMode.value : configBase.theme,
+    fontSize: hasAppFeature("ui.font-size-switch") ? fontSize.value : configBase.fontSize,
     terminal: { scrollbackLines: scrollbackLines.value },
     receive: {
       hex: rxHex.value,
@@ -784,9 +784,9 @@ function reportCfgResult(raw: string | null, doneKey: string, cancelKey: string)
 /** 把归一化配置灌入各响应式状态（启动加载 / 导入共用）。 */
 function applyConfig(cfg: AppConfig): void {
   configBase = cfg;
-  setLocale(cfg.language as Locale);
-  themeMode.value = cfg.theme;
-  fontSize.value = cfg.fontSize;
+  if (hasAppFeature("ui.language-switch")) setLocale(cfg.language as Locale);
+  if (hasAppFeature("ui.theme-switch")) themeMode.value = hasAppFeature("ui.theme-system") ? cfg.theme : cfg.theme === "system" ? "dark" : cfg.theme;
+  if (hasAppFeature("ui.font-size-switch")) fontSize.value = cfg.fontSize;
   setScrollbackLines(cfg.terminal.scrollbackLines);
   setHistoryLines(cfg.receive.historyLines);
   rxHex.value = cfg.receive.hex;
@@ -857,9 +857,9 @@ if (comAvailable) {
 
 // 受管字段 → 防抖回写。
 for (const source of [
-  locale,
-  themeMode,
-  fontSize,
+  ...(hasAppFeature("ui.language-switch") ? [locale] : []),
+  ...(hasAppFeature("ui.theme-switch") ? [themeMode] : []),
+  ...(hasAppFeature("ui.font-size-switch") ? [fontSize] : []),
   ...(hasAppFeature("terminal") ? [scrollbackLines] : []),
   historyLines,
   rxHex,
@@ -906,7 +906,9 @@ export function pumpSession(nowMs: number): void {
     const events: ComEvent[] = com.poll();
     const connEvents: ComEvent[] = [];
     for (const ev of events) {
-      if (ev.t === "appearance") setSystemAppearance(ev.v);
+      if (ev.t === "appearance") {
+        if (hasAppFeature("ui.theme-system")) setSystemAppearance(ev.v);
+      }
       else if (ev.t === "mcp") {
         if (hasAppFeature("mcp.server")) mcpState.value = { on: ev.on, clients: ev.clients };
       } else connEvents.push(ev);

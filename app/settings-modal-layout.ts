@@ -38,8 +38,17 @@ export interface ModalFrame {
 
 /** 弹窗框几何（纯函数）：宽 MODAL_W、高按内容，居中并按边距夹取到视口内
  *  （嵌入式 480×272 等小视口下缩到视口内，内容走内部滚动）。 */
-export function modalFrame(vw: number, vh: number): ModalFrame {
+export function modalFrame(vw: number, vh: number, contentH = MODAL_CONTENT_H): ModalFrame {
   const w = Math.min(MODAL_W, Math.max(0, vw - MODAL_MARGIN * 2));
-  const h = Math.min(MODAL_CONTENT_H, Math.max(0, vh - MODAL_MARGIN * 2));
+  const h = Math.min(contentH, Math.max(0, vh - MODAL_MARGIN * 2));
   return { x: Math.floor((vw - w) / 2), y: Math.floor((vh - h) / 2), w, h };
+}
+
+/** Collapse disabled rows, preserving the desktop geometry when all are enabled. */
+export function modalGeometry(enabled: readonly boolean[]) {
+  const rowY = enabled.map((_, i) => modalRowY(enabled.slice(0, i).filter(Boolean).length));
+  const divY = modalRowY(enabled.filter(Boolean).length - 1) + MODAL_ROW_H + 12;
+  const ioY = divY + 13;
+  const btnY = ioY + 42;
+  return { rowY, divY, ioY, btnY, contentH: btnY + 30 + MODAL_PAD };
 }
