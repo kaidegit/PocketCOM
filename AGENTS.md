@@ -14,7 +14,7 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 | 事项 | 位置 |
 |---|---|
 | 功能与架构权威定义 | [SPEC.md](SPEC.md) |
-| 产品 feature / terminal heap 对比 | `pocket.features.json` / `npm run probe:features`（离板实验，详见 skill `mem-probe`） |
+| 产品 feature / heap 对比 | `pocket.features.json` / `npm run probe:features`（离板实验，详见 skill `mem-probe`） |
 | 桌面构建/运行/打包 | skill `desktop-build`（.agents/skills/desktop-build/SKILL.md） |
 | 桌面测试/e2e/MCP 集成 | skill `desktop-test`（.agents/skills/desktop-test/SKILL.md） |
 | 板端构建/烧录/内存报告 | skill `aic-build`（.agents/skills/aic-build/SKILL.md） |
@@ -122,8 +122,8 @@ SPEC.md         # 功能规格（权威）
 
 ### 恢复路线（内存约束下的推进顺序）
 
-已接入统一 `pocket.features.json` 与 terminal 的编译期裁剪；`desktop` 开启，`aic-diagnostic`
-关闭；`terminal-on` / `terminal-off` 仅供共享 App 离板对比，不替代正式板端入口。产品功能
+已接入统一 `pocket.features.json` 与 terminal / mcp.server 的编译期裁剪；`desktop` 开启，`aic-diagnostic`
+关闭；`terminal-on` / `terminal-off` 和 `mcp-on` / `mcp-off` 仅供共享 App 离板对比，不替代正式板端入口。产品功能
 用 `@pocketcom/features` 的字面量 `hasAppFeature()`；产品功能目录和 profile 只以该 JSON 为准，禁止在代码、环境变量或文档中另设启停表。
 新增项可先标记 `status: "planned"`，此时不可写入 profile、调用或声明模块/文案所有权；
 接齐装配、UI、模块/文案归属和测试后改为 `implemented`，再补齐各 profile 的布尔值。详见 SPEC §4.5 与 `docs/terminal-feature-heap.md`。

@@ -1,4 +1,4 @@
-// Controlled terminal feature A/B: same shared App, AIC plan, fonts and limits.
+// Controlled product feature A/B: same shared App, AIC plan, fonts and limits.
 // No firmware build, flashing, device IO or production-entry replacement.
 import { mkdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -11,7 +11,13 @@ import { encodePocketPackage } from "../vendor/pocketjs/contracts/spec/pocket-pa
 import { compactBundle } from "../host/rtthread/build-support";
 
 const root = resolve(import.meta.dir, "..");
-const out = join(root, "dist/feature-heap");
+const args = process.argv.slice(2);
+if (args.length && (args.length !== 2 || args[0] !== "--feature" || !["terminal", "mcp.server"].includes(args[1]!)))
+  throw new Error("usage: bun tools/feature-heap.ts [--feature terminal|mcp.server]");
+const feature = args[1] ?? "terminal";
+const names = feature === "terminal" ? ["terminal-on", "terminal-off"] : ["mcp-on", "mcp-off"];
+const [onProfile, offProfile] = names as [string, string];
+const out = join(root, feature === "terminal" ? "dist/feature-heap" : "dist/mcp-feature-heap");
 mkdirSync(out, { recursive: true });
 rmSync(join(out, "sources"), { recursive: true, force: true });
 const sha = (data: string | Uint8Array) => new Bun.CryptoHasher("sha256").update(data).digest("hex");
@@ -50,8 +56,12 @@ const p = profile.value;
 const resolution = validateAndResolveBuildPlan(manifest, { target: p.id, hostExtension: pocketAicHostExtension(hashPocketAicHostProfile(p), p.tickHz) }, pocketAicHostRegistry(p));
 if (!resolution.ok) throw new Error(JSON.stringify(resolution.diagnostics));
 const plan = resolution.plan;
+const onFlags = (await loadAppFeatures(join(root, "pocket.features.json"), onProfile)).values;
+const offFlags = (await loadAppFeatures(join(root, "pocket.features.json"), offProfile)).values;
+if (!onFlags[feature] || offFlags[feature] || Object.keys(onFlags).some(key => key !== feature && onFlags[key] !== offFlags[key]))
+  throw new Error(`profiles must differ only in ${feature}`);
 const results: Record<string, any> = {};
-for (const name of ["terminal-on", "terminal-off"]) {
+for (const name of names) {
   const dir = join(out, name);
   mkdirSync(dir, { recursive: true });
   const planPath = join(dir, "plan.json");
@@ -66,6 +76,8 @@ for (const name of ["terminal-on", "terminal-off"]) {
   for (const module of [parser, view]) {
     if (receipt.modules.includes(module) !== features.values.terminal) throw new Error(`feature module graph mismatch: ${name} ${module}`);
   }
+  if (receipt.modules.includes(join(root, "core/mcp.ts")) !== features.values["mcp.server"])
+    throw new Error(`MCP module graph mismatch: ${name}`);
   const compact = await compactBundle(join(dir, `${plan.app.output}.js`), join(dir, "compact"));
   const js = new Uint8Array(await Bun.file(compact).arrayBuffer());
   const pak = new Uint8Array(await Bun.file(join(dir, `${plan.app.output}.pak`)).arrayBuffer());
@@ -85,11 +97,11 @@ for (const name of ["terminal-on", "terminal-off"]) {
     excludedModules: receipt.excludedModules, modules: receipt.modules, runs };
 }
 const comparison: Record<string, any> = {};
-for (const stage of Object.keys(results["terminal-on"].runs[0])) {
+for (const stage of Object.keys(results[onProfile].runs[0])) {
   comparison[stage] = {};
   for (const metric of ["caps_live", "caps_peak", "js", "guest_live", "guest_peak", "obj", "atoms", "shape"]) {
     const median = (profile: string) => results[profile].runs.map((run: any) => run[stage][metric]).sort((a: number, b: number) => a-b)[1];
-    const on = median("terminal-on"), off = median("terminal-off");
+    const on = median(onProfile), off = median(offProfile);
     if (on !== undefined && off !== undefined) comparison[stage][metric] = { on, off, saved: on - off, percent: (on - off) / on * 100 };
   }
 }
@@ -109,7 +121,7 @@ for (const [directory, prefix] of [[root, ""], [join(root, "vendor/pocketjs"), "
     await Bun.write(join(out, "sources", prefix, file + ".source"), content);
   }
 }
-const report = { measuredAt: new Date().toISOString(), repositoryRevision: version.trim(), pocketjsRevision: vendorVersion.trim(), bun: Bun.version,
+const report = { feature, profiles: names, measuredAt: new Date().toISOString(), repositoryRevision: version.trim(), pocketjsRevision: vendorVersion.trim(), bun: Bun.version,
   sourceHashes,
   configSha256: sha(await Bun.file(join(root, "pocket.features.json")).text()), planHash: plan.planHash,
   conditions: { viewport: [480,272], jsLimit: 5*1024*1024, capsBudget: "unlimited", turns: 120, repetitions: 3,

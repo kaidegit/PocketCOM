@@ -35,10 +35,11 @@ npm run probe:aic -- path/to/other.pocket --limit 4m   # 测其它包 / 改 Quic
 
 `--heap`/`--limit` 支持纯字节或 `512k`/`3m` 后缀；`--turns` 默认 120。
 
-## terminal feature 对比（共享 App 离板实验）
+## 产品 feature 对比（共享 App 离板实验）
 
 ```sh
-npm run probe:features
+npm run probe:features                      # terminal A/B
+npm run probe:features -- --feature mcp.server # MCP A/B，固定 terminal=false
 ```
 
 统一配置在根目录 `pocket.features.json`；目录中的裁剪状态和 profile 值以此文件为准，`planned` 仅登记，不能配置或用于编译条件。
@@ -52,6 +53,11 @@ MiSans/JetBrains Mono 和容量构建 `terminal-on` / `terminal-off`，每组独
 当前无 `com.*` 桥，测的是共享 App 的面板 + 桥不可用空态；终端开启组创建模型并保持 RX 订阅，
 但终端网格未挂载，无 IO 或历史增长。只比较这个边界，不能当成完整收发/终端或真机结果。
 正式 AIC 入口不变，不构建/烧录固件。首轮结果见 `docs/terminal-feature-heap.md`。
+
+MCP 对比使用同样边界及三次 120 turns，产物在 `dist/mcp-feature-heap/`，结果见
+`docs/mcp-feature-heap.md`。每组检查 `core/mcp.ts` 的模块收据；关闭组运行断言验证不创建
+MCP 响应式状态，启停调用为空操作。MCP 开启组表示编译包含服务功能，运行时默认开关仍关闭；
+无 com 桥，不测原生 server、客户端连接或流量缓冲占用。
 
 ## 读数
 

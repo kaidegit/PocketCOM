@@ -1,3 +1,4 @@
+import { hasAppFeature } from "@pocketcom/features";
 // app/statusbar.tsx — 底部状态栏（SPEC §3.1）：连接状态 │ 摘要 │ Rx/Tx 计数 │ MCP 状态。
 import { Text, View } from "@pocketjs/framework/components";
 import { theme } from "./theme";
@@ -45,9 +46,9 @@ export function StatusBar(props: { height: number }) {
           Tx: {fmtBytes(txCount.value)}
         </Text>
         <View class="flex-1" />
-        <Text class="text-xs" style={{ textColor: theme.value.dim }}>
+        {hasAppFeature("mcp.server") ? <Text class="text-xs" style={{ textColor: theme.value.dim }}>
           {mcpState.value.on ? `${t("mcp.on")} (${mcpState.value.clients})` : t("mcp.off")}
-        </Text>
+        </Text> : null}
       </View>
     </View>
   );

@@ -64,7 +64,7 @@ export const uiMode = ref<"transfer" | "terminal">("transfer");
 export function setUiMode(next: "transfer" | "terminal"): void {
   if (!hasAppFeature("terminal") && next === "terminal") return;
   uiMode.value = next;
-  syncMcpServer();
+  if (hasAppFeature("mcp.server")) syncMcpServer();
 }
 
 /** 终端回滚行数设置（SPEC §3.4：terminal.scrollbackLines，0–100000）。 */
@@ -152,18 +152,21 @@ export const session =
 // ---------------------------------------------------------------------------
 
 /** MCP 共享开关（用户偏好，随配置持久化；有效运行态另受终端模式门控）。 */
-export const mcpEnabled = ref(DEFAULT_CONFIG.mcp.enabled);
+export const mcpEnabled = hasAppFeature("mcp.server") ? ref(DEFAULT_CONFIG.mcp.enabled) : undefined!;
 /** MCP 监听端口（SPEC §6.1 默认 7960）。 */
-export const mcpPort = ref(DEFAULT_CONFIG.mcp.port);
+export const mcpPort = hasAppFeature("mcp.server") ? ref(DEFAULT_CONFIG.mcp.port) : undefined!;
 /** Bearer token（宿主首启随机生成 32 字节回传后持久化；0600 配置文件，
  *  导出时宿主剥离，SPEC §5.3）。 */
-export const mcpToken = ref("");
+export const mcpToken = hasAppFeature("mcp.server") ? ref("") : undefined!;
 /** MCP server 运行态（宿主经 {t:"mcp"} 事件回推；状态栏/状态工具共享）。 */
-export const mcpState = ref({ on: false, clients: 0 });
+export const mcpState = hasAppFeature("mcp.server") ? ref({ on: false, clients: 0 }) : undefined!;
 
 /** MCP 读行来源标签（i18n 注入，RX/SYS 稳定标记，SPEC §6.4）。 */
 function mcpLabels(): McpLabels {
-  return { rx: "[RX]", txManual: `[${t("source.manual")}]`, sys: "[SYS]" };
+  if (hasAppFeature("mcp.server")) {
+    return { rx: "[RX]", txManual: `[${t("source.manual")}]`, sys: "[SYS]" };
+  }
+  return undefined!;
 }
 
 /** 读行增量同步点：server 启动时归位到最新消息，agent 只看开启之后的流量。 */
@@ -171,118 +174,133 @@ let mcpLastMsgId = 0;
 
 /** 按有效运行态（开关 && 收发模式）启停 MCP server（幂等）。 */
 export function syncMcpServer(): void {
-  if (!com) return;
-  const want = shouldMcpRun(mcpEnabled.value, uiMode.value);
-  if (want && !mcpState.value.on) {
-    if (typeof com.mcpStart !== "function") return; // 旧宿主无 mcp 桥
-    const r = com.mcpStart({ port: mcpPort.value, token: mcpToken.value });
-    if (r === null) return;
-    if (r.ok) {
-      if (r.token !== mcpToken.value) {
-        mcpToken.value = r.token; // 首启生成的 token 需持久化（防抖回写）
+  if (hasAppFeature("mcp.server")) {
+    if (!com) return;
+    const want = shouldMcpRun(mcpEnabled.value, uiMode.value);
+    if (want && !mcpState.value.on) {
+      if (typeof com.mcpStart !== "function") return; // 旧宿主无 mcp 桥
+      const r = com.mcpStart({ port: mcpPort.value, token: mcpToken.value });
+      if (r === null) return;
+      if (r.ok) {
+        if (r.token !== mcpToken.value) {
+          mcpToken.value = r.token; // 首启生成的 token 需持久化（防抖回写）
+        }
+        const snap = bus.buffer.peek();
+        mcpLastMsgId = snap.length > 0 ? snap[snap.length - 1]!.id : 0;
+        mcpState.value = { on: true, clients: 0 }; // 事件回推会再校准
+        sysMsg(`${t("mcp.on")}: ${mcpUrl()}`);
+      } else {
+        mcpEnabled.value = false; // 端口占用等失败：回退开关并提示
+        sysMsg(`${t("mcp.startFailed")}: ${r.msg}`);
       }
-      const snap = bus.buffer.peek();
-      mcpLastMsgId = snap.length > 0 ? snap[snap.length - 1]!.id : 0;
-      mcpState.value = { on: true, clients: 0 }; // 事件回推会再校准
-      sysMsg(`${t("mcp.on")}: ${mcpUrl()}`);
-    } else {
-      mcpEnabled.value = false; // 端口占用等失败：回退开关并提示
-      sysMsg(`${t("mcp.startFailed")}: ${r.msg}`);
+    } else if (!want && mcpState.value.on) {
+      com.mcpStop();
+      mcpState.value = { on: false, clients: 0 };
     }
-  } else if (!want && mcpState.value.on) {
-    com.mcpStop();
-    mcpState.value = { on: false, clients: 0 };
   }
 }
 
 /** MCP 端点 URL（面板显示 / sys 提示共用）。 */
 export function mcpUrl(): string {
-  return `http://127.0.0.1:${mcpPort.value}/mcp`;
+  if (hasAppFeature("mcp.server")) {
+    return `http://127.0.0.1:${mcpPort.value}/mcp`;
+  }
+  return "";
 }
 
 /** 白名单配置快照（config_read 工具；token 永不出现在其中）。 */
 function buildMcpConfigSnapshot(): Record<string, unknown> {
-  return {
-    language: locale.value,
-    theme: themeMode.value,
-    fontSize: fontSize.value,
-    terminal: { scrollbackLines: scrollbackLines.value },
-    receive: {
-      hex: rxHex.value,
-      escape: rxEscape.value,
-      timestamp: rxTimestamp.value,
-      wrap: rxWrap.value,
-      color: rxColor.value,
-      historyLines: historyLines.value,
-    },
-    send: {
-      escape: sendEscape.value,
-      crlf: sendCrlf.value,
-      appendNewline: sendAppendNl.value,
-    },
-    mcp: { enabled: mcpEnabled.value, port: mcpPort.value },
-  };
+  if (hasAppFeature("mcp.server")) {
+    return {
+      language: locale.value,
+      theme: themeMode.value,
+      fontSize: fontSize.value,
+      terminal: { scrollbackLines: scrollbackLines.value },
+      receive: {
+        hex: rxHex.value,
+        escape: rxEscape.value,
+        timestamp: rxTimestamp.value,
+        wrap: rxWrap.value,
+        color: rxColor.value,
+        historyLines: historyLines.value,
+      },
+      send: {
+        escape: sendEscape.value,
+        crlf: sendCrlf.value,
+        appendNewline: sendAppendNl.value,
+      },
+      mcp: { enabled: mcpEnabled.value, port: mcpPort.value },
+    };
+  }
+  return {};
 }
 
 /** 应用 MCP config_write 补丁（补丁已过 validateConfigPatch 白名单校验）。 */
 function applyMcpConfigPatch(patch: McpConfigPatch): void {
-  let needFormat = false;
-  if (patch.language !== undefined && patch.language !== locale.value) {
-    setLocale(patch.language);
-    needFormat = true;
+  if (hasAppFeature("mcp.server")) {
+    let needFormat = false;
+    if (patch.language !== undefined && patch.language !== locale.value) {
+      setLocale(patch.language);
+      needFormat = true;
+    }
+    if (patch.theme !== undefined) themeMode.value = patch.theme;
+    if (patch.fontSize !== undefined) {
+      fontSize.value = patch.fontSize;
+      needFormat = true;
+    }
+    if (patch.scrollbackLines !== undefined) setScrollbackLines(patch.scrollbackLines);
+    if (patch.receive) {
+      if (patch.receive.hex !== undefined) rxHex.value = patch.receive.hex;
+      if (patch.receive.escape !== undefined) rxEscape.value = patch.receive.escape;
+      if (patch.receive.timestamp !== undefined) rxTimestamp.value = patch.receive.timestamp;
+      if (patch.receive.wrap !== undefined) rxWrap.value = patch.receive.wrap;
+      if (patch.receive.color !== undefined) rxColor.value = patch.receive.color;
+      if (patch.receive.historyLines !== undefined) setHistoryLines(patch.receive.historyLines);
+      needFormat = true;
+    }
+    if (patch.send) {
+      if (patch.send.escape !== undefined) sendEscape.value = patch.send.escape;
+      if (patch.send.crlf !== undefined) sendCrlf.value = patch.send.crlf;
+      if (patch.send.appendNewline !== undefined) sendAppendNl.value = patch.send.appendNewline;
+    }
+    if (patch.mcp?.port !== undefined) mcpPort.value = patch.mcp.port;
+    if (patch.mcp?.enabled !== undefined) mcpEnabled.value = patch.mcp.enabled;
+    if (needFormat) applyLogFormat();
+    persistNow();
   }
-  if (patch.theme !== undefined) themeMode.value = patch.theme;
-  if (patch.fontSize !== undefined) {
-    fontSize.value = patch.fontSize;
-    needFormat = true;
-  }
-  if (patch.scrollbackLines !== undefined) setScrollbackLines(patch.scrollbackLines);
-  if (patch.receive) {
-    if (patch.receive.hex !== undefined) rxHex.value = patch.receive.hex;
-    if (patch.receive.escape !== undefined) rxEscape.value = patch.receive.escape;
-    if (patch.receive.timestamp !== undefined) rxTimestamp.value = patch.receive.timestamp;
-    if (patch.receive.wrap !== undefined) rxWrap.value = patch.receive.wrap;
-    if (patch.receive.color !== undefined) rxColor.value = patch.receive.color;
-    if (patch.receive.historyLines !== undefined) setHistoryLines(patch.receive.historyLines);
-    needFormat = true;
-  }
-  if (patch.send) {
-    if (patch.send.escape !== undefined) sendEscape.value = patch.send.escape;
-    if (patch.send.crlf !== undefined) sendCrlf.value = patch.send.crlf;
-    if (patch.send.appendNewline !== undefined) sendAppendNl.value = patch.send.appendNewline;
-  }
-  if (patch.mcp?.port !== undefined) mcpPort.value = patch.mcp.port;
-  if (patch.mcp?.enabled !== undefined) mcpEnabled.value = patch.mcp.enabled;
-  if (needFormat) applyLogFormat();
-  persistNow();
 }
 
 /** MCP 命令执行上下文（核心执行器经它触达会话/配置/门控）。 */
 function mcpContext(): McpContext {
-  return {
-    session,
-    mcpClients: () => mcpState.value.clients,
-    configRead: buildMcpConfigSnapshot,
-    configWrite: applyMcpConfigPatch,
-    gateOpen: () => shouldMcpRun(mcpEnabled.value, uiMode.value),
-  };
+  if (hasAppFeature("mcp.server")) {
+    return {
+      session,
+      mcpClients: () => mcpState.value.clients,
+      configRead: buildMcpConfigSnapshot,
+      configWrite: applyMcpConfigPatch,
+      gateOpen: () => shouldMcpRun(mcpEnabled.value, uiMode.value),
+    };
+  }
+  return undefined!;
 }
 
 /** 每帧 MCP 中继（pumpSession 内调用）：命令批 drain → 执行 → 回结果；
  *  总线增量（RX + 手动 TX + sys）格式化为读行 feed 给宿主读缓冲。 */
 function pumpMcp(): void {
-  if (!com || !mcpState.value.on) return;
-  const batch = com.mcpCmds();
-  if (batch) {
-    const cmds = parseMcpCommands(batch);
-    if (cmds.length > 0) {
-      const results = cmds.map((c) => executeMcpCommand(c, mcpContext()));
-      com.mcpResults(JSON.stringify(results));
+  if (hasAppFeature("mcp.server")) {
+    if (!com || !mcpState.value.on) return;
+    const batch = com.mcpCmds();
+    if (batch) {
+      const cmds = parseMcpCommands(batch);
+      if (cmds.length > 0) {
+        const results = cmds.map((c) => executeMcpCommand(c, mcpContext()));
+        com.mcpResults(JSON.stringify(results));
+      }
     }
+    const { lines, lastId } = collectMcpLines(bus, mcpLastMsgId, mcpLabels());
+    mcpLastMsgId = lastId;
+    if (lines.length > 0) com.mcpFeed(lines);
   }
-  const { lines, lastId } = collectMcpLines(bus, mcpLastMsgId, mcpLabels());
-  mcpLastMsgId = lastId;
-  if (lines.length > 0) com.mcpFeed(lines);
 }
 
 // ---------------------------------------------------------------------------
@@ -418,11 +436,11 @@ export const LINE_H: Record<ConfigFontSize, number> = { 12: 16, 14: 18, 16: 21 }
  *  均为本地手动行为时，来源/方向标记是冗余噪音；sys 标记 i18n（旧 [--]
  *  易被误读为坏时间戳）。 */
 export function logLabels(): LogLineLabels {
-  const showSource = mcpState.value.on;
+  const showSource = hasAppFeature("mcp.server") ? mcpState.value.on : false;
   return {
     rx: showSource ? "<=" : "",
-    txManual: showSource ? `[${t("source.manual")}]` : "",
-    txMcp: `[${t("source.mcp")}]`,
+    txManual: hasAppFeature("mcp.server") && showSource ? `[${t("source.manual")}]` : "",
+    txMcp: hasAppFeature("mcp.server") ? `[${t("source.mcp")}]` : "",
     sys: `[${t("source.sys")}]`,
   };
 }
@@ -433,7 +451,7 @@ export const logView = new LogView(
   {
     maxRows: historyLines.value,
     maxBytes: historyByteBudget(),
-    showTx: mcpState.value.on,
+    showTx: hasAppFeature("mcp.server") ? mcpState.value.on : false,
     measure: (s) => getOps().measureText(s, MONO_SLOTS[fontSize.value]),
     wrapWidth: () => (rxWrap.value ? rxWidth.value - 12 : 0),
   },
@@ -447,7 +465,7 @@ export function applyLogFormat(): void {
     { hex: rxHex.value, escape: rxEscape.value, timestamp: rxTimestamp.value, color: rxColor.value },
     logLabels(),
     {
-      showTx: mcpState.value.on,
+      showTx: hasAppFeature("mcp.server") ? mcpState.value.on : false,
       remeasure: measuredLogFontSize !== fontSize.value,
       maxRows: historyLines.value,
       maxBytes: historyByteBudget(),
@@ -459,7 +477,7 @@ export function applyLogFormat(): void {
 
 // MCP server 运行态变化 → TX 来源前缀显隐（logLabels 依赖 mcpState.on）。
 // 注册在启动配置加载之前，首启随配置开启 MCP 时也能触发重排版。
-watch(
+if (hasAppFeature("mcp.server")) watch(
   () => mcpState.value.on,
   () => applyLogFormat(),
 );
@@ -660,7 +678,9 @@ function buildConfigJson(): string {
     },
     lastConn: lastConn.value,
     sendHistory: sendHistory.value,
-    mcp: { enabled: mcpEnabled.value, port: mcpPort.value, token: mcpToken.value },
+    mcp: hasAppFeature("mcp.server")
+      ? { enabled: mcpEnabled.value, port: mcpPort.value, token: mcpToken.value }
+      : configBase.mcp,
   };
   return JSON.stringify(cfg, null, 2);
 }
@@ -750,9 +770,11 @@ function applyConfig(cfg: AppConfig): void {
   sendAppendNl.value = cfg.send.appendNewline;
   sendHistory.value = cfg.sendHistory;
   lastConn.value = cfg.lastConn;
-  mcpEnabled.value = cfg.mcp.enabled;
-  mcpPort.value = cfg.mcp.port;
-  mcpToken.value = cfg.mcp.token;
+  if (hasAppFeature("mcp.server")) {
+    mcpEnabled.value = cfg.mcp.enabled;
+    mcpPort.value = cfg.mcp.port;
+    mcpToken.value = cfg.mcp.token;
+  }
 
   const s = cfg.lastConn.serial;
   if (s) {
@@ -785,7 +807,7 @@ function applyConfig(cfg: AppConfig): void {
   applyLogFormat();
   // MCP 开关随配置加载（SPEC §6.1）：收发模式下立即启动（终端模式门控见
   // setUiMode / syncMcpServer）。
-  syncMcpServer();
+  if (hasAppFeature("mcp.server")) syncMcpServer();
 }
 
 const lastConn = ref<LastConnConfig>({});
@@ -821,15 +843,14 @@ for (const source of [
   sendAppendNl,
   sendHistory,
   lastConn,
-  mcpEnabled,
-  mcpToken,
+  ...(hasAppFeature("mcp.server") ? [mcpEnabled, mcpToken] : []),
 ]) {
   watch(source, schedulePersist, { deep: true });
 }
 // MCP 开关变化 → 立即启停（终端模式门控在 syncMcpServer 内统一判断）。
-watch(mcpEnabled, syncMcpServer);
+if (hasAppFeature("mcp.server")) watch(mcpEnabled, syncMcpServer);
 // 端口变化 → 重启 server 使新端口生效。
-watch(mcpPort, () => {
+if (hasAppFeature("mcp.server")) watch(mcpPort, () => {
   if (!mcpState.value.on) return;
   com?.mcpStop();
   mcpState.value = { on: false, clients: 0 };
@@ -857,8 +878,9 @@ export function pumpSession(nowMs: number): void {
     const connEvents: ComEvent[] = [];
     for (const ev of events) {
       if (ev.t === "appearance") setSystemAppearance(ev.v);
-      else if (ev.t === "mcp") mcpState.value = { on: ev.on, clients: ev.clients };
-      else connEvents.push(ev);
+      else if (ev.t === "mcp") {
+        if (hasAppFeature("mcp.server")) mcpState.value = { on: ev.on, clients: ev.clients };
+      } else connEvents.push(ev);
     }
     session.poll(connEvents, nowMs);
     if (rxCount.value !== session.rxBytes) rxCount.value = session.rxBytes;
@@ -875,7 +897,7 @@ export function pumpSession(nowMs: number): void {
       }
     }
     // MCP 中继（SPEC §6.2）：命令 drain→执行→回结果；总线增量→读行 feed。
-    pumpMcp();
+    if (hasAppFeature("mcp.server")) pumpMcp();
   }
   if (hasAppFeature("terminal")) {
     if (terminal!.version !== lastTermVersion) {

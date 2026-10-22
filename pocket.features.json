@@ -16,8 +16,7 @@
         "terminal",
         "mode",
         "panel.mode",
-        "settings.scrollbackLines",
-        "mcp.terminalHint"
+        "settings.scrollbackLines"
       ]
     },
     "transport.serial": {
@@ -66,7 +65,15 @@
       "status": "planned"
     },
     "mcp.server": {
-      "status": "planned"
+      "status": "implemented",
+      "modules": [
+        "core/mcp.ts"
+      ],
+      "i18n": [
+        "mcp",
+        "source.manual",
+        "source.mcp"
+      ]
     },
     "ui.selection": {
       "status": "planned"
@@ -98,16 +105,28 @@
   },
   "profiles": {
     "desktop": {
-      "terminal": true
+      "terminal": true,
+      "mcp.server": true
     },
     "aic-diagnostic": {
-      "terminal": false
+      "terminal": false,
+      "mcp.server": false
     },
     "terminal-on": {
-      "terminal": true
+      "terminal": true,
+      "mcp.server": true
     },
     "terminal-off": {
-      "terminal": false
+      "terminal": false,
+      "mcp.server": true
+    },
+    "mcp-on": {
+      "terminal": false,
+      "mcp.server": true
+    },
+    "mcp-off": {
+      "terminal": false,
+      "mcp.server": false
     }
   }
 }

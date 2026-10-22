@@ -1,6 +1,6 @@
 # PocketCOM on AIC + RT-Thread
 
-本期接入 D12x demo68-nor：PocketCOM 应用包、固件构建与静态内存预算。固件 **XIP 运行**（`.text/.rodata` 在 SPI NOR 的 0x60000000 窗口原地执行，仅 `.data/.bss` 进 PSRAM），PSRAM 为 **统一 TLSF 系统堆**（不再划分 PocketJS 私有池）。当前使用 480×272 精简验证页（标题、帧计数、触摸计数），完整共享 UI 因启动 OOM 暂停挂载；没有 UART/网络/MCP `com.*` 桥、持久化或软键盘。构建不自动烧录；实测基线见 [D12x 8 MiB PSRAM 内存优化方案](../../docs/aic-memory-optimization.md)，后续应用恢复方向见[共享 UI 与编译期裁剪提案](../../docs/shared-ui-memory-optimization.md)（terminal 编译期裁剪与离板 A/B 已实施，其余仍按提案推进，复用现有组件）。
+本期接入 D12x demo68-nor：PocketCOM 应用包、固件构建与静态内存预算。固件 **XIP 运行**（`.text/.rodata` 在 SPI NOR 的 0x60000000 窗口原地执行，仅 `.data/.bss` 进 PSRAM），PSRAM 为 **统一 TLSF 系统堆**（不再划分 PocketJS 私有池）。当前使用 480×272 精简验证页（标题、帧计数、触摸计数），完整共享 UI 因启动 OOM 暂停挂载；没有 UART/网络/MCP `com.*` 桥、持久化或软键盘。构建不自动烧录；实测基线见 [D12x 8 MiB PSRAM 内存优化方案](../../docs/aic-memory-optimization.md)，后续应用恢复方向见[共享 UI 与编译期裁剪提案](../../docs/shared-ui-memory-optimization.md)（terminal / mcp.server 编译期裁剪与离板 A/B 已实施，其余仍按提案推进，复用现有组件）。
 
 ## 分层
 
@@ -13,7 +13,8 @@ PocketCOM app/aic.tsx（精简启动页，Vue Vapor；共享 i18n/theme）
 
 产品功能由根目录 `pocket.features.json` 统一管理；AIC 构建显式选 `aic-diagnostic`。
 `npm run probe:features` 用共享 App 做 terminal 开/关离板对比，输出 `dist/feature-heap/report.json`，
-详见 [测量记录](../../docs/terminal-feature-heap.md) 与 skill `mem-probe`；实验不改变正式入口。
+MCP 对比用 `npm run probe:features -- --feature mcp.server`，输出 `dist/mcp-feature-heap/report.json`。
+详见 [terminal 测量记录](../../docs/terminal-feature-heap.md)、[MCP 测量记录](../../docs/mcp-feature-heap.md) 与 skill `mem-probe`；实验不改变正式入口。
 
 `app/main.aic.tsx` 在 mount 前初始化 480×272 应用视口并挂载 `app/aic.tsx`，不导入完整 App/session；桌面入口独立。host profile 固定 density 1、native presentation、60Hz，仅声明真实宿主能力。UI 保持 MiSans，mono 用 fork 的 JetBrains Mono（与产品 vendor 字体相同）；从两份语言包的字符串值提取额外字形，不烘焙整个 CJK 字符域。未烘焙输入仍可能显示替换符，HEX 视图保证字节表达。
 

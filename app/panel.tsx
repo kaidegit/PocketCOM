@@ -78,7 +78,7 @@ const customBaud = ref("115200");
 let customBaudField: TextFieldHandle | undefined;
 
 // MCP URL/token 复制反馈（M4）：1.5s 后恢复按钮文案。
-const copiedKey = ref<"url" | "token" | null>(null);
+const copiedKey = hasAppFeature("mcp.server") ? ref<"url" | "token" | null>(null) : undefined!;
 let copyTimer: ReturnType<typeof setTimeout> | null = null;
 
 function copyMcp(key: "url" | "token", text: string): void {
@@ -270,12 +270,14 @@ const layoutInfo = computed(() => {
     put("mode", FIELD_H, SECTION_GAP);
     put("div2", 1, SECTION_GAP);
   }
-  put("mcp", CHECK_H, mcpEnabled.value ? BLOCK_GAP : SECTION_GAP);
-  if (mcpEnabled.value) {
-    put("mcpUrl", FIELD_H, BLOCK_GAP);
-    put("mcpToken", FIELD_H, hasAppFeature("terminal") && uiMode.value === "terminal" ? BLOCK_GAP : SECTION_GAP);
-    if (hasAppFeature("terminal") && uiMode.value === "terminal") {
-      put("mcpHint", 16, SECTION_GAP);
+  if (hasAppFeature("mcp.server")) {
+    put("mcp", CHECK_H, mcpEnabled.value ? BLOCK_GAP : SECTION_GAP);
+    if (mcpEnabled.value) {
+      put("mcpUrl", FIELD_H, BLOCK_GAP);
+      put("mcpToken", FIELD_H, hasAppFeature("terminal") && uiMode.value === "terminal" ? BLOCK_GAP : SECTION_GAP);
+      if (hasAppFeature("terminal") && uiMode.value === "terminal") {
+        put("mcpHint", 16, SECTION_GAP);
+      }
     }
   }
   return { top, total: y + PAD_BOTTOM };
@@ -563,7 +565,7 @@ export function LeftPanel() {
           ) : null}
 
           {/* MCP 共享开关（M4，SPEC §6.1）：仅收发模式运行，终端模式自动停服 */}
-          <View class="absolute" style={{ insetT: top("mcp"), insetL: PAD_X, width: CONTENT_W, height: CHECK_H }}>
+          {hasAppFeature("mcp.server") ? <View class="absolute" style={{ insetT: top("mcp"), insetL: PAD_X, width: CONTENT_W, height: CHECK_H }}>
             <CheckRow
               label={() => t("mcp.toggle")}
               checked={() => mcpEnabled.value}
@@ -572,10 +574,10 @@ export function LeftPanel() {
                 mcpEnabled.value = !mcpEnabled.value;
               }}
             />
-          </View>
+          </View> : null}
 
           {/* 开启后：URL + token（可复制，SPEC §6.1） */}
-          {mcpEnabled.value ? (
+          {hasAppFeature("mcp.server") && mcpEnabled.value ? (
             <View>
               <McpInfoRow top={top("mcpUrl")} label={() => t("mcp.url")} value={mcpUrl} copyKey="url" />
               <McpInfoRow top={top("mcpToken")} label={() => t("mcp.token")} value={tokenDisplay} copyKey="token" />
@@ -845,27 +847,30 @@ function McpInfoRow(props: {
   value: () => string;
   copyKey: "url" | "token";
 }) {
-  return (
-    <View class="absolute" style={{ insetT: props.top, insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
-      <FieldLabel text={props.label} />
-      <Text
-        class="absolute text-xs font-mono"
-        style={{ insetL: 0, insetT: LABEL_H + LABEL_GAP, width: CONTENT_W - 60, height: 22, lineHeight: 22, textColor: theme.value.fg }}
-      >
-        {props.value()}
-      </Text>
-      <View class="absolute" style={{ insetR: 0, insetT: LABEL_H + LABEL_GAP, width: 52, height: 22 }}>
-        <Btn
-          width={52}
-          height={22}
-          label={() => (copiedKey.value === props.copyKey ? t("mcp.copied") : t("mcp.copy"))}
-          onPress={() => {
-            copyMcp(props.copyKey, props.copyKey === "url" ? mcpUrl() : mcpToken.value);
-          }}
-        />
+  if (hasAppFeature("mcp.server")) {
+    return (
+      <View class="absolute" style={{ insetT: props.top, insetL: PAD_X, width: CONTENT_W, height: FIELD_H }}>
+        <FieldLabel text={props.label} />
+        <Text
+          class="absolute text-xs font-mono"
+          style={{ insetL: 0, insetT: LABEL_H + LABEL_GAP, width: CONTENT_W - 60, height: 22, lineHeight: 22, textColor: theme.value.fg }}
+        >
+          {props.value()}
+        </Text>
+        <View class="absolute" style={{ insetR: 0, insetT: LABEL_H + LABEL_GAP, width: 52, height: 22 }}>
+          <Btn
+            width={52}
+            height={22}
+            label={() => (copiedKey.value === props.copyKey ? t("mcp.copied") : t("mcp.copy"))}
+            onPress={() => {
+              copyMcp(props.copyKey, props.copyKey === "url" ? mcpUrl() : mcpToken.value);
+            }}
+          />
+        </View>
       </View>
-    </View>
-  );
+    );
+  }
+  return <View style={{ width: 0, height: 0 }} />;
 }
 
 function applySignals(): void {

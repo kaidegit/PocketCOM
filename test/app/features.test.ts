@@ -35,7 +35,7 @@ describe("product features", () => {
       await expect(loadAppFeatures(await config({ ...registry, profiles: { bad: flags } }), "bad")).rejects.toThrow();
     }
     await expect(loadAppFeatures(await config({ ...registry, features: { terminal: { requires: ["typo"] } } }), "desktop")).rejects.toThrow("unknown dependency");
-    await expect(loadAppFeatures(await config({ ...registry, features: { terminal: { requires: ["terminal"] } } }), "desktop")).rejects.toThrow("cyclic");
+    await expect(loadAppFeatures(await config({ ...registry, features: { terminal: { requires: ["terminal"] } }, profiles: { desktop: { terminal: true } } }), "desktop")).rejects.toThrow("cyclic");
     await expect(loadAppFeatures(await config({ ...registry, features: { terminal: { requires: ["base"] }, base: {} }, profiles: { bad: { terminal: true, base: false } } }), "bad")).rejects.toThrow("requires base");
   });
 
@@ -64,7 +64,7 @@ describe("product features", () => {
   test("product profiles expose only integrated features", async () => {
     for (const profile of Object.keys(registry.profiles)) {
       const product = await load(profile);
-      expect(Object.keys(product.values)).toEqual(["terminal"]);
+      expect(Object.keys(product.values)).toEqual(["terminal", "mcp.server"]);
       for (const [name, definition] of Object.entries(product.definitions)) if (definition.status === "planned") {
         expect(product.values).not.toHaveProperty(name);
         expect(definition.modules).toBeUndefined();
@@ -131,6 +131,73 @@ describe("product features", () => {
     expect(on).toContain("new Terminal");
     expect(on).toContain("bus.subscribe");
     expect(on).toContain("takeResponses");
+  });
+
+  test("MCP profiles remove executor, state, watchers, UI and labels before compilation", async () => {
+    expect(registry.profiles.desktop["mcp.server"]).toBe(true);
+    expect(registry.profiles["aic-diagnostic"]["mcp.server"]).toBe(false);
+    expect(registry.profiles["mcp-on"].terminal).toBe(registry.profiles["mcp-off"].terminal);
+    for (const profile of ["mcp-off", "mcp-on", "mcp-off"]) {
+      const features = await load(profile);
+      const enabled = features.values["mcp.server"];
+      const path = join(root, "app/session.ts");
+      const code = await specializeAppSource(path, await Bun.file(path).text(), features);
+      for (const marker of ["executeMcpCommand", "parseMcpCommands", "collectMcpLines", "shouldMcpRun", "watch(mcpEnabled", "watch(mcpPort", "com.mcpCmds", "com.mcpStart"])
+        expect(code.includes(marker)).toBe(enabled);
+      expect(features.excluded.has(join(root, "core/mcp.ts"))).toBe(!enabled);
+      for (const file of ["app/panel.tsx", "app/statusbar.tsx"]) {
+        const result = await transformFile(join(root, file), await Bun.file(join(root, file)).text(), "vue-vapor", { appFeatures: features });
+        expect(result.code.includes(file.includes("panel") ? 't("mcp.toggle")' : 't("mcp.off")')).toBe(enabled);
+      }
+      const pack = { mcp: { toggle: "MCP", terminalHint: "hint" }, source: { manual: "manual", mcp: "MCP", sys: "SYS" } };
+      expect(filterFeatureResource(pack, features)).toEqual(enabled
+        ? { mcp: { toggle: "MCP", terminalHint: "hint" }, source: { manual: "manual", mcp: "MCP", sys: "SYS" } }
+        : { source: { sys: "SYS" } });
+    }
+  });
+
+  test("disabled MCP ignores persisted enablement and host events while preserving configuration", async () => {
+    const features = await load("mcp-off");
+    const output = join(dir, "mcp-off-session.mjs");
+    const sessionPath = join(root, "app/session.ts");
+    const build = await Bun.build({
+      entrypoints: [sessionPath], target: "bun", format: "esm",
+      plugins: [{ name: "specialized-session", setup(builder) {
+        builder.onLoad({ filter: /app\/session\.ts$/ }, async () => ({
+          contents: await specializeAppSource(sessionPath, await Bun.file(sessionPath).text(), features), loader: "ts",
+        }));
+        builder.onResolve({ filter: /^@pocketjs\/framework$/ }, () => ({ path: "framework", namespace: "stub" }));
+        builder.onLoad({ filter: /.*/, namespace: "stub" }, () => ({
+          contents: 'export const getOps = () => ({measureText: s => s.length * 8});', loader: "js",
+        }));
+      } }],
+    });
+    expect(build.success).toBe(true);
+    await Bun.write(output, build.outputs[0]!);
+    const script = `
+      import { strict as assert } from "node:assert";
+      const mcp = {enabled:true,port:8123,token:"persisted-token"};
+      let exported;
+      const forbidden = () => { throw new Error("disabled MCP called host"); };
+      globalThis.com = {
+        serialList: () => "[]", serialOpen: () => "{}", write: () => true,
+        setSignals: () => true, close: () => true,
+        poll: () => JSON.stringify({t:"mcp",on:true,clients:2}),
+        cfgRead: () => JSON.stringify({version:1,mcp}), cfgWrite: () => true,
+        cfgExport: json => { exported=JSON.parse(json); return '{"ok":true}'; },
+        mcpStart: forbidden, mcpStop: forbidden, mcpCmds: forbidden,
+        mcpResults: forbidden, mcpFeed: forbidden,
+      };
+      const s = await import(${JSON.stringify(output)});
+      assert.equal(s.comAvailable,true);
+      for (const key of ["mcpEnabled","mcpPort","mcpToken","mcpState"]) assert.equal(s[key],undefined);
+      s.syncMcpServer(); s.setUiMode("transfer"); s.pumpSession(0);
+      assert.equal(s.logLabels().rx,""); assert.equal(s.logLabels().txMcp,"");
+      s.exportConfig(); assert.deepEqual(exported.mcp,mcp);
+    `;
+    const child = Bun.spawnSync([process.execPath, "-e", script], { cwd: root });
+    expect(child.stderr.toString()).toBe("");
+    expect(child.exitCode).toBe(0);
   });
 
   test("dictionary filtering keeps shared labels and agrees with profile identity", async () => {

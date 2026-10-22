@@ -4,7 +4,7 @@
 
 **后续主线采用同一套 `app/`、`core/` 和基础控件，通过编译期功能裁剪、共享实现的内存优化、按需挂载和容量配置适配 AIC。** macOS 保留完整功能，AIC 选择可承受的功能组合。现有 `app/aic.tsx` 保留作启动诊断基线，后续产品界面从现有组件演进，不再以它扩写一套独立 UI。
 
-**已实施入口：** 根目录 `pocket.features.json`、`@pocketcom/features` 的字面量 `hasAppFeature()`，以及 `npm run probe:features`。首轮只支持 terminal 开关；正式板端仍是诊断页。实测边界与结果见 [terminal feature heap 对比](terminal-feature-heap.md)。
+**已实施入口：** 根目录 `pocket.features.json`、`@pocketcom/features` 的字面量 `hasAppFeature()`，以及 `npm run probe:features`。已接入 terminal 与 mcp.server 裁剪；正式板端仍是诊断页。实测边界与结果见 [terminal feature heap 对比](terminal-feature-heap.md) 和 [MCP feature heap 对比](mcp-feature-heap.md)。
 
 本文调整[原内存方案](aic-memory-optimization.md)中方案 A 的实现方向；原文的实测数据、全链路限额要求及字节码 / realloc 研究仍有效。原提案后续阶段仍有效；首轮实现已更新 SPEC §4.5，未切换板端入口。
 
