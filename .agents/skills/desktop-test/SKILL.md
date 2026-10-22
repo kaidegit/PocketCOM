@@ -12,6 +12,10 @@ bun test test/          # 核心层单测（test/core/*、test/bridge/*、test/a
 npm run typecheck       # tsc --noEmit；tsconfig 严格度对齐上游，不要私自加严 flags
 ```
 
+`test/app/desktop-profile.test.ts` 验证 `macos-gpui` 构建计划启用原生文字/输入，且误用
+上游软件宿主 `macos-app` 会因缺少必需的 `text.layout.native` 被拒绝；实际启动须通过
+`node tools/dev.mjs` 复验 plan 派生参数，MCP 测试的显式 `--native-text` 不能覆盖该路径。
+
 ## 宿主 Rust 测试
 
 ```sh

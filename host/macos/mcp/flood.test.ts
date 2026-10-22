@@ -71,6 +71,7 @@ function spawnFloodHost(): FloodHost {
     "--native-text",
     "--companions", "pocketcom",
     "--editor",
+    "--no-native-mouse-keyboard",
     ...shots,
     "--quit-after", "2200",
   ];

@@ -63,6 +63,7 @@ function spawnHost(opts: { clicks?: string[]; quitTicks: number }): HostHandle {
     "--native-text",
     "--companions", "pocketcom",
     "--editor",
+    "--no-native-mouse-keyboard",
     "--quit-after", String(opts.quitTicks),
     ...(opts.clicks ?? []).flatMap((c, i) => ["--click", `${c}@${300 + i * 300}`]),
   ];

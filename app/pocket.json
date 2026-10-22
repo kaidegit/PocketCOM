@@ -9,7 +9,8 @@
     "capabilities": {
       "requires": [
         "text.glyphs.baked",
-        "input.buttons"
+        "input.buttons",
+        "text.layout.native"
       ],
       "enhances": [
         "input.text",
@@ -17,8 +18,7 @@
         "input.ime",
         "host.clipboard",
         "display.viewport.live",
-        "text.glyphs.runtime",
-        "text.layout.native"
+        "text.glyphs.runtime"
       ]
     }
   },

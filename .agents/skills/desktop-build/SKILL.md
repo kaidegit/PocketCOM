@@ -20,12 +20,16 @@ bun（`~/.bun/bin`）需在 PATH；wasm32 target 仅浏览器宿主/金样测试
 ## 构建
 
 ```sh
-npm run check        # manifest 校验（bun vendor/pocketjs/tools/pocket.ts check --target macos-app …）
+npm run check        # manifest 校验（bun vendor/pocketjs/tools/pocket.ts check --target macos-gpui …）
 npm run build        # 输出 dist/pocketcom-main.js + dist/pocketcom-main.pak
 cargo build --release --manifest-path host/macos/Cargo.toml
                      # 桌面宿主（fork 自 vendor/pocketjs/hosts/desktop + 自研 com.* 桥）
                      # 输出 host/macos/target/release/pocketcom-host；首次全量 15–25 分钟
 ```
+
+`macos-gpui` 是 fork 保留的 GPUI/CoreText 宿主契约（plan identity 仍为 `macos-app`，
+输出仍在 `.pocket/macos-app/`）。上游 `macos-app` 描述软件渲染宿主，不适用于 PocketCOM；
+桌面 manifest 必需 `text.layout.native`，避免错误目标静默关闭原生文字。
 
 ## 运行 / 打包 / 安装
 

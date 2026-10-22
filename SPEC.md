@@ -42,7 +42,7 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 
 | 项 | 选择 | 说明 |
 |---|---|---|
-| 运行时 | PocketJS 0.14.0（vendor 在 `vendor/pocketjs/`，git checkout） | QuickJS guest + Rust `no_std` 核心；npm 包 `@pocketjs/framework` 不含桌面宿主，必须保留 checkout |
+| 运行时 | PocketJS 0.15.0（vendor 在 `vendor/pocketjs/`，git checkout） | QuickJS guest + Rust `no_std` 核心；npm 包 `@pocketjs/framework` 不含桌面宿主，必须保留 checkout |
 | 工具链 | **bun**（构建/测试/serve 全部依赖 Bun API，node 不可替代）+ `@pocketjs/cli` + Rust stable | wasm32 target 仅浏览器宿主与金样测试需要，桌面开发可不装 |
 | UI 框架 | **Vue Vapor 适配器**（约束，不用 Solid/Octane） | `vue` + `vue-jsx-vapor` + `@pocketjs/framework/vue-vapor` 组件 |
 | 字体 | **MiSans**（Regular/Medium/Semibold/Bold 四个字重） | 源文件 vendor 进 `assets/fonts/`（来自 `/Users/kai/Downloads/MiSans`，本机路径不入库），构建期烘焙字形 |
@@ -52,10 +52,14 @@ PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/�
 
 ### 2.2 PocketJS 平台约束（本规格的重要前提）
 
-调研自 PocketJS 源码（`vendor/pocketjs`，0.14.0）与官方文档，以下约束直接决定架构设计：
+桌面构建使用 fork 的 `macos-gpui` catalog 目标，plan/宿主 identity 仍为 `macos-app`（ABI 4）。
+该 profile 声明 GPUI 的原生文字、键鼠、IME 和剪贴板能力；上游同名 `macos-app` catalog 目标
+描述软件渲染宿主。桌面 manifest 将 `text.layout.native` 作为必需能力，错误目标在构建时拒绝。
+
+调研自 PocketJS 源码（`vendor/pocketjs`，当前合入 0.15.0）与官方文档，以下约束直接决定架构设计：
 
 1. **无 DOM、无运行时 CSS**。UI 仅 `View` / `Text` / `Image` 原语 + flexbox；样式为编译期的 Tailwind 子集，动态样式必须用 `style={{…}}` 对象或"整体 class 字面量的三元表达式"，运行期拼接 class 片段是编译错误。
-2. **字体烘焙（baked font atlas）为默认路径**。构建时扫描源码中出现的字符与字号生成字形图集，设备端没有字体光栅化器。**但 gpui 桌面宿主支持 per-app 声明 `enhances: ["text.layout.native"]`**：改走 CoreText 运行时排版（`TEXT_RUN`），字形覆盖 = OS 字体回退链（CJK/emoji 全有），任意 Unicode 可显示。嵌入式目标仍受烘焙约束。对策见 §5.4。
+2. **字体烘焙（baked font atlas）为默认路径**。构建时扫描源码中出现的字符与字号生成字形图集，设备端没有字体光栅化器。**但 gpui 桌面宿主支持 per-app 声明 `requires: ["text.layout.native"]`**：改走 CoreText 运行时排版（`TEXT_RUN`），字形覆盖 = OS 字体回退链（CJK/emoji 全有），任意 Unicode 可显示。嵌入式目标仍受烘焙约束。对策见 §5.4。
 3. **NET 模块 v1 仅有 fetch 形态的 HTTP client**，明确不含 WebSocket、server、raw socket，串口更不在其内；桌面宿主默认甚至没有 mount `net`/`fs`。→ **本项目必须自研宿主桥接**（§4.2），官方扩展姿势：spec 契约（`contracts/spec/*.ts`）+ transport-neutral Rust core + 宿主 `guest.mount("com", …)`。
 4. **帧（tick）投递模型**：原生线程不得直接回调 JS guest；异步完成事件在 tick 边界成批投递（FIFO）。串口 RX 数据也遵循该模型：宿主侧累积，tick 边界 drain。
 5. **桌面宿主 = gpui 窗口 + QuickJS guest**（`pocket-mod`/rquickjs），与掌机跑同一 JS 环境；宿主为单进程单线程 supervisor 模型。键盘输入支持字符（IME 路径）、F1–F12 等命名键、修饰键与粘贴事件，按 tick 批进 guest——终端模式按键直发可行。
@@ -279,7 +283,7 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 
 字体：UI 统一使用 **MiSans**（字重 Regular/Medium/Semibold/Bold；源文件 vendor 在 `assets/fonts/`）。**mono 槽（`font-mono`，接收区/终端网格/等宽文本框）使用 JetBrains Mono**（Regular，OFL，随 `assets/fonts/JetBrainsMono-Regular.ttf` vendor；嵌入式烘焙的 mono 槽本来就用它）——MiSans 非等宽字体，终端网格必须严格等宽才能保证列对齐与格宽度量一致。
 
-**macOS 桌面端（首期目标平台）**：pocket.json 声明 `enhances: ["text.layout.native"]`，走 gpui 宿主的 CoreText 运行时排版——**任意 Unicode（含 CJK/emoji）可显示，无 tofu**，烘焙字形约束在桌面端不成立。MiSans 与 JetBrains Mono 注册进宿主字体链（`register_fonts` + `TextConfig::new("MiSans")`，mono 槽解析到 `mono_family` JetBrains Mono；CJK 等未覆盖字符走系统回退）。代价：放弃跨宿主字节级金样确定性（金样测试改在 gpui 宿主上比对，见 §7）。
+**macOS 桌面端（首期目标平台）**：pocket.json 声明 `requires: ["text.layout.native"]`，走 gpui 宿主的 CoreText 运行时排版——**任意 Unicode（含 CJK/emoji）可显示，无 tofu**，烘焙字形约束在桌面端不成立。MiSans 与 JetBrains Mono 注册进宿主字体链（`register_fonts` + `TextConfig::new("MiSans")`，mono 槽解析到 `mono_family` JetBrains Mono；CJK 等未覆盖字符走系统回退）。代价：放弃跨宿主字节级金样确定性（金样测试改在 gpui 宿主上比对，见 §7）。
 
 **嵌入式/未来 RT-Thread 端**：仍受构建期烘焙约束，策略为：
 
@@ -364,7 +368,7 @@ M0 桌面宿主调研已完成（2026-09-04），#1/#3 已关闭：
 |---|---|---|---|
 | 1 | 桌面宿主 JS 引擎形态与扩展点 | ✅ 已关闭 | gpui 窗口 + QuickJS guest（`pocket-mod`）；扩展 = `contracts/spec/*.ts` + Rust core + `guest.mount("com", …)`；app 可放外部仓库（vendor + `--project-root`），宿主二进制支持 `--js/--pak` |
 | 2 | 无内置 serial/socket/WS，全部桥接自研 | 开放 | 工作量最大项。契约先行；Rust 侧用成熟 crate（串口 `serialport`、异步 IO `tokio`、WS `tokio-tungstenite`），事件批按 `pocket-net` 的 poll/drain 模式 |
-| 3 | 烘焙字体不支持任意字符 | ✅ 已关闭（桌面端） | gpui 后端 `enhances: ["text.layout.native"]` 走 CoreText，任意 Unicode 可显示；烘焙约束仅剩嵌入式目标（§5.4） |
+| 3 | 烘焙字体不支持任意字符 | ✅ 已关闭（桌面端） | gpui 后端 `requires: ["text.layout.native"]` 走 CoreText，任意 Unicode 可显示；烘焙约束仅剩嵌入式目标（§5.4） |
 | 4 | 终端网格渲染性能 | 开放 | M0 压测；native text 路径下按行渲染 `TEXT_RUN`，备选 `Image` 位图自绘网格 |
 | 5 | MCP 多读缓冲的会话语义 | 开放 | 首版共享缓冲，v1.1 按 session 隔离 |
 | 6 | AIC/RT-Thread 设备 IO 与内存预算 | 部分关闭 | Rust/固件构建与真机启动已验证（精简页，XIP + 统一 TLSF 堆）；WiFi/lwIP 已 bring-up 至 AP 扫描；UART 桥、紧凑布局、软键盘待实现；完整 UI 常驻工作集超预算（≈8.1 MiB vs 可用约 6.0–6.4 MiB），走板端紧凑装配路线恢复 |

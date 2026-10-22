@@ -27,6 +27,10 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 技术栈一句话：TypeScript（strict）+ PocketJS **Vue Vapor 适配器**（不用 Solid/Octane），无 DOM/运行时 CSS，UI 仅 `View/Text/Image` 原语。
 分层依赖单向：`app → core → bridge`，`host/*` 实现 bridge 的 `com.*` HostOps 契约；core 保持纯 TS、可在 Bun/Node 下单测。
 
+桌面构建选择 fork 的 `macos-gpui` catalog 目标（plan identity / 目录仍为 `macos-app`），
+声明当前 GPUI/CoreText 宿主能力；上游 `macos-app` 是软件渲染宿主契约。桌面 manifest 必需
+`text.layout.native`，错误目标必须在构建时拒绝，不能静默降级。
+
 ## 技术栈与硬性约束
 
 - **字体**：UI 统一 MiSans（Regular/Medium/Semibold/Bold，vendor 在 `assets/fonts/`）；**mono 槽（接收区/终端网格）用 JetBrains Mono**——MiSans 非等宽，终端网格必须严格等宽。桌面端经 `text.layout.native` 走 CoreText 运行时排版，任意 Unicode 可显示；**烘焙字形约束只对嵌入式目标成立**（SPEC §5.4）。

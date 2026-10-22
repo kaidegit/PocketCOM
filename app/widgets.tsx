@@ -181,7 +181,7 @@ export function CheckRow(props: {
         }}
       >
         {props.checked() && !disabled() ? (
-          <Text class="text-[10] font-bold" style={{ textColor: theme.value.accentFg, lineHeight: 12 }}>
+          <Text class="text-2xs font-bold" style={{ textColor: theme.value.accentFg, lineHeight: 12 }}>
             ✓
           </Text>
         ) : null}
