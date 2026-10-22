@@ -14,7 +14,9 @@ npm run typecheck       # tsc --noEmit；tsconfig 严格度对齐上游，不要
 
 `test/app/features.test.ts` 覆盖统一 feature 配置校验、依赖冲突/循环、planned 登记项禁止配置/调用/拥有资源、AST 特化、
 作用域与动态调用拒绝、Vue 转换前的资源移除、热缓存隔离、模块副作用保护与终端/MCP 启动路径裁剪、MCP 控件/文案的开关隔离。
-`npm run probe:features` 运行真实 QuickJS terminal 开/关对比，MCP 对比用 `npm run probe:features -- --feature mcp.server`，详见 skill `mem-probe`。
+`npm run probe:features` 运行真实 QuickJS terminal 开/关对比，MCP 对比用 `npm run probe:features -- --feature mcp.server`，传输对比用 `npm run probe:features -- --feature transport`，详见 skill `mem-probe`。
+
+`test/app/transport-features.test.ts` 覆盖每种协议单独启用、全开/全关、面板/字典特化、参数 ref 与配置保留、网络宿主无串口 ops 的独立探测、直接会话及桥入口拒绝关闭协议。
 
 `test/app/desktop-profile.test.ts` 验证 `macos-gpui` 构建计划启用原生文字/输入，且误用
 上游软件宿主 `macos-app` 会因缺少必需的 `text.layout.native` 被拒绝；实际启动须通过

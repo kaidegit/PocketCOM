@@ -20,19 +20,72 @@
       ]
     },
     "transport.serial": {
-      "status": "planned"
+      "status": "implemented",
+      "modules": [
+        "bridge/transport-serial.ts"
+      ],
+      "i18n": [
+        "conn.serial",
+        "conn.port",
+        "conn.noPorts",
+        "conn.noPortSelected",
+        "conn.baudRate",
+        "conn.baudInvalid",
+        "conn.custom",
+        "conn.dataBits",
+        "conn.parity",
+        "conn.stopBits",
+        "conn.flowControl",
+        "conn.dtr",
+        "conn.rts",
+        "conn.parityOpt",
+        "conn.stopBitsOpt",
+        "conn.flow"
+      ]
     },
     "transport.tcp-client": {
-      "status": "planned"
+      "status": "implemented",
+      "modules": [
+        "bridge/tcp-client.ts"
+      ],
+      "i18n": [
+        "conn.tcpClient",
+        "conn.host"
+      ]
     },
     "transport.tcp-server": {
-      "status": "planned"
+      "status": "implemented",
+      "modules": [
+        "bridge/tcp-server.ts"
+      ],
+      "i18n": [
+        "conn.tcpServer",
+        "conn.listenPort",
+        "conn.kick",
+        "send.broadcast"
+      ]
     },
     "transport.udp": {
-      "status": "planned"
+      "status": "implemented",
+      "modules": [
+        "bridge/udp.ts"
+      ],
+      "i18n": [
+        "conn.udp",
+        "conn.localPort",
+        "conn.targetHost"
+      ]
     },
     "transport.websocket": {
-      "status": "planned"
+      "status": "implemented",
+      "modules": [
+        "bridge/websocket.ts"
+      ],
+      "i18n": [
+        "conn.wsClient",
+        "conn.wsUrl",
+        "conn.wsProtocols"
+      ]
     },
     "receive.hex": {
       "status": "planned"
@@ -106,27 +159,75 @@
   "profiles": {
     "desktop": {
       "terminal": true,
-      "mcp.server": true
+      "mcp.server": true,
+      "transport.serial": true,
+      "transport.tcp-client": true,
+      "transport.tcp-server": true,
+      "transport.udp": true,
+      "transport.websocket": true
     },
     "aic-diagnostic": {
       "terminal": false,
-      "mcp.server": false
+      "mcp.server": false,
+      "transport.serial": true,
+      "transport.tcp-client": false,
+      "transport.tcp-server": false,
+      "transport.udp": false,
+      "transport.websocket": false
     },
     "terminal-on": {
       "terminal": true,
-      "mcp.server": true
+      "mcp.server": true,
+      "transport.serial": true,
+      "transport.tcp-client": true,
+      "transport.tcp-server": true,
+      "transport.udp": true,
+      "transport.websocket": true
     },
     "terminal-off": {
       "terminal": false,
-      "mcp.server": true
+      "mcp.server": true,
+      "transport.serial": true,
+      "transport.tcp-client": true,
+      "transport.tcp-server": true,
+      "transport.udp": true,
+      "transport.websocket": true
     },
     "mcp-on": {
       "terminal": false,
-      "mcp.server": true
+      "mcp.server": true,
+      "transport.serial": true,
+      "transport.tcp-client": true,
+      "transport.tcp-server": true,
+      "transport.udp": true,
+      "transport.websocket": true
     },
     "mcp-off": {
       "terminal": false,
-      "mcp.server": false
+      "mcp.server": false,
+      "transport.serial": true,
+      "transport.tcp-client": true,
+      "transport.tcp-server": true,
+      "transport.udp": true,
+      "transport.websocket": true
+    },
+    "transport-all": {
+      "terminal": false,
+      "mcp.server": false,
+      "transport.serial": true,
+      "transport.tcp-client": true,
+      "transport.tcp-server": true,
+      "transport.udp": true,
+      "transport.websocket": true
+    },
+    "transport-serial": {
+      "terminal": false,
+      "mcp.server": false,
+      "transport.serial": true,
+      "transport.tcp-client": false,
+      "transport.tcp-server": false,
+      "transport.udp": false,
+      "transport.websocket": false
     }
   }
 }

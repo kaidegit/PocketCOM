@@ -73,8 +73,8 @@ import { getSvc } from "./svc";
 const BAUD_PRESETS = ["9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600", "1000000", "1500000", "2000000", "3000000", "4000000", "6000000"];
 const DATA_BITS = ["5", "6", "7", "8"];
 
-const customBaudVisible = ref(false);
-const customBaud = ref("115200");
+const customBaudVisible = hasAppFeature("transport.serial") ? ref(false) : undefined!;
+const customBaud = hasAppFeature("transport.serial") ? ref("115200") : undefined!;
 let customBaudField: TextFieldHandle | undefined;
 
 // MCP URL/token 复制反馈（M4）：1.5s 后恢复按钮文案。
@@ -119,40 +119,40 @@ function flushFields(): void {
     const text = h.text();
     switch (key) {
       case "tcpHost":
-        tcpHost.value = text;
+        if (hasAppFeature("transport.tcp-client")) tcpHost.value = text;
         break;
       case "tcpPort":
-        tcpPort.value = text;
+        if (hasAppFeature("transport.tcp-client")) tcpPort.value = text;
         break;
       case "tcpReconnectSec":
-        tcpReconnectSec.value = text;
+        if (hasAppFeature("transport.tcp-client")) tcpReconnectSec.value = text;
         break;
       case "tcpsPort":
-        tcpsPort.value = text;
+        if (hasAppFeature("transport.tcp-server")) tcpsPort.value = text;
         break;
       case "udpBindPort":
-        udpBindPort.value = text;
+        if (hasAppFeature("transport.udp")) udpBindPort.value = text;
         break;
       case "udpHost":
-        udpHost.value = text;
+        if (hasAppFeature("transport.udp")) udpHost.value = text;
         break;
       case "udpPort":
-        udpPort.value = text;
+        if (hasAppFeature("transport.udp")) udpPort.value = text;
         break;
       case "wsUrl":
-        wsUrl.value = text;
+        if (hasAppFeature("transport.websocket")) wsUrl.value = text;
         break;
       case "wsProtocols":
-        wsProtocols.value = text;
+        if (hasAppFeature("transport.websocket")) wsProtocols.value = text;
         break;
       case "wsReconnectSec":
-        wsReconnectSec.value = text;
+        if (hasAppFeature("transport.websocket")) wsReconnectSec.value = text;
         break;
     }
   }
 }
 
-export const wsProtocols = ref("");
+export const wsProtocols = hasAppFeature("transport.websocket") ? ref("") : undefined!;
 
 function stateColor(): string {
   switch (connState.value) {
@@ -169,7 +169,7 @@ function stateColor(): string {
 
 function tryOpen(): void {
   flushFields();
-  if (customBaudVisible.value && customBaudField) {
+  if (hasAppFeature("transport.serial") && customBaudVisible.value && customBaudField) {
     baud.value = customBaudField.text().trim() || "115200";
   }
   openCurrentConnection();
@@ -221,11 +221,11 @@ function fieldRegion(blockTop: number, xOff = 0, w = CONTENT_W): () => SelRect |
   return ctlRegion(blockTop + LABEL_H + LABEL_GAP, xOff, w);
 }
 
-const isSerial = computed(() => connType.value === "serial");
+const isSerial = computed(() => hasAppFeature("transport.serial") && connType.value === "serial");
 const withReconnect = computed(
   () =>
-    (connType.value === "tcp" && tcpAutoReconnect.value) ||
-    (connType.value === "ws" && wsAutoReconnect.value),
+    (hasAppFeature("transport.tcp-client") && connType.value === "tcp" && tcpAutoReconnect.value) ||
+    (hasAppFeature("transport.websocket") && connType.value === "ws" && wsAutoReconnect.value),
 );
 
 /** 内容块 id → 顶部偏移，以及内容总高（随 connType/客户端列表/字段显隐伸缩）。 */
@@ -237,25 +237,25 @@ const layoutInfo = computed(() => {
     y += h + gapAfter;
   };
   put("connType", FIELD_H, BLOCK_GAP);
-  if (isSerial.value) {
+  if (hasAppFeature("transport.serial") && isSerial.value) {
     put("port", FIELD_H, BLOCK_GAP);
     put("baud", FIELD_H + (customBaudVisible.value ? CUSTOM_H : 0), BLOCK_GAP);
     put("pair1", FIELD_H, BLOCK_GAP);
     put("pair2", FIELD_H, BLOCK_GAP);
     put("signals", CHECK_H, SECTION_GAP);
-  } else if (connType.value === "tcp") {
+  } else if (hasAppFeature("transport.tcp-client") && connType.value === "tcp") {
     put("tcpHost", FIELD_H, BLOCK_GAP);
     put("tcpPort", FIELD_H, SECTION_GAP);
     put("tcpReconnect", CHECK_H, withReconnect.value ? 0 : SECTION_GAP);
-  } else if (connType.value === "tcps") {
+  } else if (hasAppFeature("transport.tcp-server") && connType.value === "tcps") {
     put("tcpsPort", FIELD_H, SECTION_GAP);
     if (clientList.value.length > 0) {
       put("clients", clientList.value.length * CLIENT_ROW_H, SECTION_GAP);
     }
-  } else if (connType.value === "udp") {
+  } else if (hasAppFeature("transport.udp") && connType.value === "udp") {
     put("udpHost", FIELD_H, BLOCK_GAP);
     put("udpPair", FIELD_H, SECTION_GAP);
-  } else if (connType.value === "ws") {
+  } else if (hasAppFeature("transport.websocket") && connType.value === "ws") {
     put("wsUrl", FIELD_H, BLOCK_GAP);
     put("wsProtocols", FIELD_H, BLOCK_GAP);
     put("wsReconnect", CHECK_H, withReconnect.value ? 0 : SECTION_GAP);
@@ -335,19 +335,10 @@ export function LeftPanel() {
             <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
               <Select
                 display={() => {
-                  const k = connType.value;
-                  const key = k === "tcp" ? "tcpClient" : k === "tcps" ? "tcpServer" : k === "ws" ? "wsClient" : k;
-                  return t(`conn.${key}`);
+                  return transportOptions().find(option => option.value === connType.value)?.label ?? "";
                 }}
                 value={() => connType.value}
-                options={() => [
-                  { value: "serial", label: t("conn.serial") },
-                  { value: "tcp", label: t("conn.tcpClient") },
-                  { value: "tcps", label: t("conn.tcpServer") },
-                  { value: "udp", label: t("conn.udp") },
-                  { value: "ws", label: t("conn.wsClient") },
-                  { value: "loopback", label: t("conn.loopback") },
-                ]}
+                options={transportOptions}
                 onPick={(v) => {
                   closePopup();
                   setConnType(v as typeof connType.value);
@@ -358,7 +349,7 @@ export function LeftPanel() {
           </View>
 
           {/* ---- 串口参数 ---- */}
-          {isSerial.value ? (
+          {hasAppFeature("transport.serial") && isSerial.value ? (
             <SerialBlocks
               top={top}
               anchor={anchor}
@@ -372,7 +363,7 @@ export function LeftPanel() {
           ) : null}
 
           {/* ---- TCP Client ---- */}
-          {connType.value === "tcp" ? (
+          {hasAppFeature("transport.tcp-client") && connType.value === "tcp" ? (
             <View>
               {fieldBlock(
                 top("tcpHost"),
@@ -405,7 +396,7 @@ export function LeftPanel() {
           ) : null}
 
           {/* ---- TCP Server ---- */}
-          {connType.value === "tcps" ? (
+          {hasAppFeature("transport.tcp-server") && connType.value === "tcps" ? (
             <View>
               {fieldBlock(
                 top("tcpsPort"),
@@ -441,7 +432,7 @@ export function LeftPanel() {
           ) : null}
 
           {/* ---- UDP ---- */}
-          {connType.value === "udp" ? (
+          {hasAppFeature("transport.udp") && connType.value === "udp" ? (
             <View>
               {fieldBlock(
                 top("udpHost"),
@@ -479,7 +470,7 @@ export function LeftPanel() {
           ) : null}
 
           {/* ---- WebSocket Client ---- */}
-          {connType.value === "ws" ? (
+          {hasAppFeature("transport.websocket") && connType.value === "ws" ? (
             <View>
               {fieldBlock(
                 top("wsUrl"),
@@ -519,9 +510,9 @@ export function LeftPanel() {
             >
               <View class="absolute left-0 right-0" style={{ insetT: 6, height: CTL_H }}>
                 <TextField
-                  initial={connType.value === "tcp" ? tcpReconnectSec.value : wsReconnectSec.value}
+                  initial={hasAppFeature("transport.tcp-client") && connType.value === "tcp" ? tcpReconnectSec.value : wsReconnectSec.value}
                   selRegion={ctlRegion(top("reconnectSec") + 6)}
-                  {...(connType.value === "tcp"
+                  {...(hasAppFeature("transport.tcp-client") && connType.value === "tcp"
                     ? bindField("tcpReconnectSec", tcpReconnectSec)
                     : bindField("wsReconnectSec", wsReconnectSec))}
                 />
@@ -886,4 +877,15 @@ function FieldLabel(props: { text: () => string }) {
       {props.text()}
     </Text>
   );
+}
+
+function transportOptions() {
+  return [
+    ...(hasAppFeature("transport.serial") ? [{ value: "serial", label: t("conn.serial") }] : []),
+    ...(hasAppFeature("transport.tcp-client") ? [{ value: "tcp", label: t("conn.tcpClient") }] : []),
+    ...(hasAppFeature("transport.tcp-server") ? [{ value: "tcps", label: t("conn.tcpServer") }] : []),
+    ...(hasAppFeature("transport.udp") ? [{ value: "udp", label: t("conn.udp") }] : []),
+    ...(hasAppFeature("transport.websocket") ? [{ value: "ws", label: t("conn.wsClient") }] : []),
+    { value: "loopback", label: t("conn.loopback") },
+  ];
 }

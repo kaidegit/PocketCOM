@@ -40,6 +40,7 @@ npm run probe:aic -- path/to/other.pocket --limit 4m   # 测其它包 / 改 Quic
 ```sh
 npm run probe:features                      # terminal A/B
 npm run probe:features -- --feature mcp.server # MCP A/B，固定 terminal=false
+npm run probe:features -- --feature transport  # 传输 A/B，其它功能固定
 ```
 
 统一配置在根目录 `pocket.features.json`；目录中的裁剪状态和 profile 值以此文件为准，`planned` 仅登记，不能配置或用于编译条件。
@@ -58,6 +59,12 @@ MCP 对比使用同样边界及三次 120 turns，产物在 `dist/mcp-feature-he
 `docs/mcp-feature-heap.md`。每组检查 `core/mcp.ts` 的模块收据；关闭组运行断言验证不创建
 MCP 响应式状态，启停调用为空操作。MCP 开启组表示编译包含服务功能，运行时默认开关仍关闭；
 无 com 桥，不测原生 server、客户端连接或流量缓冲占用。
+
+传输对比使用 `transport-all` / `transport-serial`，具体开关取值以 JSON 为准，其它功能取值相同；
+产物在 `dist/transport-feature-heap/`，结果见 `docs/transport-feature-heap.md`。每组检查所有传输
+适配器的模块收据，QuickJS 入口断言关闭的协议不分配参数状态、不能进入连接选择器。
+同样独立进程三次 120 turns，默认串口面板可见、无 com 桥、无收发负载。关闭协议的配置
+保留，共享会话状态机与原生 macOS 协议实现保留；测的是 guest 裁剪收益，不含原生 IO 内存。
 
 ## 读数
 

@@ -78,8 +78,9 @@ core/           # 纯 TS：连接状态机(connection)、帧合流(framing)、�
                 #   解析 + 网格/光标/属性/滚动区域/alt 屏/环形回滚 + 按键/粘贴编码 + DSR/DA 应答
                 #   队列，SPEC §3.4）、MCP 命令执行器/读行格式化/终端模式门控/config 白名单
                 #   （mcp，SPEC §6）
-bridge/         # com.* HostOps 契约：com.ts 命名空间探测/共享事件/枢纽 + serial.ts（串口）/
-                #   net.ts（四类网络）/cfg.ts（设置持久化）
+bridge/         # com.* HostOps 契约：com.ts 命名空间探测/共享事件/枢纽 + serial.ts（串口契约/兼容适配）/
+                #   net.ts（兼容全协议装配）+ transport-serial/tcp-client/tcp-server/udp/websocket.ts（可裁剪装配）/
+                #   cfg.ts（设置持久化）；app/transports.ts 按产品 feature 装配并约束会话协议
 test/           # 单测，按源码分层镜像（test/core/* ↔ core/；test/bridge/* ↔ bridge/；
                 #   test/app/* ↔ app/ 少量 headless 约定；test/host/<系统>/* ↔ host/* 的 Rust
                 #   测试经 #[path] 编入宿主 crate；testutil.ts 测试工具）
@@ -122,8 +123,10 @@ SPEC.md         # 功能规格（权威）
 
 ### 恢复路线（内存约束下的推进顺序）
 
-已接入统一 `pocket.features.json` 与 terminal / mcp.server 的编译期裁剪；`desktop` 开启，`aic-diagnostic`
-关闭；`terminal-on` / `terminal-off` 和 `mcp-on` / `mcp-off` 仅供共享 App 离板对比，不替代正式板端入口。产品功能
+已接入统一 `pocket.features.json` 与 terminal / mcp.server / transport.* 的编译期裁剪；平台启停值只查该 JSON。
+`terminal-on` / `terminal-off`、`mcp-on` / `mcp-off` 和 `transport-all` / `transport-serial` 仅供共享 App
+离板对比（传输对比用 `npm run probe:features -- --feature transport`，见 `docs/transport-feature-heap.md`），
+不替代正式板端入口。产品功能
 用 `@pocketcom/features` 的字面量 `hasAppFeature()`；产品功能目录和 profile 只以该 JSON 为准，禁止在代码、环境变量或文档中另设启停表。
 新增项可先标记 `status: "planned"`，此时不可写入 profile、调用或声明模块/文案所有权；
 接齐装配、UI、模块/文案归属和测试后改为 `implemented`，再补齐各 profile 的布尔值。详见 SPEC §4.5 与 `docs/terminal-feature-heap.md`。

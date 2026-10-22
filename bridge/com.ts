@@ -14,6 +14,7 @@ import {
   type ComSignalPins,
   type SerialOpenParams,
   type SerialPortInfo,
+  type SerialOps,
 } from "./serial";
 
 export type { CfgOps } from "./cfg";
@@ -81,13 +82,13 @@ export interface Com {
   mcpResults(resultsJson: string): boolean | null;
 }
 
-/** 宿主命名空间的原始形状（globalThis.com）。网络/cfg op 可选：旧宿主
+/** 宿主命名空间的原始形状（globalThis.com）。协议/cfg op 可选：旧宿主
  *  只有串口，特性探测见 connectCom。 */
 export interface ComNs {
-  serialList(): string;
-  serialOpen(paramsJson: string): string;
+  serialList?(): string;
+  serialOpen?(paramsJson: string): string;
   write(handle: number, bytes: Uint8Array): boolean;
-  setSignals(handle: number, pinsJson: string): boolean;
+  setSignals?(handle: number, pinsJson: string): boolean;
   close(handle: number): boolean;
   poll(): string | null;
   tcpConnect?(paramsJson: string): string;
@@ -127,24 +128,30 @@ export function parseOpenResult(raw: string): ComOpenResult {
  *  op 缺一即判 stock 宿主）。网络/cfg 桥可选缺失，对应方法降级为 null。 */
 export function connectCom(): Com | null {
   const ns = (globalThis as { com?: ComNs }).com;
+  if (!ns || typeof ns.serialList !== "function" || typeof ns.serialOpen !== "function" || typeof ns.setSignals !== "function") return null;
+  return connectComWithTransports(ns => {
+    const net = createNetOps(ns, parseOpenResult);
+    return { ...createSerialOps(ns, parseOpenResult), netOpen: params => net?.netOpen(params) ?? null };
+  });
+}
+
+export type TransportOps = SerialOps & Pick<Com, "netOpen">;
+
+/** Product assembly supplies only compiled transports; shared IO/cfg/event contracts stay stable. */
+export function connectComWithTransports(create: (ns: ComNs) => TransportOps): Com | null {
+  const ns = (globalThis as { com?: ComNs }).com;
   if (
     !ns ||
-    typeof ns.serialList !== "function" ||
-    typeof ns.serialOpen !== "function" ||
     typeof ns.write !== "function" ||
-    typeof ns.setSignals !== "function" ||
     typeof ns.close !== "function" ||
     typeof ns.poll !== "function"
   ) {
     return null;
   }
-  const net = createNetOps(ns, parseOpenResult);
+  const transports = create(ns);
   const cfg = createCfgOps(ns);
   return {
-    ...createSerialOps(ns, parseOpenResult),
-    netOpen(params) {
-      return net === null ? null : net.netOpen(params);
-    },
+    ...transports,
     write(handle, bytes) {
       return ns.write(handle, bytes);
     },

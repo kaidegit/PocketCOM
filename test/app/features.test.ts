@@ -64,7 +64,7 @@ describe("product features", () => {
   test("product profiles expose only integrated features", async () => {
     for (const profile of Object.keys(registry.profiles)) {
       const product = await load(profile);
-      expect(Object.keys(product.values)).toEqual(["terminal", "mcp.server"]);
+      expect(Object.keys(product.values)).toEqual(["terminal", "mcp.server", "transport.serial", "transport.tcp-client", "transport.tcp-server", "transport.udp", "transport.websocket"]);
       for (const [name, definition] of Object.entries(product.definitions)) if (definition.status === "planned") {
         expect(product.values).not.toHaveProperty(name);
         expect(definition.modules).toBeUndefined();
@@ -163,8 +163,8 @@ describe("product features", () => {
     const build = await Bun.build({
       entrypoints: [sessionPath], target: "bun", format: "esm",
       plugins: [{ name: "specialized-session", setup(builder) {
-        builder.onLoad({ filter: /app\/session\.ts$/ }, async () => ({
-          contents: await specializeAppSource(sessionPath, await Bun.file(sessionPath).text(), features), loader: "ts",
+        builder.onLoad({ filter: /app\/.*\.ts$/ }, async ({ path }) => ({
+          contents: await specializeAppSource(path, await Bun.file(path).text(), features), loader: "ts",
         }));
         builder.onResolve({ filter: /^@pocketjs\/framework$/ }, () => ({ path: "framework", namespace: "stub" }));
         builder.onLoad({ filter: /.*/, namespace: "stub" }, () => ({

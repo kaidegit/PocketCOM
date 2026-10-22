@@ -1,3 +1,4 @@
+import { hasAppFeature } from "@pocketcom/features";
 // app/transfer.tsx — 右侧收发区：接收日志窗 + 发送区（SPEC §3.1/§3.3）。
 // 接收区：窗口化渲染（行高随字号档位，可视窗口 ± 过扫描），滚动锁定贴底，
 // 暂停 = 停止从总线同步（数据继续入总线），清屏归零计数。
@@ -497,7 +498,7 @@ export function SendPane() {
   const appendNl = ref(false);
   const timed = ref(false);
   /** tcps 定向发送目标："broadcast" 或客户端句柄字符串。 */
-  const target = ref("broadcast");
+  const target = hasAppFeature("transport.tcp-server") ? ref("broadcast") : undefined!;
   let field: TextFieldHandle | undefined;
   let intervalField: TextFieldHandle | undefined;
   let lastTimedAt = 0;
@@ -517,7 +518,7 @@ export function SendPane() {
 
   const doSend = (): void => {
     if (!field) return;
-    const t = target.value;
+    const t = hasAppFeature("transport.tcp-server") ? target.value : "broadcast";
     const targetHandle = t === "broadcast" ? undefined : Number.parseInt(t, 10);
     sendText(field.text(), sendOpts(), targetHandle);
   };
@@ -549,16 +550,16 @@ export function SendPane() {
   });
 
   // tcps 客户端列表变化：目标失效回广播
-  watch(clientList, (list) => {
+  if (hasAppFeature("transport.tcp-server")) watch(clientList, (list) => {
     if (target.value !== "broadcast" && !list.some((c) => String(c.handle) === target.value)) {
       target.value = "broadcast";
     }
   });
 
   const isTcpServer = () =>
-    connState.value === "CONNECTED" && session !== null && session.kind === "tcps";
+    hasAppFeature("transport.tcp-server") && connState.value === "CONNECTED" && session !== null && session.kind === "tcps";
 
-  const showTarget = () => isTcpServer() && clientList.value.length > 0;
+  const showTarget = () => hasAppFeature("transport.tcp-server") && isTcpServer() && clientList.value.length > 0;
   const showHistory = () => sendHistory.value.length > 0;
   /** 选项行内下拉锚点：y 固定（发送区顶部行）；x 按 flex 流式累计
    *  （sendlayout.ts——SegCtrl + 前序 CheckRow 实测标签宽 + gap），与控件
@@ -633,7 +634,7 @@ export function SendPane() {
             onToggle={() => (appendNl.value = !appendNl.value)}
           />
           {/* TCP Server：定向/广播（紧跟 SegCtrl 的固定宽度前缀，锚点可算） */}
-          {showTarget() ? (
+          {hasAppFeature("transport.tcp-server") && showTarget() ? (
             <View style={{ width: 150, height: TOOLBAR_CTL_H }}>
               <Select
                 display={() => targetLabel()}

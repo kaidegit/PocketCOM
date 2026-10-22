@@ -1,4 +1,5 @@
 import { hasAppFeature } from "@pocketcom/features";
+import { createTransports, transportKinds } from "./transports";
 // app/session.ts — 会话接线单例：com 桥 + 消息总线 + 统一会话 + 日志视图 +
 // 设置持久化（SPEC §3.8）+ 左面板连接参数仓库。
 // 只放装配与响应式适配（app 层逻辑）；纯逻辑都在 core/（可单测）。
@@ -10,7 +11,7 @@ import { hasAppFeature } from "@pocketcom/features";
 // 整体回写（以加载时的归一化结果为底，未接 UI 的字段原样保留）。
 import { ref, watch } from "vue";
 import { getOps } from "@pocketjs/framework";
-import { connectCom, type ComEvent, type NetOpenParams, type SerialPortInfo } from "../bridge/com";
+import { connectComWithTransports, type ComEvent, type NetOpenParams, type SerialPortInfo } from "../bridge/com";
 import { MessageBus } from "../core/bus";
 import { ComSession, type ClientInfo, type NetSessionParams } from "../core/session";
 import { Terminal } from "../core/term";
@@ -46,7 +47,7 @@ import { setSystemAppearance, themeMode } from "./theme";
 // ---------------------------------------------------------------------------
 
 /** com.* 桥（stock 宿主无 com 命名空间 → null，界面降级）。 */
-export const com = connectCom();
+export const com = connectComWithTransports(createTransports);
 export const comAvailable = com !== null;
 
 /** 单一事实源消息总线（SPEC §3.5）。 */
@@ -133,16 +134,17 @@ export function sendTermBytes(bytes: Uint8Array): boolean {
 }
 
 /** TCP Server 已接入客户端快照（onClientsChange 钩子刷新）。 */
-export const clientList = ref<ClientInfo[]>([]);
+export const clientList = hasAppFeature("transport.tcp-server") ? ref<ClientInfo[]>([]) : undefined!;
 
 export const session =
   com !== null
     ? new ComSession(com, bus, {
+        allowedTransports: transportKinds,
         onStateChange: (_from, to) => {
           connState.value = to;
         },
         onClientsChange: () => {
-          clientList.value = session?.clientsInfo() ?? [];
+          if (hasAppFeature("transport.tcp-server")) clientList.value = session?.clientsInfo() ?? [];
         },
       })
     : null;
@@ -307,34 +309,35 @@ function pumpMcp(): void {
 // 连接参数仓库（左面板状态；打开时快照进 session.open*，成功后写入 lastConn）
 // ---------------------------------------------------------------------------
 
-export const connType = ref<"serial" | NetOpenParams["kind"] | "loopback">("serial");
+export const connType = ref<"serial" | NetOpenParams["kind"] | "loopback">(transportKinds[0]!);
 
 // 串口
-export const portPath = ref("");
-export const baud = ref("115200");
-export const dataBits = ref("8");
-export const parity = ref("none");
-export const stopBits = ref("1");
-export const flowControl = ref("none");
-export const dtr = ref(false);
-export const rts = ref(false);
+export const portPath = hasAppFeature("transport.serial") ? ref("") : undefined!;
+export const baud = hasAppFeature("transport.serial") ? ref("115200") : undefined!;
+export const dataBits = hasAppFeature("transport.serial") ? ref("8") : undefined!;
+export const parity = hasAppFeature("transport.serial") ? ref("none") : undefined!;
+export const stopBits = hasAppFeature("transport.serial") ? ref("1") : undefined!;
+export const flowControl = hasAppFeature("transport.serial") ? ref("none") : undefined!;
+export const dtr = hasAppFeature("transport.serial") ? ref(false) : undefined!;
+export const rts = hasAppFeature("transport.serial") ? ref(false) : undefined!;
 
 // TCP Client / UDP / WS 共用的 host/port 形态
-export const tcpHost = ref("");
-export const tcpPort = ref("9000");
-export const tcpAutoReconnect = ref(false);
-export const tcpReconnectSec = ref("5");
-export const tcpsPort = ref("9000");
-export const udpBindPort = ref("9000");
-export const udpHost = ref("");
-export const udpPort = ref("9000");
-export const wsUrl = ref("");
-export const wsAutoReconnect = ref(false);
-export const wsReconnectSec = ref("5");
+export const tcpHost = hasAppFeature("transport.tcp-client") ? ref("") : undefined!;
+export const tcpPort = hasAppFeature("transport.tcp-client") ? ref("9000") : undefined!;
+export const tcpAutoReconnect = hasAppFeature("transport.tcp-client") ? ref(false) : undefined!;
+export const tcpReconnectSec = hasAppFeature("transport.tcp-client") ? ref("5") : undefined!;
+export const tcpsPort = hasAppFeature("transport.tcp-server") ? ref("9000") : undefined!;
+export const udpBindPort = hasAppFeature("transport.udp") ? ref("9000") : undefined!;
+export const udpHost = hasAppFeature("transport.udp") ? ref("") : undefined!;
+export const udpPort = hasAppFeature("transport.udp") ? ref("9000") : undefined!;
+export const wsUrl = hasAppFeature("transport.websocket") ? ref("") : undefined!;
+export const wsAutoReconnect = hasAppFeature("transport.websocket") ? ref(false) : undefined!;
+export const wsReconnectSec = hasAppFeature("transport.websocket") ? ref("5") : undefined!;
 
-export const ports = ref<SerialPortInfo[]>([]);
+export const ports = hasAppFeature("transport.serial") ? ref<SerialPortInfo[]>([]) : undefined!;
 
 export function refreshPorts(): void {
+  if (!hasAppFeature("transport.serial")) return;
   ports.value = session?.ports() ?? [];
   // 枚举后校验当前选择：已拔掉的端口不再显示（保存的 lastConn.serial.path
   // 不受影响，设备插回后下次启动仍恢复）。
@@ -345,7 +348,7 @@ export function refreshPorts(): void {
 
 /** 切换连接类型时自动断开旧连接（SPEC §3.2 通用行为）。 */
 export function setConnType(next: typeof connType.value): void {
-  if (connType.value === next) return;
+  if (!transportKinds.includes(next) || connType.value === next) return;
   if (session && (connState.value === "CONNECTED" || connState.value === "LOST")) {
     closeConnection();
   }
@@ -370,32 +373,42 @@ function snapshotLastConn(kind: typeof connType.value): void {
   const last = lastConn.value;
   switch (kind) {
     case "serial":
-      last.serial = serialParams();
+      if (hasAppFeature("transport.serial")) {
+        last.serial = serialParams();
+      }
       break;
     case "tcp":
-      last.tcp = {
-        host: tcpHost.value,
-        port: Number.parseInt(tcpPort.value, 10) || 9000,
-        autoReconnect: tcpAutoReconnect.value,
-        reconnectSec: Number.parseInt(tcpReconnectSec.value, 10) || 5,
-      };
+      if (hasAppFeature("transport.tcp-client")) {
+        last.tcp = {
+          host: tcpHost.value,
+          port: Number.parseInt(tcpPort.value, 10) || 9000,
+          autoReconnect: tcpAutoReconnect.value,
+          reconnectSec: Number.parseInt(tcpReconnectSec.value, 10) || 5,
+        };
+      }
       break;
     case "tcps":
-      last.tcps = { port: Number.parseInt(tcpsPort.value, 10) || 9000 };
+      if (hasAppFeature("transport.tcp-server")) {
+        last.tcps = { port: Number.parseInt(tcpsPort.value, 10) || 9000 };
+      }
       break;
     case "udp":
-      last.udp = {
-        bindPort: Number.parseInt(udpBindPort.value, 10) || 0,
-        host: udpHost.value,
-        port: Number.parseInt(udpPort.value, 10) || 9000,
-      };
+      if (hasAppFeature("transport.udp")) {
+        last.udp = {
+          bindPort: Number.parseInt(udpBindPort.value, 10) || 0,
+          host: udpHost.value,
+          port: Number.parseInt(udpPort.value, 10) || 9000,
+        };
+      }
       break;
     case "ws":
-      last.ws = {
-        url: wsUrl.value,
-        autoReconnect: wsAutoReconnect.value,
-        reconnectSec: Number.parseInt(wsReconnectSec.value, 10) || 5,
-      };
+      if (hasAppFeature("transport.websocket")) {
+        last.ws = {
+          url: wsUrl.value,
+          autoReconnect: wsAutoReconnect.value,
+          reconnectSec: Number.parseInt(wsReconnectSec.value, 10) || 5,
+        };
+      }
       break;
   }
   lastConn.value = last;
@@ -504,6 +517,7 @@ export function sysMsg(text: string): void {
 // ---------------------------------------------------------------------------
 
 export function openSerialConnection(): boolean {
+  if (!hasAppFeature("transport.serial")) return false;
   if (!session) return false;
   const params = serialParams();
   if (params.path === "") {
@@ -560,36 +574,51 @@ export function openLoopbackConnection(): boolean {
 export function openCurrentConnection(): boolean {
   switch (connType.value) {
     case "serial":
-      return openSerialConnection();
+      if (hasAppFeature("transport.serial")) {
+        return openSerialConnection();
+      }
+      return false;
     case "loopback":
       return openLoopbackConnection();
     case "tcp":
-      return openNetConnection({
-        kind: "tcp",
-        host: tcpHost.value.trim(),
-        port: Number.parseInt(tcpPort.value, 10) || 0,
-        autoReconnect: tcpAutoReconnect.value,
-        reconnectSec: Number.parseInt(tcpReconnectSec.value, 10) || 5,
-      });
+      if (hasAppFeature("transport.tcp-client")) {
+        return openNetConnection({
+          kind: "tcp",
+          host: tcpHost.value.trim(),
+          port: Number.parseInt(tcpPort.value, 10) || 0,
+          autoReconnect: tcpAutoReconnect.value,
+          reconnectSec: Number.parseInt(tcpReconnectSec.value, 10) || 5,
+        });
+      }
+      return false;
     case "tcps":
-      return openNetConnection({
-        kind: "tcps",
-        port: Number.parseInt(tcpsPort.value, 10) || 0,
-      });
+      if (hasAppFeature("transport.tcp-server")) {
+        return openNetConnection({
+          kind: "tcps",
+          port: Number.parseInt(tcpsPort.value, 10) || 0,
+        });
+      }
+      return false;
     case "udp":
-      return openNetConnection({
-        kind: "udp",
-        bindPort: Number.parseInt(udpBindPort.value, 10) || 0,
-        host: udpHost.value.trim(),
-        port: Number.parseInt(udpPort.value, 10) || 0,
-      });
+      if (hasAppFeature("transport.udp")) {
+        return openNetConnection({
+          kind: "udp",
+          bindPort: Number.parseInt(udpBindPort.value, 10) || 0,
+          host: udpHost.value.trim(),
+          port: Number.parseInt(udpPort.value, 10) || 0,
+        });
+      }
+      return false;
     case "ws":
-      return openNetConnection({
-        kind: "ws",
-        url: wsUrl.value.trim(),
-        autoReconnect: wsAutoReconnect.value,
-        reconnectSec: Number.parseInt(wsReconnectSec.value, 10) || 5,
-      });
+      if (hasAppFeature("transport.websocket")) {
+        return openNetConnection({
+          kind: "ws",
+          url: wsUrl.value.trim(),
+          autoReconnect: wsAutoReconnect.value,
+          reconnectSec: Number.parseInt(wsReconnectSec.value, 10) || 5,
+        });
+      }
+      return false;
   }
 }
 
@@ -777,7 +806,7 @@ function applyConfig(cfg: AppConfig): void {
   }
 
   const s = cfg.lastConn.serial;
-  if (s) {
+  if (hasAppFeature("transport.serial") && s) {
     portPath.value = s.path;
     baud.value = String(s.baudRate);
     dataBits.value = String(s.dataBits);
@@ -787,19 +816,19 @@ function applyConfig(cfg: AppConfig): void {
     dtr.value = s.dtr;
     rts.value = s.rts;
   }
-  if (cfg.lastConn.tcp) {
+  if (hasAppFeature("transport.tcp-client") && cfg.lastConn.tcp) {
     tcpHost.value = cfg.lastConn.tcp.host;
     tcpPort.value = String(cfg.lastConn.tcp.port);
     tcpAutoReconnect.value = cfg.lastConn.tcp.autoReconnect;
     tcpReconnectSec.value = String(cfg.lastConn.tcp.reconnectSec);
   }
-  if (cfg.lastConn.tcps) tcpsPort.value = String(cfg.lastConn.tcps.port);
-  if (cfg.lastConn.udp) {
+  if (hasAppFeature("transport.tcp-server") && cfg.lastConn.tcps) tcpsPort.value = String(cfg.lastConn.tcps.port);
+  if (hasAppFeature("transport.udp") && cfg.lastConn.udp) {
     udpBindPort.value = String(cfg.lastConn.udp.bindPort);
     udpHost.value = cfg.lastConn.udp.host;
     udpPort.value = String(cfg.lastConn.udp.port);
   }
-  if (cfg.lastConn.ws) {
+  if (hasAppFeature("transport.websocket") && cfg.lastConn.ws) {
     wsUrl.value = cfg.lastConn.ws.url;
     wsAutoReconnect.value = cfg.lastConn.ws.autoReconnect;
     wsReconnectSec.value = String(cfg.lastConn.ws.reconnectSec);

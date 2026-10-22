@@ -31,8 +31,7 @@ export interface SerialOps {
   setSignals(handle: number, pins: ComSignalPins): boolean;
 }
 
-/** 组装串口 ops（宿主必有 serialList/serialOpen/setSignals——connectCom 的
- *  基础探测已保证；此处只做 JSON 边界与降级）。 */
+/** 组装串口 ops；产品宿主缺串口能力时安全降级，不影响其它协议。 */
 export function createSerialOps(
   ns: ComNs,
   parseOpenResult: (raw: string) => ComOpenResult,
@@ -40,7 +39,7 @@ export function createSerialOps(
   return {
     serialList() {
       try {
-        const parsed: unknown = JSON.parse(ns.serialList());
+        const parsed: unknown = JSON.parse(ns.serialList?.() ?? "[]");
         // 宿主枚举失败时返回结构化错误对象——对 UI 等价于"没有串口"。
         return Array.isArray(parsed) ? (parsed as SerialPortInfo[]) : [];
       } catch {
@@ -48,10 +47,11 @@ export function createSerialOps(
       }
     },
     serialOpen(params) {
+      if (typeof ns.serialOpen !== "function") return { ok: false, code: "unsupported", msg: "serial op unavailable" };
       return parseOpenResult(ns.serialOpen(JSON.stringify(params)));
     },
     setSignals(handle, pins) {
-      return ns.setSignals(handle, JSON.stringify(pins));
+      return typeof ns.setSignals === "function" ? ns.setSignals(handle, JSON.stringify(pins)) : false;
     },
   };
 }

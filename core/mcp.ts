@@ -153,6 +153,8 @@ export function collectMcpLines(
 
 /** 执行器所需的最小会话接口（ComSession 结构兼容）。 */
 export interface McpSessionLike {
+  /** Optional for legacy simulations; product session rejects disabled protocols before force-close. */
+  supportsTransport?(kind: string): boolean;
   readonly state: ConnState;
   readonly kind: string | null;
   readonly describe: string;
@@ -275,6 +277,8 @@ function connectCommand(cmd: McpCommand, ctx: McpContext): McpResult {
   const s = ctx.session;
   if (!s) return mcpErr(cmd.id, "no-bridge", "com bridge unavailable");
   const type = needString(cmd.args, "type");
+  if (s.supportsTransport && !s.supportsTransport(type))
+    return mcpErr(cmd.id, "unsupported", `transport disabled: ${type}`);
   if (s.state === "CONNECTED" || s.state === "CONNECTING") {
     if (!optBool(cmd.args, "force", false)) {
       return mcpErr(

@@ -16,14 +16,13 @@ export interface NetOps {
   netOpen(params: NetOpenParams): ComOpenResult | null;
 }
 
-/** 会话侧字段（不进线路参数，宿主 serde 只认线路字段）。 */
-const SESSION_ONLY_KEYS = new Set(["kind", "autoReconnect", "reconnectSec"]);
-
 /** 组装网络 ops；宿主缺任一网络 op 时返回 null（app 据此报桥接不可用）。 */
 export function createNetOps(
   ns: ComNs,
   parseOpenResult: (raw: string) => ComOpenResult,
 ): NetOps | null {
+  // Local to legacy full-transport assembly, so compiled product adapters add no Set.
+  const SESSION_ONLY_KEYS = new Set(["kind", "autoReconnect", "reconnectSec"]);
   const hasNet =
     typeof ns.tcpConnect === "function" &&
     typeof ns.tcpListen === "function" &&

@@ -46,6 +46,8 @@ export interface SessionHooks {
   onStateChange?: (from: ConnState, to: ConnState) => void;
   /** 客户端列表变化（TCP Server 接入/断开/踢除）——UI 需要刷新时用。 */
   onClientsChange?: () => void;
+  /** Product assembly may restrict transports; omitted for standalone/simulation hosts. */
+  allowedTransports?: readonly ConnKind[];
 }
 
 export class ComSession {
@@ -102,6 +104,7 @@ export class ComSession {
    * 失败回 DISCONNECTED 并抛 IoError（code 透传宿主结构化 code）。
    */
   openSerial(params: SerialOpenParams): void {
+    this.assertTransport("serial");
     this.assertIdle("open");
     this.sm.transition("CONNECTING");
     const result = this.com.serialOpen(params);
@@ -133,6 +136,7 @@ export class ComSession {
    * tcps：CONNECTED = 正在监听；客户端接入经 accepted 事件入 clients。
    */
   openNet(params: NetSessionParams): void {
+    this.assertTransport(params.kind);
     this.assertIdle("open");
     const { kind } = params;
     this.sm.transition("CONNECTING");
@@ -391,6 +395,15 @@ export class ComSession {
     this.describe = describe;
     this.clients.clear();
     this.loopbackQueue = [];
+  }
+
+  supportsTransport(kind: string): boolean {
+    return kind === "loopback" || !this.hooks.allowedTransports || this.hooks.allowedTransports.some(allowed => allowed === kind);
+  }
+
+  private assertTransport(kind: ConnKind): void {
+    if (!this.supportsTransport(kind))
+      throw new IoError("IO_CONNECT_FAILED", `transport disabled: ${kind}`);
   }
 
   private assertIdle(op: string): void {

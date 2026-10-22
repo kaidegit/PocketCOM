@@ -3,6 +3,7 @@ import { ComSession, describeNet, normalizeStopBits } from "../../core/session";
 import { MessageBus } from "../../core/bus";
 import { encodeBase64 } from "./testutil";
 import type { Com, ComEvent, ComOpenResult, NetOpenParams, SerialOpenParams } from "../../bridge/com";
+import { executeMcpCommand } from "../../core/mcp";
 import { IoError, StateError } from "../../core/errors";
 
 /** 确定性 fake Com：脚本化事件批，记录调用。 */
@@ -466,4 +467,34 @@ describe("ComSession 回环（loopback）", () => {
     expect(() => session.openLoopback()).toThrow(StateError);
     expect(() => session.openSerial(PARAMS)).toThrow(StateError);
   });
+});
+
+test("restricted transports reject before host IO/state mutation; serial and loopback remain usable", () => {
+  const com = new FakeCom();
+  const changes: string[] = [];
+  const session = new ComSession(com, new MessageBus(), {
+    allowedTransports: ["serial", "loopback"], onStateChange: (_from, to) => changes.push(to),
+  });
+  for (const params of [
+    { kind: "tcp", host: "localhost", port: 9000 }, { kind: "tcps", port: 9000 },
+    { kind: "udp", bindPort: 9000, host: "localhost", port: 9001 }, { kind: "ws", url: "ws://localhost" },
+  ] as const) expect(() => session.openNet(params)).toThrow("transport disabled");
+  expect(changes).toEqual([]);
+  expect(com.netOpened).toEqual([]);
+  expect(session.state).toBe("DISCONNECTED");
+  session.openSerial({ path: "/dev/test", baudRate: 115200 });
+  expect(session.state).toBe("CONNECTED");
+  const result = executeMcpCommand({ id: 4321, name: "connect", args: { type: "tcp", host: "localhost", port: 9000, force: true } }, {
+    session, mcpClients: () => 1, configRead: () => ({}), configWrite: () => {}, gateOpen: () => true,
+  });
+  expect(result.ok).toBe(false);
+  expect(session.state).toBe("CONNECTED");
+  expect(com.closedHandles).toEqual([]);
+  expect(com.netOpened).toEqual([]);
+  session.close();
+  session.openLoopback();
+  expect(session.state).toBe("CONNECTED");
+  const netOnly = new ComSession(com, new MessageBus(), { allowedTransports: ["tcp"] });
+  expect(() => netOnly.openSerial({ path: "/dev/test", baudRate: 9600 })).toThrow("transport disabled");
+  expect(netOnly.state).toBe("DISCONNECTED");
 });

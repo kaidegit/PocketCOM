@@ -28,7 +28,7 @@ cargo build --release --manifest-path host/macos/Cargo.toml
 ```
 
 `npm run check/build` 显式传入根目录 `pocket.features.json` 和 `desktop` profile；
-编译器在 Vue 转换前特化 `hasAppFeature()`，保留终端及 MCP 完整语义，输出
+编译器在 Vue 转换前特化 `hasAppFeature()`，按 JSON 装配终端、MCP 与五类 transport，保留完整桌面语义，输出
 `dist/pocketcom-main.features.json` 供审查。仅 `implemented` 项允许写入 profile；`planned` 项只登记。类型直接从有效 profile 推导，
 修改目录不需要手动同步常量/枚举，代码和文档不另设产品启停表。
 

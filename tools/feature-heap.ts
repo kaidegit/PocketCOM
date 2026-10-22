@@ -12,12 +12,12 @@ import { compactBundle } from "../host/rtthread/build-support";
 
 const root = resolve(import.meta.dir, "..");
 const args = process.argv.slice(2);
-if (args.length && (args.length !== 2 || args[0] !== "--feature" || !["terminal", "mcp.server"].includes(args[1]!)))
-  throw new Error("usage: bun tools/feature-heap.ts [--feature terminal|mcp.server]");
+if (args.length && (args.length !== 2 || args[0] !== "--feature" || !["terminal", "mcp.server", "transport"].includes(args[1]!)))
+  throw new Error("usage: bun tools/feature-heap.ts [--feature terminal|mcp.server|transport]");
 const feature = args[1] ?? "terminal";
-const names = feature === "terminal" ? ["terminal-on", "terminal-off"] : ["mcp-on", "mcp-off"];
+const names = feature === "terminal" ? ["terminal-on", "terminal-off"] : feature === "transport" ? ["transport-all", "transport-serial"] : ["mcp-on", "mcp-off"];
 const [onProfile, offProfile] = names as [string, string];
-const out = join(root, feature === "terminal" ? "dist/feature-heap" : "dist/mcp-feature-heap");
+const out = join(root, feature === "terminal" ? "dist/feature-heap" : feature === "transport" ? "dist/transport-feature-heap" : "dist/mcp-feature-heap");
 mkdirSync(out, { recursive: true });
 rmSync(join(out, "sources"), { recursive: true, force: true });
 const sha = (data: string | Uint8Array) => new Bun.CryptoHasher("sha256").update(data).digest("hex");
@@ -58,7 +58,8 @@ if (!resolution.ok) throw new Error(JSON.stringify(resolution.diagnostics));
 const plan = resolution.plan;
 const onFlags = (await loadAppFeatures(join(root, "pocket.features.json"), onProfile)).values;
 const offFlags = (await loadAppFeatures(join(root, "pocket.features.json"), offProfile)).values;
-if (!onFlags[feature] || offFlags[feature] || Object.keys(onFlags).some(key => key !== feature && onFlags[key] !== offFlags[key]))
+const varying = feature === "transport" ? Object.keys(onFlags).filter(key => key.startsWith("transport.") && key !== "transport.serial") : [feature];
+if (varying.some(key => !onFlags[key] || offFlags[key]) || Object.keys(onFlags).some(key => !varying.includes(key) && onFlags[key] !== offFlags[key]))
   throw new Error(`profiles must differ only in ${feature}`);
 const results: Record<string, any> = {};
 for (const name of names) {
@@ -78,6 +79,13 @@ for (const name of names) {
   }
   if (receipt.modules.includes(join(root, "core/mcp.ts")) !== features.values["mcp.server"])
     throw new Error(`MCP module graph mismatch: ${name}`);
+  for (const [name, definition] of Object.entries(features.definitions)) {
+    if (!name.startsWith("transport.")) continue;
+    for (const module of definition.modules ?? []) {
+      if (receipt.modules.includes(join(root, module)) !== features.values[name])
+        throw new Error(`transport module graph mismatch: ${name} ${module}`);
+    }
+  }
   const compact = await compactBundle(join(dir, `${plan.app.output}.js`), join(dir, "compact"));
   const js = new Uint8Array(await Bun.file(compact).arrayBuffer());
   const pak = new Uint8Array(await Bun.file(join(dir, `${plan.app.output}.pak`)).arrayBuffer());
