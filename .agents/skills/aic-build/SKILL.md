@@ -42,6 +42,9 @@ RTT_EXEC_PATH=/Users/kai/DevTools/xpack-riscv-none-elf-gcc-15.2.0-1/bin npm run 
                        # 本机 xPack 工具链；默认 SDK=vendor/luban-lite；
                        # 可加 -- --sdk /path/to/sdk -- -j4（不传则 -j8）
                        # 输出 ELF/map/ITB/IMG + dist/aic/memory-report.json；预算超限非零退出
+                       # 构建环境 POCKETJS_GE=0 编译关闭 GE 2D 加速（等价纯 CPU 渲染，
+                       # 用于 A/B 对比与真机异常兜底）；启用时每秒日志行含
+                       # ge_fill/ge_blend/ge_srm 计数（详见 host/rtthread/README 的 GE 章节）
 
 npm run flash:aic -- -p /dev/cu.usbserial-XXX -b 3000000 --verify --reset
 npm run flash:aic -- --all -p /dev/cu.usbserial-XXX

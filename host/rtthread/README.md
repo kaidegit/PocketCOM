@@ -15,7 +15,7 @@
 ```text
 PocketCOM app/main.aic.tsx → app/app.tsx（共享 UI，JSON feature 裁剪）
   → host/rtthread（产品 manifest/profile + 构建编排）
-  → vendor/pocketjs/hosts/aic（QuickJS、触摸、帧循环、RGB565、MPP 显示）
+  → vendor/pocketjs/hosts/aic（QuickJS、触摸、帧循环、RGB565、GE 2D 加速、MPP 显示）
   → vendor/luban-lite（RT-Thread、板级驱动、链接、bootloader、镜像）
 ```
 
@@ -176,6 +176,33 @@ npm run probe:aic -- --turns 240 --tap 60,16@5 --sample 60 --tap 238,22@65 --col
 
 前置：`npm run package:aic`（探针读 `.pocket` 包与生成的契约头）、cc、cargo。对象缓存在 `.pocket/aic/probe-host/`，重复运行只重链。**口径与偏差**：caps/js/guest/rloc 字段含义同板；64 位指针使数字系统性偏大（实测精简页 caps 峰值 +10%、js +15%，realloc 次数与板几乎一致），malloc 无碎片/无系统侧共享——回答"这个包大概吃多少、峰值在哪"，不替代板端验收。
 
+## GE 2D 加速（feat/aic-gpu 分支，2026-10-24）
+
+fork `hosts/aic/port/pocketjs_ge.c` 把 RGB565 渲染器的 accelerator 表接到
+mpp_ge，工作在 GE normal 模式（产品 `RT_USING_PM=y`，Kconfig 排除 cmdq）：
+
+- **加速范围**：不透明矩形填充→一次 GE fillrect（常量色展开为 fill 路径固定的
+  ARGB8888 源，565 通道低位复制保证 ARGB→RGB565 截断往返精确）；1:1 PSM 5650
+  纹理搬运→一次 GE bitblt，源格式声明 `MPP_FMT_BGR_565`，由格式转换完成 PSM
+  5650 与 framebuffer RGB565 的 R/B 交换，mirror 映射 `MPP_FLIP_H/V`。
+  A8 掩码混合（字形/alpha 四边形）没有 GE 源格式，保持 CPU 光栅。
+- **同步与 cache**：normal 模式 ioctl 阻塞到 finish IRQ；每次 DMA 前 clean 目的
+  行、后 invalidate，按行维护避免窄矩形冲掉同行相邻 CPU 写，维持 PpaOps
+  "返回即对后续 CPU 可见"契约（同帧内 CPU 软件回退与 GE 交替写同一 strip）。
+- **回退**：旋转、缩放、越界几何与任何 GE 错误返回 false，渲染器按 DrawList
+  顺序软件重放；填充/搬运是整矩形写，失败后重放幂等。
+- **配置与内存不变**：GE 驱动与 mpp_ge 本就在固件内（`AIC_USING_GE` 默认 y，
+  mpp SConscript 在 `AIC_GE_DRV` 下编入 ge/*.c；defconfig 的 `AIC_GE_CMDQ`
+  因 `RT_USING_PM` 无效），无 defconfig、分区、配额改动；GE open 在
+  S5-renderer 采样前，分配入统一堆。
+- **构建开关与观测**：`POCKETJS_GE=0` 编译关闭（`-DPOCKETJS_AIC_GE_DISABLE`），
+  accelerator 表保持 NULL，等价 pre-GE 固件，用于 A/B 与真机异常兜底；每秒
+  fps 行新增 `ge_fill/ge_blend/ge_srm` 计数，启动打印 GE 就绪或禁用原因。
+- **验证状态**：host 侧 stub 回归（`vendor/pocketjs` `tests/aic-port.test.ts`，
+  覆盖参数映射、clean→GE→invalidate 顺序、回退与禁用变体）与固件编译通过；
+  **真机未验证**——BGR_565 源交换的显示颜色、fill 颜色、fps/turn_max 对比与
+  长时稳定性待烧录实测，烧录后按第 1/2 步记录的板端口径验收。
+
 ## 验证
 
 ```sh
@@ -184,6 +211,8 @@ npm run typecheck
 bun test test/
 npm run check && npm run build
 cargo test --release --manifest-path host/macos/Cargo.toml --bin pocketcom-host
+# fork 侧 GE 端口回归（stub mpp_ge，含 POCKETJS_GE=0 禁用变体）
+(cd vendor/pocketjs && bun test tests/aic-port.test.ts)
 ```
 
 重复 package 应得到相同 `.pocket`；构建后查看报告和 ELF/map。烧录用 `npm run flash:aic`：写入 `images/` 下 SDK 打包产物（spl 分区放 `bootloader.aic`，os 分区放 `d12x_os.itb`），烧写偏移按 pack image_cfg.json 的分区表推导；`.img` 是带 section 偏移的容器，不能作为裸文件直接写某个 flash 地址。真机检查启动错误、持续出帧、字体和 UI 渲染；当前不以完整触摸交互或串口收发作为验收。
