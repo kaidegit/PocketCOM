@@ -96,6 +96,7 @@ PSRAM 8 MiB      CMA 1 MiB（.data/.bss + 双 RGB565 framebuffer 522,240 B）
 
 ## 板端现状速览
 
+- 逐步内存优化当前停在第 1 步：节点共享原型，本地验证完成、固件已生成，详见 [本步记录](../../../docs/aic-node-prototype-step1.md)。用户负责烧录及日志；在收到本步板端结果前不推进下一项优化。保持 JSON profile、容量、堆/栈和诊断口径，交付包/固件 hash 与静态报告，避免仅凭离板收益更新真机验收状态。
 - 板端入口 `app/main.aic.tsx → app/app.tsx`：2026-10-23 起按用户要求用于 **480×272 共享 UI 内存 perf**，沿用 JSON `aic-diagnostic` profile，2026-10-23 真机编译通过、S4 底层分配失败 8 次，未进入首帧；[完整复测记录与原始日志](../../../docs/aic-memory-perf-2026-10-23.md)。`app/aic.tsx` 精简页保留作基线；此前未裁剪完整 UI 曾 OOM，mount 可能以 `TypeError: not a function` 伪装失败。构建保持现有配额和容量，默认保留 `[PJS-DIAG]` 与 `pjs_mem`，下一轮先保留启动日志；挂载成功后再采 S5-frame120、稳态及 WiFi 状态日志，失败后的快照不能当作失败瞬间可分配空间。
 - AIC 打包对 SDK 编译器输出的自包含 IIFE 再压缩标识符和空白（不折叠表达式、不改宿主属性名），
   桌面构建不变。

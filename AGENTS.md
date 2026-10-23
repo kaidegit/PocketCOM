@@ -20,6 +20,7 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 | 板端构建/烧录/内存报告 | skill `aic-build`（.agents/skills/aic-build/SKILL.md） |
 | 板端接入全记录（XIP/TLSF/WiFi） | [host/rtthread/README.md](host/rtthread/README.md) |
 | 最新板端内存实测与原始日志 | [docs/aic-memory-perf-2026-10-23.md](docs/aic-memory-perf-2026-10-23.md) |
+| 当前内存优化步骤与待烧录产物 | [docs/aic-node-prototype-step1.md](docs/aic-node-prototype-step1.md)（节点共享原型，本地验证完成、待用户真机日志） |
 | 板端内存优化方案（A–G、P0–P3） | [docs/aic-memory-optimization.md](docs/aic-memory-optimization.md) |
 | 共享 UI / TS 内存优化与编译期裁剪提案 | [docs/shared-ui-memory-optimization.md](docs/shared-ui-memory-optimization.md) |
 | e2e 脚本用法 / 控件坐标 | [docs/e2e.md](docs/e2e.md) / [docs/coords.md](docs/coords.md) |
@@ -118,6 +119,7 @@ SPEC.md         # 功能规格（权威）
 - **WiFi 已点亮**（2026-10-11）：RTL8189FTV（SDIO/SDMC0，4-bit @40MHz）+ third-party lwIP
   （netif `WL0`），验证至 AP 扫描；驱动 `.bss` ≈259 KiB 进 PSRAM，运行时缓冲吃统一堆——
   恢复收发功能前必须补 WiFi 开/连 AP/断开状态下的堆基线测量。
+- **内存优化按步交付**：2026-10-23 第 1 步节点共享原型已完成离板 A/B、桌面回归与固件构建，记录见 `docs/aic-node-prototype-step1.md`；用户负责烧录并回传日志，收到本步真机结果后再决定下一步。最新已观测的真机 S4 OOM 属于优化前基线，不把本地通过写成板端通过。
 
 ### 恢复路线（内存约束下的推进顺序）
 

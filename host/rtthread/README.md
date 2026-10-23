@@ -1,9 +1,10 @@
 # PocketCOM on AIC + RT-Thread
 
-本期接入 D12x demo68-nor：PocketCOM 应用包、固件构建与静态内存预算。固件 **XIP 运行**（`.text/.rodata` 在 SPI NOR 的 0x60000000 窗口原地执行，仅 `.data/.bss` 进 PSRAM），PSRAM 为 **统一 TLSF 系统堆**（不再划分 PocketJS 私有池）。2026-10-23 起切换为 480×272 共享完整 UI，按 JSON profile 裁剪，用于新一轮真机内存 perf（本次真机在 S4 挂载 OOM，未进入首帧）；没有 UART/网络/MCP `com.*` 设备桥或持久化。精简页保留为历史基线。构建不自动烧录；实测基线见 [D12x 8 MiB PSRAM 内存优化方案](../../docs/aic-memory-optimization.md)，后续应用恢复方向见[共享 UI 与编译期裁剪提案](../../docs/shared-ui-memory-optimization.md)（terminal / mcp.server / transport.* / ui.* 裁剪与离板 A/B 已实施，节点优化、窄屏布局和容量方案仍待推进）。
+本期接入 D12x demo68-nor：PocketCOM 应用包、固件构建与静态内存预算。固件 **XIP 运行**（`.text/.rodata` 在 SPI NOR 的 0x60000000 窗口原地执行，仅 `.data/.bss` 进 PSRAM），PSRAM 为 **统一 TLSF 系统堆**（不再划分 PocketJS 私有池）。2026-10-23 起切换为 480×272 共享完整 UI，按 JSON profile 裁剪，用于新一轮真机内存 perf（本次真机在 S4 挂载 OOM，未进入首帧）；没有 UART/网络/MCP `com.*` 设备桥或持久化。精简页保留为历史基线。构建不自动烧录；实测基线见 [D12x 8 MiB PSRAM 内存优化方案](../../docs/aic-memory-optimization.md)，后续应用恢复方向见[共享 UI 与编译期裁剪提案](../../docs/shared-ui-memory-optimization.md)（terminal / mcp.server / transport.* / ui.* 裁剪与离板 A/B 已实施，节点共享原型已完成本地验证、待用户烧录复测，窄屏布局和容量方案仍待推进）。
 
 ## 阅读导航与当前结论
 
+- **当前优化步骤**：[第 1 步：共享节点兼容接口](../../docs/aic-node-prototype-step1.md)。本地 A/B、桌面回归和固件构建已完成，优化后真机日志待用户提供；收到日志后再决定下一步。
 - **当前真机结果**：[2026-10-23 共享 UI 内存复测](../../docs/aic-memory-perf-2026-10-23.md)。S3 编译通过，S4 底层分配失败 8 次，系统历史峰值 6,839,160 / 7,340,032 bytes；无首帧与稳态数据。
 - **构建与采集操作**：本文的构建、产物和 P0 诊断章节，以及 [aic-build skill](../../.agents/skills/aic-build/SKILL.md)。
 - **历史证据与方案评估**：[内存优化方案](../../docs/aic-memory-optimization.md)；**后续共享实现路线**：[共享 UI 方案](../../docs/shared-ui-memory-optimization.md)。
