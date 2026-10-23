@@ -24,7 +24,7 @@ git submodule update --init --depth 1 vendor/luban-lite   # 需访问局域网 G
 权威细节见 **host/rtthread/README.md**（接入记录、XIP/TLSF/WiFi 改造全文）与
 **docs/aic-memory-optimization.md**（内存优化方案 A–G、P0–P3 推进阶段）。
 后续 UI 恢复方向见 **docs/shared-ui-memory-optimization.md**：共享现有应用 / 控件、TS 内存优化与
-编译期功能裁剪提案；原方案 A 的独立产品页方向由该提案接替，板端入口现按用户要求切换为 JSON 裁剪共享 UI，2026-10-23 真机 S4 底层 OOM，未通过内存验收。统一 `pocket.features.json` 的 `aic-diagnostic` profile 已接入 check/package，
+编译期功能裁剪提案；原方案 A 的独立产品页方向由该提案接替，板端入口现按用户要求切换为 JSON 裁剪共享 UI，2026-10-23 优化前真机 S4 底层 OOM；节点共享原型优化后，启动/120 帧与基本交互已通过，长时/业务负载/WiFi 组合验收仍待补（见第 1 步记录）。统一 `pocket.features.json` 的 `aic-diagnostic` profile 已接入 check/package，
 只有 `implemented` 项允许进入 profile；`planned` 项仅登记，不能配置/引用，也不改变功能行为。
 功能名与实际启停值只读取这份 JSON，文档和构建代码不维护另一套开关表。
 共享 App 的 terminal 开/关离板实验用 `npm run probe:features`，MCP 用 `npm run probe:features -- --feature mcp.server`（产物 `dist/mcp-feature-heap/`），产物隔离到 `dist/feature-heap/`，
@@ -96,8 +96,8 @@ PSRAM 8 MiB      CMA 1 MiB（.data/.bss + 双 RGB565 framebuffer 522,240 B）
 
 ## 板端现状速览
 
-- 逐步内存优化当前停在第 1 步：节点共享原型，本地验证完成、固件已生成，详见 [本步记录](../../../docs/aic-node-prototype-step1.md)。用户负责烧录及日志；在收到本步板端结果前不推进下一项优化。保持 JSON profile、容量、堆/栈和诊断口径，交付包/固件 hash 与静态报告，避免仅凭离板收益更新真机验收状态。
-- 板端入口 `app/main.aic.tsx → app/app.tsx`：2026-10-23 起按用户要求用于 **480×272 共享 UI 内存 perf**，沿用 JSON `aic-diagnostic` profile，2026-10-23 真机编译通过、S4 底层分配失败 8 次，未进入首帧；[完整复测记录与原始日志](../../../docs/aic-memory-perf-2026-10-23.md)。`app/aic.tsx` 精简页保留作基线；此前未裁剪完整 UI 曾 OOM，mount 可能以 `TypeError: not a function` 伪装失败。构建保持现有配额和容量，默认保留 `[PJS-DIAG]` 与 `pjs_mem`，下一轮先保留启动日志；挂载成功后再采 S5-frame120、稳态及 WiFi 状态日志，失败后的快照不能当作失败瞬间可分配空间。
+- 逐步内存优化当前停在第 1 步：节点共享原型已通过本地 A/B、用户真机启动/120 帧零错误、零分配失败及基本交互，详见 [本步记录](../../../docs/aic-node-prototype-step1.md)。用户负责烧录及日志；每步记录结果后再推进下一项优化，不能把短时通过扩展成长时/业务负载验收。保持 JSON profile、容量、堆/栈和诊断口径，交付包/固件 hash 与静态报告，避免仅凭离板收益更新真机验收状态。
+- 板端入口 `app/main.aic.tsx → app/app.tsx`：2026-10-23 起按用户要求用于 **480×272 共享 UI 内存 perf**，沿用 JSON `aic-diagnostic` profile，2026-10-23 优化前真机 S4 底层分配失败 8 次，未进入首帧，见[历史复测记录与原始日志](../../../docs/aic-memory-perf-2026-10-23.md)。`app/aic.tsx` 精简页保留作基线；此前未裁剪完整 UI 曾 OOM，mount 可能以 `TypeError: not a function` 伪装失败。构建保持现有配额和容量，默认保留 `[PJS-DIAG]` 与 `pjs_mem`，本步新真机日志已记录 S5-frame120；后续补长时空闲、交互峰值与 WiFi 状态日志，失败后的快照不能当作失败瞬间可分配空间。
 - AIC 打包对 SDK 编译器输出的自包含 IIFE 再压缩标识符和空白（不折叠表达式、不改宿主属性名），
   桌面构建不变。
 - 字体：UI MiSans、mono JetBrains Mono；从两份语言包字符串值提取额外字形烘焙；
