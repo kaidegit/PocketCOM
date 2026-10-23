@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-23",
+  "timezone": "Asia/Shanghai",
+  "source": "User-provided serial boot log; firmware hash not printed in log",
+  "logSha256": "64d1792845c9bce1c92436ef6f38fd55e8553605f8aa35867cfa2879118831f4",
+  "profile": "aic-diagnostic",
+  "profileFingerprint": "df808f8021ccf4d57f078da7b2a7b38e2642f3418e29d71a90f1a33f6f293347",
+  "featureConfigSha256": "4d59491303a7938a58b7fe7f51a6a4c570db9694076f81aa0700f74561a84e41",
+  "repositoryHead": "ddc214aa42a07339e7348a06be007d1fbf29f823",
+  "pocketjsHead": "4acb1db2d016b919fc1e2312432823ab1f9e6778",
+  "lubanLiteHead": "ef55c659f03fac3d4eaf5ce24f1543e14b2f15a7",
+  "workingTreeChanges": [
+    "app/main.aic.tsx mounts shared app/app.tsx",
+    "app/aic.tsx baseline comment and documentation updates"
+  ],
+  "diagnostics": true
+}

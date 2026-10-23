@@ -7,7 +7,7 @@
 PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调试助手（参考 COMTool 精简复刻）。单页面、收发/终端双模式开关切换；连接支持串口/TCP/UDP/WebSocket/回环（loopback，测试用）；i18n + 深色模式；内置 MCP server 供 AI agent 共享收发。
 
 - **桌面（macOS）**：全功能已交付并经真机 e2e 验证（M1–M4）。
-- **板端（AIC D12x + RT-Thread）**：应用打包/固件构建/XIP/统一堆/WiFi 已接入，当前为精简验证页（详见下文"AIC port"）。
+- **板端（AIC D12x + RT-Thread）**：应用打包/固件构建/XIP/统一堆/WiFi 已接入，当前为按 JSON 裁剪的共享 UI 内存 perf 入口，2026-10-23 真机挂载 OOM，未进入首帧（详见下文"AIC port"）。
 
 ## 总览
 
@@ -19,6 +19,7 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 | 桌面测试/e2e/MCP 集成 | skill `desktop-test`（.agents/skills/desktop-test/SKILL.md） |
 | 板端构建/烧录/内存报告 | skill `aic-build`（.agents/skills/aic-build/SKILL.md） |
 | 板端接入全记录（XIP/TLSF/WiFi） | [host/rtthread/README.md](host/rtthread/README.md) |
+| 最新板端内存实测与原始日志 | [docs/aic-memory-perf-2026-10-23.md](docs/aic-memory-perf-2026-10-23.md) |
 | 板端内存优化方案（A–G、P0–P3） | [docs/aic-memory-optimization.md](docs/aic-memory-optimization.md) |
 | 共享 UI / TS 内存优化与编译期裁剪提案 | [docs/shared-ui-memory-optimization.md](docs/shared-ui-memory-optimization.md) |
 | e2e 脚本用法 / 控件坐标 | [docs/e2e.md](docs/e2e.md) / [docs/coords.md](docs/coords.md) |
@@ -113,10 +114,7 @@ SPEC.md         # 功能规格（权威）
 - **统一 TLSF 系统堆**：PSRAM 8 MiB = CMA 1 MiB（`.data/.bss` + 双 RGB565 framebuffer）+
   SW 7 MiB（RT-Thread TLSF，QuickJS/Rust guest 与系统线程共用，无 PocketJS 私有池）；
   guest JS 配额 5 MiB。
-- 板端入口 `app/main.aic.tsx → app/aic.tsx` 是 **480×272 精简验证页**（帧计数 + 触摸计数），
-  真机验证通过（启动/持续出帧/触摸一致，无 OOM）。**不得未经内存验证重新引入完整
-  App/session 启动图**：完整桌面 UI 常驻工作集 ≈8.1 MiB，超出板上 guest 可用约 6.0–6.4 MiB
-  （WiFi 前口径），挂载失败会伪装成 `TypeError: not a function`。
+- 板端入口 `app/main.aic.tsx → app/app.tsx` 自 2026-10-23 起用于 **480×272 共享 UI 真机内存 perf**，功能只读取 JSON 的 `aic-diagnostic` profile；本次切换由用户明确要求，2026-10-23 真机编译通过、S4 底层 OOM，未进入首帧；数据与原始日志见 [复测记录](docs/aic-memory-perf-2026-10-23.md)。保留 `app/aic.tsx` 精简页作历史诊断基线。此前未裁剪完整 UI 常驻工作集 ≈8.1 MiB，挂载 OOM 可能伪装成 `TypeError: not a function`；不得把构建通过当成板端内存验收。
 - **WiFi 已点亮**（2026-10-11）：RTL8189FTV（SDIO/SDMC0，4-bit @40MHz）+ third-party lwIP
   （netif `WL0`），验证至 AP 扫描；驱动 `.bss` ≈259 KiB 进 PSRAM，运行时缓冲吃统一堆——
   恢复收发功能前必须补 WiFi 开/连 AP/断开状态下的堆基线测量。
@@ -135,7 +133,7 @@ UI 对比用 `npm run probe:features -- --feature ui`，见 `docs/ui-feature-hea
 后续按[共享 UI 与编译期裁剪提案](docs/shared-ui-memory-optimization.md)推进：AIC / macOS 共用
 `app/`、`core/` 和控件，优化 TS 节点表示与显式装配，通过构建功能标记、共享窄屏布局和容量配置
 控制板端工作集，不另起一套产品 UI。现有 `app/aic.tsx` 保留作诊断基线；提案实施前先更新 SPEC
-相应平台差异，未经真机内存验证不切换正式入口。原内存方案的数据、全链路限额（D）及字节码（B）/
+相应平台差异，当前共享入口仅供用户要求的真机内存复测，产品验收仍须真机内存验证。原内存方案的数据、全链路限额（D）及字节码（B）/
 realloc（C）研究仍有效，每步以板端实测峰值/稳态验收，桌面大容量默认值不得直接照搬。
 
 ### 构建与烧录

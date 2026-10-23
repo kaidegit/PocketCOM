@@ -24,7 +24,7 @@ git submodule update --init --depth 1 vendor/luban-lite   # 需访问局域网 G
 权威细节见 **host/rtthread/README.md**（接入记录、XIP/TLSF/WiFi 改造全文）与
 **docs/aic-memory-optimization.md**（内存优化方案 A–G、P0–P3 推进阶段）。
 后续 UI 恢复方向见 **docs/shared-ui-memory-optimization.md**：共享现有应用 / 控件、TS 内存优化与
-编译期功能裁剪提案；原方案 A 的独立产品页方向由该提案接替，正式板端入口未变。统一 `pocket.features.json` 的 `aic-diagnostic` profile 已接入 check/package，
+编译期功能裁剪提案；原方案 A 的独立产品页方向由该提案接替，板端入口现按用户要求切换为 JSON 裁剪共享 UI，2026-10-23 真机 S4 底层 OOM，未通过内存验收。统一 `pocket.features.json` 的 `aic-diagnostic` profile 已接入 check/package，
 只有 `implemented` 项允许进入 profile；`planned` 项仅登记，不能配置/引用，也不改变功能行为。
 功能名与实际启停值只读取这份 JSON，文档和构建代码不维护另一套开关表。
 共享 App 的 terminal 开/关离板实验用 `npm run probe:features`，MCP 用 `npm run probe:features -- --feature mcp.server`（产物 `dist/mcp-feature-heap/`），产物隔离到 `dist/feature-heap/`，
@@ -96,10 +96,7 @@ PSRAM 8 MiB      CMA 1 MiB（.data/.bss + 双 RGB565 framebuffer 522,240 B）
 
 ## 板端现状速览
 
-- 板端入口 `app/main.aic.tsx → app/aic.tsx`：**480×272 精简验证页**（帧计数 + 触摸计数），
-  真机验证通过（启动/持续出帧 60–62 fps/触摸一致，无 OOM）。**不得未经内存验证重新引入完整
-  App/session 启动图**——完整桌面 UI 常驻工作集 ≈8.1 MiB，超出板上 guest 可用约 6.0–6.4 MiB
-  （WiFi 前口径）， mount 会以 `TypeError: not a function` 的伪装形式 OOM。
+- 板端入口 `app/main.aic.tsx → app/app.tsx`：2026-10-23 起按用户要求用于 **480×272 共享 UI 内存 perf**，沿用 JSON `aic-diagnostic` profile，2026-10-23 真机编译通过、S4 底层分配失败 8 次，未进入首帧；[完整复测记录与原始日志](../../../docs/aic-memory-perf-2026-10-23.md)。`app/aic.tsx` 精简页保留作基线；此前未裁剪完整 UI 曾 OOM，mount 可能以 `TypeError: not a function` 伪装失败。构建保持现有配额和容量，默认保留 `[PJS-DIAG]` 与 `pjs_mem`，下一轮先保留启动日志；挂载成功后再采 S5-frame120、稳态及 WiFi 状态日志，失败后的快照不能当作失败瞬间可分配空间。
 - AIC 打包对 SDK 编译器输出的自包含 IIFE 再压缩标识符和空白（不折叠表达式、不改宿主属性名），
   桌面构建不变。
 - 字体：UI MiSans、mono JetBrains Mono；从两份语言包字符串值提取额外字形烘焙；
@@ -118,5 +115,4 @@ npm run check && npm run build  # 桌面回归（allocator/字节码类改动需
 ```
 
 后续恢复按 docs/shared-ui-memory-optimization.md §9 的共享 UI 路线推进；实测基线、诊断阶段和
-容量 / allocator 研究继续参考 docs/aic-memory-optimization.md。实施前更新 SPEC，正式入口切换
-以真机内存验收为前提，不能直接将未裁剪的完整 App 挂回 AIC。
+容量 / allocator 研究继续参考 docs/aic-memory-optimization.md。本次共享入口切换已更新 SPEC，仅用于真机 perf；产品验收仍以真机内存结果为准。

@@ -1,7 +1,7 @@
 # PocketCOM 规格说明书
 
 版本：v0.2（草案）  
-日期：2026-10-12  
+日期：2026-10-23
 状态：随实现持续更新（M1–M4 已交付并真机验证，M5 板端构建/渲染已交付，详见 §8）
 
 ## 1. 概述
@@ -253,7 +253,7 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 - PocketCOM 负责产品源码、板端 manifest/host profile、启动入口和构建编排；PocketJS fork 的 `hosts/aic` 负责 QuickJS、触摸、RGB565 渲染和帧循环；luban-lite SDK 负责 RT-Thread、MPP、硬件驱动、链接与镜像打包。
 - `vendor/pocketjs` 跟踪 `kaidegit/pocketjs` 的 `feat/aic`，`vendor/luban-lite` 跟踪局域网 Gitea `yekai/luban-lite` 的 `feat/pocketjs`。显式 `git submodule update --remote` 更新分支；构建不拉取更新。父仓库 gitlink 仍按 Git 机制记录提交。
 - `host/rtthread/` 放产品配置与接入文档；复用 SDK 的 `application/rt-thread/pocketjs` 和 `d12x_demo68-nor_rt-thread_pocketjs_defconfig`，不复制通用宿主，不修改 vendor 已跟踪文件。
-- 板端 Vue Vapor 应用使用 480×272、native presentation、density 1、60Hz，启动前初始化视口。完整共享 UI 在真机 OOM（2026-10-10 实测：编译阶段已通过，但 mount 阶段分配失败以 `TypeError: not a function` 伪装抛出；本机 probe 判定完整 UI 常驻工作集 ≈8.1 MiB，超出板上 guest 可用约 6.0–6.4 MiB），当前板端入口为精简启动验证页：标题、能力边界说明、帧计数和触摸计数；不导入桌面 App、session、终端、连接配置面板或设置弹窗。共用 i18n 和主题令牌，桌面入口保持完整功能。本期不提供 UART/网络/MCP、持久化或软键盘；完整 UI 恢复按共享 UI / 编译期裁剪路线推进（见 docs/shared-ui-memory-optimization.md），须先通过板端内存验证。
+- 板端 Vue Vapor 应用使用 480×272、native presentation、density 1、60Hz，mount 前初始化视口。2026-10-23 起为新一轮真机内存 perf，`app/main.aic.tsx` 挂载共享 `app/app.tsx`（包含 session/连接面板/收发区/设置弹窗），按 `pocket.features.json` 的 `aic-diagnostic` profile 编译裁剪，不另设功能开关。保留 `app/aic.tsx` 精简页作历史诊断基线。此前未裁剪完整 UI 曾启动 OOM，本次共享 UI 真机编译通过、S4 挂载底层 OOM，未进入首帧，未通过内存验收（见 docs/aic-memory-perf-2026-10-23.md），不代表设备 IO 桥已实现；宿主无 `com.*` 时按共享 App 现有能力探测降级。保持现有内存配额和容量，以便比较；紧凑布局与板端设备桥仍按共享 UI 路线推进。
 - **板端 WiFi（2026-10-11 点亮，验证至 AP 扫描）**：RTL8189FTV（SDIO 接 SDMC0，4-bit @40MHz）+ third-party lwIP（netif `WL0`，`AIC_WLAN_REALTEK`/`AIC_USING_RTL8189_WLAN0` 配置链，非 RT-Thread wlan 框架/内核 lwIP）。驱动 `.bss` ≈259 KiB 静态落在 PSRAM，运行时收发缓冲吃统一堆；恢复网络功能前必须补 WiFi 开/关、连 AP/断开状态下的堆基线与峰值测量。模组 EN 与 SoC 断开（载板保证使能），固件不做电源控制；PM 睡眠驱动未编入。
 - `check:aic` 校验配置/类型；`package:aic` 生成 JS/PAK/.pocket、宿主契约头和内联 C 数组；`build:aic` 重新打包后经 SCons 构建固件。默认 SDK 为 submodule，支持 `--sdk <路径>` 和 `-- <scons 参数>`，工具链遵循 `RTT_EXEC_PATH`。产物在 `dist/aic`，中间文件在 `.pocket/aic`，宿主生成文件在其已忽略的 `hosts/aic/generated`。
 - 板端固件 XIP 运行：`.text/.rodata`（含内联包）链接进 SPI NOR 的 0x60000000 XIP 窗口原地执行，仅 `.data/.bss` 由 bootloader 拷入/清零 PSRAM；分区表去掉未使用的 `data` 分区，QSPI0 运行期归 XIP 缓存，OS 侧不挂 spinor 设备（无 FAL/SFUD/userid 运行时 flash 访问）。
@@ -264,7 +264,7 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 
 - 根目录 `pocket.features.json` 是产品功能、依赖、模块所有权、文案归属和 profile 的唯一来源；`status: "implemented"` 表示已接入裁剪（缺省兼容该状态），`status: "planned"` 仅登记待接入项，和功能本身是否已经实现无关。当前 `terminal`、`mcp.server`、五个 `transport.*` 与九个 `ui.*` 接入裁剪，其余产品功能目录以该 JSON 为准。
 - profile 必须且只能为所有 implemented 项提供布尔值；planned 项不能写入 profile、拥有裁剪模块/文案或用于 `hasAppFeature()`，避免产生无效开关。implemented 项也不能依赖 planned 项；依赖名称与循环对整个目录校验。文档不得另行维护平台启停表，代码不得增加独立产品开关常量或环境变量。用户运行时设置和真实宿主能力探测保持各自语义，不充当编译裁剪配置。
-- `desktop` 启用已接入功能，`aic-diagnostic` 的配置以 JSON 为准，仍使用原诊断入口；`terminal-on` / `terminal-off` 是离板实验组合，使用同一共享 App、480×272、相同宿主能力、容量与字体，仅终端功能取值不同。实验不切换正式板端入口，不代表板端 UART/网络桥已实现。
+- `desktop` 启用已接入功能，`aic-diagnostic` 的配置以 JSON 为准，用于共享 UI 真机内存 perf；`terminal-on` / `terminal-off` 是离板实验组合，使用同一共享 App、480×272、相同宿主能力、容量与字体，仅终端功能取值不同。实验不切换正式板端入口，不代表板端 UART/网络桥已实现。
 - 产品功能通过 `@pocketcom/features` 的字面量 `hasAppFeature()` 调用引用；构建必须显式选择 profile，未知功能、缺项、依赖冲突与动态功能名报错。宿主 capability 与内存容量不与产品开关混用。
 - PJS 在 Vue 转换、样式/字形收集和依赖遍历之前对 TS/TSX 作 AST 特化；禁用终端同时关闭模型创建、RX 订阅、应答泵、版本同步、输入/鼠标/滚轮路由、模式切换与回滚设置。桌面开启时保持持续消费 RX 和查询应答语义。
 - 禁用功能声明拥有的模块只有在无存活引用且特化后无顶层执行副作用时才能剔除；被剔除模块的非功能依赖保留为副作用导入，不对全仓库设置 `sideEffects: false`。颜色定义提取为共享叶子模块，保留原 `core/term.ts` 导出兼容性。
@@ -372,7 +372,7 @@ MCP server 实现于**宿主层**（fork 的桌面宿主 crate 内的原生线�
 | M4 | MCP 服务 | §6 全项 + 集成测试 |
 | M5 | AIC + RT-Thread 构建与宿主接入 | 应用包、固件构建、内存报告；设备 IO 桥/紧凑布局后续实现 |
 
-M5 当前状态（2026-10-12）：应用打包、固件构建、内存报告、**XIP 固件 + 统一 TLSF 堆（2026-10-10 真机验证）**、精简验证页真机通过（启动/出帧/触摸）、**WiFi RTL8189FTV + lwIP 点亮至 AP 扫描（2026-10-11）**均已交付；UART/网络/MCP 设备桥、紧凑布局、软键盘仍为后续。完整 UI 因常驻工作集超 PSRAM 预算，按 docs/aic-memory-optimization.md 方案 A 推进。
+M5 当前状态（2026-10-23）：应用打包、固件构建、内存报告、**XIP 固件 + 统一 TLSF 堆（2026-10-10 真机验证）**、精简验证页真机通过（启动/出帧/触摸）、**WiFi RTL8189FTV + lwIP 点亮至 AP 扫描（2026-10-11）**均已交付；UART/网络/MCP 设备桥、紧凑布局、软键盘仍为后续。共享 UI 已按 JSON 裁剪切回板端入口用于内存 perf，2026-10-23 真机结果为 S4 挂载底层 OOM、未进入首帧（详见 docs/aic-memory-perf-2026-10-23.md）；精简页保留为基线。
 
 ## 9. 风险与开放问题
 

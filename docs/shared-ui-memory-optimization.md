@@ -1,12 +1,12 @@
 # PocketCOM 共享 UI 与编译期裁剪方案
 
-日期：2026-10-12。状态：部分实施（2026-10-22：统一 feature 配置、terminal 裁剪与离板 A/B）；其余为设计提案。适用范围：PocketCOM 的 TypeScript 应用、PocketJS Vue Vapor 适配层及 AIC / macOS 构建链。
+日期：2026-10-12。状态：部分实施（更新于 2026-10-23）：统一 feature 配置及 terminal / mcp.server / transport.* / ui.* 裁剪和离板 A/B 已接通；共享 App 真机挂载仍 OOM。节点优化、显式模型装配、窄屏布局与容量方案仍待实施。适用范围：PocketCOM 的 TypeScript 应用、PocketJS Vue Vapor 适配层及 AIC / macOS 构建链。
 
 **后续主线采用同一套 `app/`、`core/` 和基础控件，通过编译期功能裁剪、共享实现的内存优化、按需挂载和容量配置适配 AIC。** macOS 保留完整功能，AIC 选择可承受的功能组合。现有 `app/aic.tsx` 保留作启动诊断基线，后续产品界面从现有组件演进，不再以它扩写一套独立 UI。
 
-**已实施入口：** 根目录 `pocket.features.json`、`@pocketcom/features` 的字面量 `hasAppFeature()`，以及 `npm run probe:features`。已接入 terminal、mcp.server 与 transport.* 裁剪；正式板端仍是诊断页。实测边界与结果见 [terminal feature heap 对比](terminal-feature-heap.md) 、[MCP feature heap 对比](mcp-feature-heap.md) 和 [transport feature heap 对比](transport-feature-heap.md)。
+**已实施入口：** 根目录 `pocket.features.json`、`@pocketcom/features` 的字面量 `hasAppFeature()`，以及 `npm run probe:features`。已接入 terminal、mcp.server、transport.* 与 ui.* 裁剪；板端入口现为共享 App 内存 perf 构建，未通过验收。实测边界与结果见 [terminal feature heap 对比](terminal-feature-heap.md)、[MCP feature heap 对比](mcp-feature-heap.md)、[transport feature heap 对比](transport-feature-heap.md) 和 [UI feature heap 对比](ui-feature-heap.md)。
 
-本文调整[原内存方案](aic-memory-optimization.md)中方案 A 的实现方向；原文的实测数据、全链路限额要求及字节码 / realloc 研究仍有效。原提案后续阶段仍有效；首轮实现已更新 SPEC §4.5，未切换板端入口。
+本文调整[原内存方案](aic-memory-optimization.md)中方案 A 的实现方向；原文的实测数据、全链路限额要求及字节码 / realloc 研究仍有效。原提案后续阶段仍有效；首轮实现已更新 SPEC §4.5，本次共享入口切换已同步 SPEC §4.4，真机数据见下节。
 
 ## 1. 共享的边界
 
@@ -35,7 +35,9 @@
 
 ### 2.1 已记录的板端结果
 
-以下引用[原方案 §2.1.3–2.1.4](aic-memory-optimization.md)，并非本次重新测得。单位统一用 bytes，避免混用十进制 MB 与 MiB。
+最新一次：[2026-10-23 JSON 裁剪共享 UI 真机复测](aic-memory-perf-2026-10-23.md)，S3 编译通过，S4 底层分配失败 8 次，未进入首帧。系统历史峰值 6,839,160 / 7,340,032 bytes；失败截断峰值不能当成完整需求。后续先补挂载细分计数，再优化共享节点表示与实例成本。
+
+以下历史表引用[原方案 §2.1.3–2.1.4](aic-memory-optimization.md)，并非本次重新测得。单位统一用 bytes，避免混用十进制 MB 与 MiB。
 
 | 观测 | 精简诊断页 | 完整 App 诊断构建 |
 |---|---:|---:|
@@ -85,7 +87,7 @@
 
 JSON 中 `status: "planned"` 仅登记未来要接入裁剪的功能，与该功能当前是否已有实现无关；此状态不可写入 profile 或用于编译条件，也不产生模块/文案裁剪。`implemented`（缺省兼容该状态）才允许参与 profile 和 `hasAppFeature()`。尚未拆分的代码继续保持当前行为。
 
-现有 terminal 已接通，具体组合与取值直接读取 JSON。以后接入其他项时，先完成边界、装配、UI 和资源改造，更新状态，再在同一个 JSON 中补齐各 profile；不以文档里的建议值或散落平台判断控制裁剪。
+现有已接入功能及各 profile 取值直接读取 JSON。以后接入目录中的 planned 项时，先完成边界、装配、UI 和资源改造，更新状态，再在同一个 JSON 中补齐各 profile；不以文档里的建议值或散落平台判断控制裁剪。
 
 关闭 MCP 后，继续遵守当前日志语义：TX 行隐藏、RX 无方向前缀、系统消息走 i18n 和消息总线。关闭终端应同时消除模型、RX 订阅、应答泵、键盘路由、视图、选项和对应文案，不能只关闭一个按钮。
 
@@ -200,7 +202,7 @@ UI 与事件路由使用相同 `hasAppFeature("terminal")` 调用包围入口。
 
 沿用现有引擎约束：面板复杂堆叠使用 absolute + inset；弹层使用 Portal 与显式视口大小；可点击整块具有可命中的底色；组件空态不返回 `null`，条件分支放在父级子节点表达式中。
 
-AIC 当前只有触摸输入、没有软键盘。共享 `TextField` 并不会自动产生可输入能力。首轮测试可用固定回环数据验证收发链；对用户开放发送前，需要接入输入适配，可用共享控件构建按需挂载的键盘。键盘打开时的节点峰值也要计入验收。
+AIC 当前只有触摸输入；共享 ASCII 软键盘已实现并接入 feature 裁剪，但是否编入以 JSON 为准，板端尚无成功挂载/交互验收。共享 `TextField` 并不会自动产生可输入能力。首轮测试可用固定回环数据验证收发链；对用户开放发送前，需要接入输入适配，可用共享控件构建按需挂载的键盘。键盘打开时的节点峰值也要计入验收。
 
 回环验证也需要改造装配：当前 `com === null` 时不会创建 `ComSession`。测试变体应显式注入仅用于回环的服务适配，让同一界面走通；真实设备操作返回不支持，不能把测试适配当作已完成的 UART / 网络桥。
 
@@ -265,7 +267,7 @@ UI 继续使用 MiSans，mono 使用 JetBrains Mono。字体槽和字重是否�
 | 4. 共享窄屏布局与数据限额 | 复用原组件的折叠布局、受限模型、回环验证 | 480×272 可操作；无隐藏子树常驻；长流和格式切换有界 |
 | 5. 设备 IO 与功能恢复 | 逐项接 UART / 网络、输入适配，按需开放终端 | 真机启动、持续流量、WiFi 与反复交互均满足预算 |
 
-每步只改变可解释的因素。若完整诊断 App 仍不能在板端挂载，可先用同一套组件的增量构建测量；放宽内存的本机 probe 仅辅助分析。正式 `package:aic` 继续使用已验证入口，直到共享 UI 变体通过验收；当前精简页始终可作为诊断对照。
+每步只改变可解释的因素。若完整诊断 App 仍不能在板端挂载，可先用同一套组件的增量构建测量；放宽内存的本机 probe 仅辅助分析。当前 `package:aic` 已按用户要求使用共享 App perf 入口，并已记录挂载失败；不把该入口标记为产品验收通过。精简页始终保留为诊断对照，后续入口切换及功能恢复须同步 SPEC 与真机结果。
 
 ### 9.1 内存门槛
 
@@ -295,14 +297,14 @@ UI 继续使用 MiSans，mono 使用 JetBrains Mono。字体槽和字重是否�
 
 - SPEC §3.1：共享窄屏布局、配置浮层、命中与输入方式，保持单页 / 单连接。
 - SPEC §3.2–3.4、§3.8：AIC 功能集合、容量、合流达限行为、超限输入提示及配置兼容；桌面既有语义明确保留。
-- SPEC §4.4 与 M5 路线：从精简诊断页过渡到共享 App，保留“未经真机内存验证不切换正式入口”的要求。
+- SPEC §4.4 与 M5 路线：从精简诊断页过渡到共享 App，区分用于测量的共享入口与已通过真机内存验收的产品状态。
 - SPEC §5.4：功能文案裁剪和字体集合的一致性；若增加构建契约，同步 PocketJS 侧定义。
 
 首轮最值得验证的是**共享节点表示变轻 + 无副作用的功能装配 + 在 Vue 转换前裁剪禁用功能**。它们直接作用于目前可定位的 TS 成本。若仍超预算，再按数据选择 realloc / 字节码和进一步的功能取舍；不预先承诺完整桌面功能能全部装入 8 MiB，也不把维护另一套 UI 作为默认退路。
 
 ## 11. 源码与数据版本
 
-本次方案核对基于 PocketCOM `91f9918`、PocketJS `ebfc365`、luban-lite `ef55c659`。本次未运行固件构建、烧录或新的内存试验。
+最初方案核对基于 PocketCOM `91f9918`、PocketJS `ebfc365`、luban-lite `ef55c659`。该版本说明仅对应最初方案；2026-10-23 的构建与用户真机采集另见[复测记录](aic-memory-perf-2026-10-23.md)。
 
 - [AIC 内存方案及 2026-10-12 P0 数据](aic-memory-optimization.md)：历史基线、容量风险和分阶段测量。
 - [AIC 接入记录](../host/rtthread/README.md)：XIP / 统一堆 / WiFi 与诊断工具。

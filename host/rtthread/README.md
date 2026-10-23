@@ -1,11 +1,18 @@
 # PocketCOM on AIC + RT-Thread
 
-本期接入 D12x demo68-nor：PocketCOM 应用包、固件构建与静态内存预算。固件 **XIP 运行**（`.text/.rodata` 在 SPI NOR 的 0x60000000 窗口原地执行，仅 `.data/.bss` 进 PSRAM），PSRAM 为 **统一 TLSF 系统堆**（不再划分 PocketJS 私有池）。当前使用 480×272 精简验证页（标题、帧计数、触摸计数），完整共享 UI 因启动 OOM 暂停挂载；没有 UART/网络/MCP `com.*` 桥、持久化或软键盘。构建不自动烧录；实测基线见 [D12x 8 MiB PSRAM 内存优化方案](../../docs/aic-memory-optimization.md)，后续应用恢复方向见[共享 UI 与编译期裁剪提案](../../docs/shared-ui-memory-optimization.md)（terminal / mcp.server / transport.* 编译期裁剪与离板 A/B 已实施，其余仍按提案推进，复用现有组件）。
+本期接入 D12x demo68-nor：PocketCOM 应用包、固件构建与静态内存预算。固件 **XIP 运行**（`.text/.rodata` 在 SPI NOR 的 0x60000000 窗口原地执行，仅 `.data/.bss` 进 PSRAM），PSRAM 为 **统一 TLSF 系统堆**（不再划分 PocketJS 私有池）。2026-10-23 起切换为 480×272 共享完整 UI，按 JSON profile 裁剪，用于新一轮真机内存 perf（本次真机在 S4 挂载 OOM，未进入首帧）；没有 UART/网络/MCP `com.*` 设备桥或持久化。精简页保留为历史基线。构建不自动烧录；实测基线见 [D12x 8 MiB PSRAM 内存优化方案](../../docs/aic-memory-optimization.md)，后续应用恢复方向见[共享 UI 与编译期裁剪提案](../../docs/shared-ui-memory-optimization.md)（terminal / mcp.server / transport.* / ui.* 裁剪与离板 A/B 已实施，节点优化、窄屏布局和容量方案仍待推进）。
+
+## 阅读导航与当前结论
+
+- **当前真机结果**：[2026-10-23 共享 UI 内存复测](../../docs/aic-memory-perf-2026-10-23.md)。S3 编译通过，S4 底层分配失败 8 次，系统历史峰值 6,839,160 / 7,340,032 bytes；无首帧与稳态数据。
+- **构建与采集操作**：本文的构建、产物和 P0 诊断章节，以及 [aic-build skill](../../.agents/skills/aic-build/SKILL.md)。
+- **历史证据与方案评估**：[内存优化方案](../../docs/aic-memory-optimization.md)；**后续共享实现路线**：[共享 UI 方案](../../docs/shared-ui-memory-optimization.md)。
+- 下文带日期的旧包大小、内存布局和精简页结果保留为历史记录；不代表当前构建。功能启停始终以根目录 JSON 为准。
 
 ## 分层
 
 ```text
-PocketCOM app/aic.tsx（精简启动页，Vue Vapor；共享 i18n/theme）
+PocketCOM app/main.aic.tsx → app/app.tsx（共享 UI，JSON feature 裁剪）
   → host/rtthread（产品 manifest/profile + 构建编排）
   → vendor/pocketjs/hosts/aic（QuickJS、触摸、帧循环、RGB565、MPP 显示）
   → vendor/luban-lite（RT-Thread、板级驱动、链接、bootloader、镜像）
@@ -17,7 +24,7 @@ MCP 对比用 `npm run probe:features -- --feature mcp.server`，输出 `dist/mc
 传输对比用 `npm run probe:features -- --feature transport`，输出 `dist/transport-feature-heap/report.json`，见[传输测量记录](../../docs/transport-feature-heap.md)。
 详见 [terminal 测量记录](../../docs/terminal-feature-heap.md)、[MCP 测量记录](../../docs/mcp-feature-heap.md) 与 skill `mem-probe`；实验不改变正式入口。
 
-`app/main.aic.tsx` 在 mount 前初始化 480×272 应用视口并挂载 `app/aic.tsx`，不导入完整 App/session；桌面入口独立。host profile 固定 density 1、native presentation、60Hz，仅声明真实宿主能力。UI 保持 MiSans，mono 用 fork 的 JetBrains Mono（与产品 vendor 字体相同）；从两份语言包的字符串值提取额外字形，不烘焙整个 CJK 字符域。未烘焙输入仍可能显示替换符，HEX 视图保证字节表达。
+`app/main.aic.tsx` 在 mount 前初始化 480×272 应用视口并挂载共享 `app/app.tsx`/session，启停值只读取 JSON 的 `aic-diagnostic`；桌面入口独立。host profile 固定 density 1、native presentation、60Hz，仅声明真实宿主能力。UI 保持 MiSans，mono 用 fork 的 JetBrains Mono（与产品 vendor 字体相同）；从两份语言包的字符串值提取额外字形，不烘焙整个 CJK 字符域。未烘焙输入仍可能显示替换符，HEX 视图保证字节表达。
 
 SDK 复用 `application/rt-thread/pocketjs`，产品不复制引擎/QuickJS/显示/触摸源码。`POCKETJS_ROOT` 由脚本指向当前 fork。未来 `com.*` 属于本目录的产品桥；通用 guest 扩展接口属于 PocketJS，板级驱动属于 SDK。设备事件入 FIFO，在 tick 边界 drain；core 仍保持纯 TS。
 
@@ -148,7 +155,7 @@ pjs_mem reset        # 记账峰值回落到当前 live，用于增量测量
 
 精简页（WiFi 构建、未 `wifi_on`）首次全阶段采样：S3 编译为启动峰值——sys_max 3,369,880 / caps_peak 2,930,837 / guest_peak 2,335,161，编译 2,749 ms、realloc 109→63,085 次、瞬时双份开销 ≈ 985 KiB；S4 后稳态 sys 2.46 MiB / js 0.95 MiB，120 帧零错误，fps 60–62，`caps_fails=0`。
 
-同日完整 UI 断点实测（入口临时挂完整 App，测毕恢复）：编译通过（5,065 ms，caps_peak 5.03 MiB），挂载执行段死于碎片化枯竭——sys_max 6,876,604 触顶、总空闲 ~463 KiB 碎成数千个 <380 B 块、`caps_fails=6` 全是小请求、js 2.95 MiB 远未触 5 MiB 配额（排除配额拒绝）；板上缺口修正为 sys 口径 ~2.0 MiB。完整数据表与结论见 [内存优化方案 §2.1.3/§2.1.4](../../docs/aic-memory-optimization.md)。两个采集坑：
+同日完整 UI 断点实测（入口临时挂完整 App，当时测毕恢复）：编译通过（5,065 ms，caps_peak 5,029,764 bytes），挂载执行段底层分配失败——sys_max 6,876,604、异常后有数千个空闲碎片、`caps_fails=6` 全是小请求、异常后 js 2,946,998 bytes / 5 MiB。异常后快照不能还原失败瞬间，早期缺口估算不能用于当前版本验收。完整数据表与结论见 [内存优化方案 §2.1.3/§2.1.4](../../docs/aic-memory-optimization.md)。两个采集坑：
 
 - **`t=` 只看相邻差值**：暖复位（External-PIN-Reset）后 `rt_tick` 计数不归零，绝对值带重启前会话的偏移（本例 ~70 min）；帧节奏差值与 60fps 一致，可信。
 - **banner "Built on" 日期在增量构建下可能过期**（scons 不重生成版本文件）；判断固件新旧以 `[PJS-DIAG]` 输出为准。
@@ -206,9 +213,9 @@ SW 内的 TLSF 池。使用 `npm run flash:aic` 重新烧写 os，并检查启�
 此报告提高 JS heap 上限。
 
 
-## 当前精简板端入口
+## 历史基线：精简板端入口（2026-10-09）
 
-第二次真机启动仍报 bundle eval OOM，先按产品侧裁剪启动图：
+当时第二次真机启动仍报 bundle eval OOM，因此按产品侧裁剪启动图；此入口现保留为历史基线，当前入口见文首：
 `main.aic.tsx → aic.tsx → i18n/theme`。不加载桌面 App、session、连接面板、
 接收/发送区、终端模型、设置弹窗或 MCP 分发。保留完整桌面入口，后续功能逐项恢复。
 验证页仅展示本地帧计数（每 60 tick 更新）和可触摸的计数按钮，不做任何 IO。
@@ -222,7 +229,7 @@ JS 限制 4194304 bytes、栈限制 262144 bytes，并把诊断分配的总存�
 
 新 JS 196719 bytes，PAK 328064 bytes，应用包 526568 bytes，
 ITB 2084864 / 3145728 bytes；CMA 扣双 framebuffer 理论余额 1035120 bytes，
-SW 扣 TLSF 理论余额仍为 468992 bytes。烧录 `npm run flash:aic` 后，
+SW 扣 TLSF 理论余额仍为 468992 bytes。当时烧录该精简包后，
 应看到精简页，帧计数每秒递增，点击按钮触摸计数递增。
 
 
@@ -236,7 +243,7 @@ SW 扣 TLSF 理论余额仍为 468992 bytes。烧录 `npm run flash:aic` 后，
 - TLSF pool：启动采样 2284370 bytes，随后 2034199–2057791 / 4249600 bytes。
 - pool 历史峰值：2930837 bytes，距池容量余量 1318763 bytes（约 1.26 MiB；不代表最大连续空闲块）。
 
-这次验证确认当前精简入口可以启动、持续出帧并接收触摸。日志仍有
+这次验证确认当时的精简入口可以启动、持续出帧并接收触摸。日志仍有
 `mount fs[elm] on /sdcard failed`，此次内联包启动未因此退出；它不表示 SD 卡存储功能已可用。
 后续以此作为内存基线，分批恢复紧凑收发界面和会话逻辑，每批复测启动峰值、
 稳定用量和 turn_max；终端、设置弹窗、设备 IO 仍未验收。
@@ -321,6 +328,6 @@ Puya PY25Q128HA（`XIP flash ID: 0x852018`），补 XIP 表项后精简页全绿
 但 mount 阶段抛 `TypeError: not a function`——本机同版本 QuickJS probe
 （16 MiB 上限）判定为 **OOM 伪装**：完整 UI 代码本身无 bug（120 帧全过），
 但峰值需 **8,904,442 bytes**、常驻 7,951,217 bytes，超出板上 guest+Rust 可用的
-约 6.0–6.4 MiB。板端入口已回退精简页；完整功能恢复走
+约 6.0–6.4 MiB。当时板端入口回退精简页；2026-10-23 再切共享 UI 的结果见文首。完整功能恢复走
 [内存优化方案](../../docs/aic-memory-optimization.md) 的方案 A（板端紧凑装配），
 实测记录见其 §2.1.1。

@@ -1,4 +1,4 @@
-// Minimal board bring-up UI. Keep the desktop App/session graph out of this entry.
+// Preserved minimal board bring-up baseline; main.aic.tsx now profiles the shared App.
 import { ref } from "vue";
 import { View, Text } from "@pocketjs/framework/components";
 import { onFrame } from "@pocketjs/framework/lifecycle";

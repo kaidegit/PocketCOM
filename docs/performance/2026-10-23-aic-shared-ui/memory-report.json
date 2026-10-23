@@ -1,0 +1,60 @@
+{
+  "packageBytes": 790968,
+  "sections": {
+    ".text": {
+      "address": 1611663360,
+      "size": 1737376
+    },
+    ".eh_frame": {
+      "address": 1613400736,
+      "size": 60
+    },
+    ".rodata": {
+      "address": 1613400800,
+      "size": 1192224
+    },
+    ".data": {
+      "address": 1073741824,
+      "size": 22984
+    },
+    ".bss": {
+      "address": 1073764816,
+      "size": 259572
+    },
+    ".psram_sw_heap": {
+      "address": 1074790400,
+      "size": 512
+    }
+  },
+  "cma": {
+    "address": 1073741824,
+    "size": 1048576
+  },
+  "sw": {
+    "address": 1074790400,
+    "size": 7340032
+  },
+  "cmaHeapStart": 1074024388,
+  "swHeapStart": 1074790400,
+  "staticCmaBytes": 282564,
+  "framebufferBytes": 522240,
+  "cmaAvailableBytes": 766012,
+  "cmaAfterFramebuffersBytes": 243772,
+  "guestHeapLimitBytes": 5242880,
+  "systemReserveBytes": 655360,
+  "swAvailableBytes": 7340032,
+  "swAfterReservesBytes": 1441792,
+  "xip": {
+    "fwOffsetBytes": 1050624,
+    "flashLoadAddress": 1611663360,
+    "flashSectionBytes": 2929660,
+    "ramSectionBytes": 283068
+  },
+  "itbBytes": 2957312,
+  "osPartitionBytes": 3145728,
+  "osHeadroomBytes": 188416,
+  "note": "Budgets exclude other allocations, alignment, fragmentation and driver overhead; they do not prove runtime stability.",
+  "images": "/Volumes/aigo_1t/GitRepo/PocketCOM/vendor/luban-lite/output/d12x_demo68-nor_rt-thread_pocketjs/images",
+  "packageSha256": "d45a10203297808f7b1b64a640d03363d7f2af934d4b0d4f3ad492cad20500d6",
+  "itbSha256": "ef99f17eef783b7b78bb53e5ac4233abb6b63d1548642cbf6de6be66e74eee27"
+}
