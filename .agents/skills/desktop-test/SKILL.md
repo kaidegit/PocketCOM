@@ -69,6 +69,12 @@ bun tools/perf-audit.ts     # 核心层性能复测
 - 控制：`--quit-after`；**e2e 必加** `--no-native-mouse-keyboard`（丢弃物理输入污染）
 - `@T` 为 60Hz 虚拟时钟 tick 序号
 
+指定尺寸用 `node tools/dev.mjs --resolution 480x272 -- <flags…>`：覆盖逻辑视口并固定窗口，
+其余能力/功能仍来自桌面构建，仅验证该尺寸下共享 UI 的布局/交互。坐标不可从 960×640 等比缩放；
+截图探测 `tools/coords-probe.py --density 2 --title-bar 28 diff A.png B.png`，
+无标题栏的 1x 板端截图用 `--density 1 --title-bar 0`。截图比例由屏幕 backing scale 决定，
+与宿主 raster density 不同。
+
 各参数详解、tick/坐标系、拖拽与组合键配方、截图机制与坑位见 **docs/e2e.md**；
 控件坐标速查见 **docs/coords.md**（改布局后必须用 `tools/coords-probe.py` 重测）。
 观测用 `POCKETCOM_TRACE=1`。本机真机 e2e 已验证：串口全链路（M1）、TCP Client 回环（M2）、

@@ -42,6 +42,8 @@ cargo build --release --manifest-path host/macos/Cargo.toml
 node tools/dev.mjs     # 桌面运行；默认用 fork 产物 pocketcom-host，
                        # 未构建时回退 vendor 的 pocket-desktop-host 并警告 com.* 不可用；
                        # flags 取自 .pocket/macos-app/plan.json
+node tools/dev.mjs --resolution 480x272 -- --no-native-mouse-keyboard --quit-after 80
+                       # 指定固定逻辑视口做 e2e；其余参数沿用桌面 plan
 
 tools/package-macos.sh # 前置：npm run build + cargo build 产物；组装 dist/PocketCOM.app
                        # 并打 dist/PocketCOM-<版本>-macos-arm64.dmg；VERSION=x.y.z 覆盖版本号

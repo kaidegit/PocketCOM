@@ -9,6 +9,17 @@
 import { readFileSync, existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
+import { resolutionFlags } from "./dev-options.mjs";
+
+// Options before `--` belong to the launcher; the rest belong to the host.
+const sep = process.argv.indexOf("--", 2);
+let overrides;
+try {
+  overrides = resolutionFlags(process.argv.slice(2, sep === -1 ? undefined : sep));
+} catch (err) {
+  console.error(`[dev] ${err.message}`);
+  process.exit(1);
+}
 
 const root = resolve(import.meta.dirname, "..");
 const planPath = resolve(root, ".pocket/macos-app/plan.json");
@@ -113,10 +124,9 @@ const flags = [
 // `--` ends dev.mjs's own args; the rest are forwarded verbatim to the host
 // binary (scripted UI verification flags, e.g.
 // `node tools/dev.mjs -- --screenshot out.png@120 --quit-after 130`).
-const sep = process.argv.indexOf("--");
 const extra = sep === -1 ? [] : process.argv.slice(sep + 1);
 
-const child = spawn(bin, [...flags, ...extra], {
+const child = spawn(bin, [...flags, ...overrides, ...extra], {
   stdio: "inherit",
   env: { ...process.env, POCKETJS_DIST: resolve(root, "dist"), RUST_LOG: process.env.RUST_LOG ?? "info" },
 });

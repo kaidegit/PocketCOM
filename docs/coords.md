@@ -8,6 +8,11 @@
 改布局（`app/panel.tsx` layoutInfo、`app/layout.ts`、`app/transfer.tsx`、widgets
 几何常量）后须重测：复验配方见文末。
 
+其他尺寸通过 `node tools/dev.mjs --resolution 480x272 -- <脚本 flags…>` 运行，
+坐标仍为逻辑像素；本表的 960×640 坐标不能等比缩放套用。
+截图探测支持 `--density`（实际截图像素比例）和 `--title-bar`（逻辑像素），
+详见 [e2e.md](e2e.md#指定分辨率含-480272-板端尺寸)。
+
 ## 0. 全局区域
 
 | 区域 | 矩形（x0..x1 × y0..y1） |

@@ -27,6 +27,9 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 | MCP 服务手册 | [docs/mcp.md](docs/mcp.md) |
 | 只读参考代码库 | COMTool、umeko_serial_mcp（见文末） |
 
+脚本化 UI e2e 支持 `node tools/dev.mjs --resolution 480x272 -- <宿主 flags…>` 指定固定逻辑视口；
+坐标按目标尺寸重测，截图探测工具支持实际像素比例/标题栏参数。该入口仍运行桌面包，详见 `docs/e2e.md`。
+
 技术栈一句话：TypeScript（strict）+ PocketJS **Vue Vapor 适配器**（不用 Solid/Octane），无 DOM/运行时 CSS，UI 仅 `View/Text/Image` 原语。
 分层依赖单向：`app → core → bridge`，`host/*` 实现 bridge 的 `com.*` HostOps 契约；core 保持纯 TS、可在 Bun/Node 下单测。
 

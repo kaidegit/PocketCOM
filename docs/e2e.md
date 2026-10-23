@@ -28,6 +28,34 @@ plan 派生 flags（`--app/--title/--viewport/--density/--fixed/--native-text/
 --companions/--editor`）由 `node tools/dev.mjs` 与打包 launcher 自动生成，e2e
 脚本一般不需要手写。
 
+### 指定分辨率（含 480×272 板端尺寸）
+
+在 `--` 前传 `--resolution WxH`，启动器会覆盖 plan 的逻辑视口并固定窗口尺寸；
+不传时继续使用 plan 默认值。density、原生文字和功能配置仍沿用桌面构建。
+
+```bash
+node tools/dev.mjs --resolution 480x272 -- \
+  --no-native-mouse-keyboard \
+  --screenshot /tmp/pocketcom-480x272.png@45 \
+  --mouse 80,17@58 --click 80,17@60 \
+  --screenshot /tmp/pocketcom-480x272-hex.png@70 --quit-after 80
+```
+
+坐标仍是逻辑像素，不能把 960×640 的坐标表整体按比例缩小：固定宽度面板、
+页脚和弹层会重新布局，需按目标尺寸重测。此命令运行桌面包，只用于共享 UI
+布局/交互验证；板端 feature profile、IO 和内存仍须单独验收。
+
+截图的物理比例由 macOS 屏幕 backing scale 决定，与宿主 `--density` 不同。
+例如本机 2x 屏幕上 480×272 窗口截图含标题栏为 960×600。
+`coords-probe.py` 默认适配 2x、28pt 标题栏，可显式指定：
+
+```bash
+python3 tools/coords-probe.py --density 2 --title-bar 28 diff \
+  /tmp/pocketcom-480x272.png /tmp/pocketcom-480x272-hex.png
+# 无标题栏的 1x 板端截图：
+python3 tools/coords-probe.py --density 1 --title-bar 0 sample board.png 136 91
+```
+
 ## 时间基准：tick（60Hz 虚拟时钟）
 
 - `@T` 的单位是 **tick 序号**，不是秒。宿主用固定 60Hz 虚拟时钟驱动 guest
