@@ -35,6 +35,18 @@ npm run probe:aic -- path/to/other.pocket --limit 4m   # 测其它包 / 改 Quic
 
 `--heap`/`--limit` 支持纯字节或 `512k`/`3m` 后缀；`--turns` 默认 120。
 
+交互/存活集实验（每类参数最多 512 条）：
+
+```sh
+npm run probe:aic -- --turns 240 --tap 60,16@5 --sample 60 --tap 238,22@65 --collect 120
+```
+
+`--tap X,Y@TURN` 在指定 turn 按下、下一 turn 释放，坐标限当前契约视口，tap 必须早于末帧；
+`--sample TURN` 输出 S6-turnN，`--collect TURN` 显式 guest GC 后输出 S7-gcN，二者不超过末帧。
+显式 GC 仅观察存活集，不模拟板端空闲 GC 时序，不改变固件。反复创建子树还须做不额外 GC 的快速操作测试。
+框架输入记录环保留 36,000 帧，触摸页按需分配；交互后增长不能直接认作泄漏，要设空白触摸对照并跨回卷检查。
+第 2 步的快速开关与 48,000 turns 方法、原始参数位置见 [连接配置记录](../../../docs/aic-narrow-panel-step2.md)。
+
 ## 产品 feature 对比（共享 App 离板实验）
 
 ```sh

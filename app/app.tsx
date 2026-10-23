@@ -6,20 +6,21 @@ import { hasAppFeature } from "@pocketcom/features";
 // 弹层接管）→ 会话泵（com.poll → 帧合流 → 总线 → 日志视图/终端模型 → 查询
 // 应答）→ 定时发送。
 import { ref, watch } from "vue";
-import { Text, View } from "@pocketjs/framework/components";
+import { Portal, Text, View } from "@pocketjs/framework/components";
 import { resizeViewport } from "@pocketjs/framework";
 import { onFrame } from "@pocketjs/framework/lifecycle";
 import { focusNode, hitFocusable } from "@pocketjs/framework/input";
 import { connectSvc, type HostEvent } from "./svc";
 import { activeField, setActiveField } from "./fields";
 import { theme } from "./theme";
-import { PANEL_W, STATUS_H, setViewport, viewportSize } from "./layout";
+import { PANEL_W, STATUS_H, connectionDrawerOpen, connectionPanelOpen, setViewport, viewportSize, workspace } from "./layout";
+import { NARROW_BREAKPOINT } from "./workspace-layout";
 import { routeWheel } from "./wheel";
 import { LeftPanel } from "./panel";
 import { ReceivePane, SendPane, logContextMenu, logHasSelection, logMouse, logSelectionText, pumpTimedSend } from "./transfer";
 import { TerminalView, termHasSelection, termMouseMove, termScrollPage, termSelectionText } from "./terminal";
 import { StatusBar } from "./statusbar";
-import { PopupLayer, closePopup, popupOpen, popupWheel, textFieldMouse } from "./widgets";
+import { Btn, PopupLayer, closePopup, popupOpen, popupWheel, textFieldMouse } from "./widgets";
 import { SettingsModal, closeSettingsModal, modalWheel, settingsFieldMouse, settingsOpen } from "./settings-modal";
 import { pumpSession, refreshPorts, comAvailable, sendTermBytes, terminal, uiMode } from "./session";
 import { t } from "./i18n";
@@ -46,14 +47,45 @@ const KEY_ALIAS: Record<string, string> = {
 };
 
 /** 任一浮层打开（下拉弹层 / 设置模态弹窗）：键盘/鼠标/滚轮路由的总门控。 */
-const overlayOpen = (): boolean => popupOpen() || settingsOpen();
+const overlayOpen = (): boolean => popupOpen() || settingsOpen() || connectionDrawerOpen();
+
+// Create once on first use: remounting faster than idle GC exceeds the AIC budget.
+// Off-screen placement keeps the cached panel out of rendering and hit testing.
+function ConnectionDrawer(props: { onClose: () => void }) {
+  return (
+    <Portal>
+      <View class="absolute" style={{ insetL: connectionDrawerOpen() ? 0 : viewportSize.value.w, insetT: 0, width: viewportSize.value.w, height: viewportSize.value.h }}>
+        <View class="absolute" focusable onPress={() => props.onClose()}
+          style={{ insetL: 0, insetT: 0, width: viewportSize.value.w, height: viewportSize.value.h, bgColor: "#00000080" }} />
+        <View class="absolute overflow-hidden"
+          style={{ insetL: 0, insetT: 0, width: workspace.value.drawerW, height: viewportSize.value.h, bgColor: theme.value.panelBg }}>
+          <LeftPanel onClose={() => props.onClose()} />
+        </View>
+      </View>
+    </Portal>
+  );
+}
 
 export default () => {
   const svc = connectSvc();
+  const drawerMounted = ref(false);
+  watch(() => workspace.value.compact, (compact) => { if (!compact) drawerMounted.value = false; });
   /** 最近指针位置（滚轮按 x 分区路由：左面板 or 右区）。 */
   const lastMouse = { x: -1, y: -1 };
   /** 弹层关闭后下一帧重新 hover 聚焦（弹层节点已卸载，焦点悬空）。 */
   const rehover = ref(false);
+  const closeConnections = (): void => {
+    closePopup();
+    setActiveField(null);
+    connectionPanelOpen.value = false;
+  };
+  const openConnections = (): void => {
+    closePopup();
+    if (hasAppFeature("ui.soft-keyboard")) closeKeyboard();
+    setActiveField(null);
+    drawerMounted.value = true;
+    connectionPanelOpen.value = true;
+  };
   watch(overlayOpen, (open) => {
     if (!open) rehover.value = true;
   });
@@ -66,6 +98,8 @@ export default () => {
     switch (ev.t) {
       case "hello":
       case "resize":
+        closePopup();
+        if (workspace.value.compact !== ((ev.w ?? 960) < NARROW_BREAKPOINT)) setActiveField(null);
         setViewport(ev.w ?? 960, ev.h ?? 640);
         resizeViewport(ev.w ?? 960, ev.h ?? 640);
         break;
@@ -107,6 +141,10 @@ export default () => {
             closeSettingsModal();
             break;
           }
+          if (connectionDrawerOpen()) {
+            closeConnections();
+            break;
+          }
           if (hasAppFeature("terminal") && termWantsKeys()) {
             sendTermBytes(terminal!.keyBytes("Escape")!);
             break;
@@ -118,7 +156,7 @@ export default () => {
         // 选中复制：宿主 Cmd+C 以 "Copy" 键行到达。优先级：终端选区 >
         // 活跃文本域选区 > 接收区日志选区；都没有则原样走后续按键路由。
         if (hasAppFeature("ui.clipboard") && hasAppFeature("ui.shortcuts") && k === "Copy") {
-          if (hasAppFeature("terminal") && uiMode.value === "terminal" && termHasSelection()) {
+          if (hasAppFeature("terminal") && !overlayOpen() && uiMode.value === "terminal" && termHasSelection()) {
             svc?.send({ t: "copy", text: termSelectionText() });
             break;
           }
@@ -127,7 +165,7 @@ export default () => {
             svc?.send({ t: "copy", text: fieldSel });
             break;
           }
-          if (uiMode.value === "transfer" && logHasSelection()) {
+          if (!overlayOpen() && uiMode.value === "transfer" && logHasSelection()) {
             svc?.send({ t: "copy", text: logSelectionText() });
             break;
           }
@@ -162,7 +200,7 @@ export default () => {
         const inTermArea =
           hasAppFeature("terminal") && uiMode.value === "terminal" &&
           !overlayOpen() &&
-          x >= PANEL_W &&
+          x >= workspace.value.x && y >= workspace.value.y &&
           y < viewportSize.value.h - STATUS_H;
         // 右键：不参与选区/焦点路由。终端模式 = 有选区时按下即复制；收发
         // 模式 = 接收区弹上下文菜单（复制/全选）。浮层打开时忽略。
@@ -200,7 +238,7 @@ export default () => {
               focusNode(hitFocusable(x, y));
               break;
             }
-            if (uiMode.value === "transfer" && logMouse(x, y, down)) {
+            if (!connectionDrawerOpen() && uiMode.value === "transfer" && logMouse(x, y, down)) {
               focusNode(hitFocusable(x, y));
               break;
             }
@@ -221,8 +259,12 @@ export default () => {
           modalWheel(ev.dy ?? 0);
           break;
         }
+        if (connectionDrawerOpen()) {
+          routeWheel(ev.dy ?? 0, "panel");
+          break;
+        }
         const region =
-          lastMouse.x >= 0 && lastMouse.x < PANEL_W
+          !workspace.value.compact && lastMouse.x >= 0 && lastMouse.x < PANEL_W
             ? "panel"
             : hasAppFeature("terminal") && uiMode.value === "terminal"
               ? "term"
@@ -251,8 +293,18 @@ export default () => {
 
   return (
     <View class="w-full h-full flex-row" style={{ bgColor: theme.value.bg }}>
-      <LeftPanel />
+      {!workspace.value.compact ? <LeftPanel /> : null}
       <View class="flex-1 flex-col">
+        {workspace.value.compact ? (
+          <View class="relative" style={{ height: workspace.value.y, bgColor: theme.value.panelBg }}>
+            <View class="absolute" style={{ insetL: 8, insetT: 4, width: 104, height: 24 }}>
+              <Btn width={104} height={24} label={() => t("panel.connections")} onPress={openConnections} />
+            </View>
+            <Text class="absolute text-sm font-bold" style={{ insetL: 124, insetT: 7, textColor: theme.value.fg }}>
+              {t("app.title")}
+            </Text>
+          </View>
+        ) : null}
         {comAvailable ? (
           hasAppFeature("terminal") && uiMode.value === "terminal" ? (
             <TerminalView />
@@ -274,6 +326,7 @@ export default () => {
         )}
         <StatusBar height={STATUS_H} />
       </View>
+      {workspace.value.compact && drawerMounted.value ? <ConnectionDrawer onClose={closeConnections} /> : null}
       {/* 下拉弹层（Portal 全屏遮罩，同屏只开一个） */}
       <PopupLayer />
       {/* "应用配置"设置模态弹窗（Portal 全屏遮罩，草稿模式） */}

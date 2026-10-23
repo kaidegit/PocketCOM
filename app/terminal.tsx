@@ -16,7 +16,7 @@ import { setActiveField } from "./fields";
 import { LINE_H, MONO_CLASS, MONO_SLOTS } from "./fontsize";
 import { theme, termColorCss } from "./theme";
 import { t } from "./i18n";
-import { PANEL_W, STATUS_H, viewportSize } from "./layout";
+import { viewportSize, workspace } from "./layout";
 import { onWheel } from "./wheel";
 import type { ConfigFontSize } from "../core/config";
 import {
@@ -66,11 +66,11 @@ export function termMetrics(): TermMetrics {
   const size = fontSize.value;
   const cellW = termCellW(size);
   const lineH = LINE_H[size];
-  const availW = Math.max(0, viewportSize.value.w - PANEL_W - TERM_PAD_X * 2);
-  const availH = Math.max(0, viewportSize.value.h - STATUS_H - TERM_PAD_Y * 2);
+  const availW = Math.max(0, workspace.value.w - TERM_PAD_X * 2);
+  const availH = Math.max(0, workspace.value.h - TERM_PAD_Y * 2);
   return {
-    x0: PANEL_W + TERM_PAD_X,
-    y0: TERM_PAD_Y,
+    x0: workspace.value.x + TERM_PAD_X,
+    y0: workspace.value.y + TERM_PAD_Y,
     cols: Math.max(2, Math.floor(availW / cellW)),
     rows: Math.max(2, Math.floor(availH / lineH)),
     cellW,

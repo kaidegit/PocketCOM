@@ -2,7 +2,9 @@
 // against the built AIC package, so live/peak memory answers need no board.
 // Usage: bun host/rtthread/probe.ts [probe args, default package
 // dist/aic/pocketcom-aic.pocket] — e.g. --heap 7340032 to emulate the board's
-// unified heap, --turns 600 for a longer soak.
+// unified heap, --turns 600 for a longer soak. --tap X,Y@TURN injects a
+// touch, --sample TURN observes memory, --collect TURN explicitly runs GC
+// for off-device live-set experiments (not board idle-GC timing).
 //
 // Prerequisites: the AIC package + contract header (npm run package:aic), cc,
 // cargo. Objects cache in .pocket/aic/probe-host/ by mtime; repeat runs only

@@ -74,7 +74,11 @@
     "terminal": "Terminal"
   },
   "panel": {
-    "mode": "Mode"
+    "mode": "Mode",
+    "connections": "Connection",
+    "back": "Back",
+    "pageUp": "Up",
+    "pageDown": "Down"
   },
   "roadmap": {
     "m2": "M2",

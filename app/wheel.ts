@@ -5,8 +5,11 @@ type Region = "panel" | "log" | "term";
 
 const handlers: Record<Region, ((dy: number) => void) | null> = { panel: null, log: null, term: null };
 
-export function onWheel(region: Region, h: (dy: number) => void): void {
+export function onWheel(region: Region, h: (dy: number) => void): () => void {
   handlers[region] = h;
+  return () => {
+    if (handlers[region] === h) handlers[region] = null;
+  };
 }
 
 export function routeWheel(dy: number, region: Region): void {

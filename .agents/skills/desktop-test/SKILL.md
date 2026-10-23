@@ -99,3 +99,11 @@ PocketJS headless Bun host（byte-exact PNG golden）待落地；`--screenshot` 
 导入配置不激活禁用设置且导出保留、系统主题状态、普通文本编辑/剪贴板/发送快捷键与软键盘输入。
 `settings-modal-layout.test.ts` 覆盖禁用行收拢及内容高/边界同步。软键盘真机 e2e 与坐标见
 `docs/coords.md` 的软键盘条目，`docs/ui-feature-heap.md` 记录离板测量条件和结果。
+
+## 共享窄屏连接配置回归
+
+`test/app/workspace-layout.test.ts` 验证宽窄屏工作区几何、非负边界及回到宽屏关闭抽屉；
+`test/app/wheel.test.ts` 验证面板卸载时注销滚轮回调、旧作用域清理不覆盖新订阅。
+第 2 步使用同一共享 App 的 480×272 桌面实机 e2e 验证抽屉/下拉/翻页/设置、未提交参数与发送草稿保留、
+回环连接和收发计数连续；坐标及证据边界见 `docs/aic-narrow-panel-step2.md`。首次打开后面板复用，
+关闭移出视口；隐藏字段不应截获工作区选区/焦点。此测试不能替代 AIC 触摸及内存验收。

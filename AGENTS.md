@@ -20,7 +20,7 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 | 板端构建/烧录/内存报告 | skill `aic-build`（.agents/skills/aic-build/SKILL.md） |
 | 板端接入全记录（XIP/TLSF/WiFi） | [host/rtthread/README.md](host/rtthread/README.md) |
 | 优化前板端失败基线与原始日志 | [docs/aic-memory-perf-2026-10-23.md](docs/aic-memory-perf-2026-10-23.md) |
-| 当前内存优化步骤与产物/真机结果 | [docs/aic-node-prototype-step1.md](docs/aic-node-prototype-step1.md)（节点共享原型，真机 120 帧零错误、基本交互通过） |
+| 当前内存优化步骤与产物/真机结果 | [第 2 步连接配置延后创建](docs/aic-narrow-panel-step2.md)（本地通过、待上板）；[第 1 步](docs/aic-node-prototype-step1.md)真机 120 帧及基本交互通过 |
 | 板端内存优化方案（A–G、P0–P3） | [docs/aic-memory-optimization.md](docs/aic-memory-optimization.md) |
 | 共享 UI / TS 内存优化与编译期裁剪提案 | [docs/shared-ui-memory-optimization.md](docs/shared-ui-memory-optimization.md) |
 | e2e 脚本用法 / 控件坐标 | [docs/e2e.md](docs/e2e.md) / [docs/coords.md](docs/coords.md) |
@@ -66,7 +66,7 @@ app/            # Vue Vapor 组件与页面状态（仅渲染 + 输入），pock
                 #   headless 可测）；transfer.tsx 接收区/发送区；terminal.tsx 终端视图（字符网格
                 #   按 run 合并渲染/光标/拖拽选区/滚轮回滚，几何与选区 helper 导出给 app.tsx 命中）；
                 #   widgets.tsx 基础控件（Btn/CheckRow/SegCtrl/Select+Portal/TextField（拖动选区）/
-                #   Scrollbar）；soft-keyboard.tsx 可裁剪 ASCII 软键盘（复用活跃文本域协议）；textsel.ts 文本选区纯几何；sendlayout.ts 发送区选项行流式几何；
+                #   Scrollbar）；soft-keyboard.tsx 可裁剪 ASCII 软键盘（复用活跃文本域协议）；textsel.ts 文本选区纯几何；sendlayout.ts 发送区选项行流式几何；workspace-layout.ts 宽窄屏工作区几何；
                 #   session.ts 会话接线单例 + 连接参数仓库 + 设置持久化 + uiMode/终端模型装配
                 #   （bus→term 持续灌入、DSR/DA 应答泵）；theme.ts 主题令牌（深色/浅色/跟随系统 +
                 #   终端独立调色板）；i18n.ts/locale.ts 语言包；fontsize.ts 字号档位（mono 槽
@@ -119,7 +119,7 @@ SPEC.md         # 功能规格（权威）
 - **WiFi 已点亮**（2026-10-11）：RTL8189FTV（SDIO/SDMC0，4-bit @40MHz）+ third-party lwIP
   （netif `WL0`），验证至 AP 扫描；驱动 `.bss` ≈259 KiB 进 PSRAM，运行时缓冲吃统一堆——
   恢复收发功能前必须补 WiFi 开/连 AP/断开状态下的堆基线测量。
-- **内存优化按步交付**：2026-10-23 第 1 步节点共享原型已完成离板 A/B、桌面回归、固件构建及用户真机 120 帧/基本交互验证，记录见 `docs/aic-node-prototype-step1.md`；本轮系统历史峰值 5,810,936 bytes、caps 峰值 5,345,447 bytes，无分配失败。用户负责烧录并回传日志，每步记录后再推进下一项；本次通过仅限启动/短时空闲与已反馈交互，长时/业务流量/WiFi 矩阵仍待验收。
+- **内存优化按步交付**：第 2 步已实现共享窄屏连接配置抽屉：默认不创建，首次打开后复用，以限制快速开关峰值；本地验证/固件已完成、待用户上板（`docs/aic-narrow-panel-step2.md`）。启动空闲收益不代表首次打开后的常驻收益，高级收发工具栏窄屏折叠仍待做。2026-10-23 第 1 步节点共享原型已完成离板 A/B、桌面回归、固件构建及用户真机 120 帧/基本交互验证，记录见 `docs/aic-node-prototype-step1.md`；本轮系统历史峰值 5,810,936 bytes、caps 峰值 5,345,447 bytes，无分配失败。用户负责烧录并回传日志，每步记录后再推进下一项；本次通过仅限启动/短时空闲与已反馈交互，长时/业务流量/WiFi 矩阵仍待验收。
 
 ### 恢复路线（内存约束下的推进顺序）
 

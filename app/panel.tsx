@@ -4,7 +4,7 @@ import { hasAppFeature } from "@pocketcom/features";
 // 规避深层 flex-col 堆叠怪癖；同时给 Select 弹层提供精确的屏幕锚点）+
 // 页脚（固定：打开/关闭按钮 + 状态灯，不随内容滚动）。
 // 连接类型四类 + 串口全参数；布局表随 connType/客户端数/字段显隐动态伸缩。
-import { computed, ref } from "vue";
+import { computed, onScopeDispose, ref, watch } from "vue";
 import { Text, View } from "@pocketjs/framework/components";
 import {
   Btn,
@@ -22,7 +22,7 @@ import {
 } from "./widgets";
 import { theme } from "./theme";
 import { t } from "./i18n";
-import { PANEL_FOOTER_H, PANEL_HEADER_H, PANEL_W, viewportSize } from "./layout";
+import { connectionDrawerOpen, workspace, PANEL_FOOTER_H, PANEL_HEADER_H, PANEL_W, viewportSize } from "./layout";
 import { onWheel } from "./wheel";
 import { setActiveField } from "./fields";
 import { openSettingsModal } from "./settings-modal";
@@ -75,7 +75,6 @@ const DATA_BITS = ["5", "6", "7", "8"];
 
 const customBaudVisible = hasAppFeature("transport.serial") ? ref(false) : undefined!;
 const customBaud = hasAppFeature("transport.serial") ? ref("115200") : undefined!;
-let customBaudField: TextFieldHandle | undefined;
 
 // MCP URL/token 复制反馈（M4）：1.5s 后恢复按钮文案。
 const copiedKey = hasAppFeature("mcp.server") && hasAppFeature("ui.clipboard") ? ref<"url" | "token" | null>(null) : undefined!;
@@ -98,59 +97,6 @@ function tokenDisplay(): string {
   return `${tok.slice(0, 12)}…${tok.slice(-4)}`;
 }
 
-/** 文本字段句柄注册表：打开连接前把未提交的输入 flush 进 session 仓库。 */
-const fieldHandles = new Map<string, TextFieldHandle>();
-function bindField(key: string, target: { value: string }): {
-  onHandle: (h: TextFieldHandle) => void;
-  onEnter: (h: TextFieldHandle) => void;
-} {
-  return {
-    onHandle: (h) => {
-      fieldHandles.set(key, h);
-    },
-    onEnter: (h) => {
-      target.value = h.text();
-    },
-  };
-}
-
-function flushFields(): void {
-  for (const [key, h] of fieldHandles) {
-    const text = h.text();
-    switch (key) {
-      case "tcpHost":
-        if (hasAppFeature("transport.tcp-client")) tcpHost.value = text;
-        break;
-      case "tcpPort":
-        if (hasAppFeature("transport.tcp-client")) tcpPort.value = text;
-        break;
-      case "tcpReconnectSec":
-        if (hasAppFeature("transport.tcp-client")) tcpReconnectSec.value = text;
-        break;
-      case "tcpsPort":
-        if (hasAppFeature("transport.tcp-server")) tcpsPort.value = text;
-        break;
-      case "udpBindPort":
-        if (hasAppFeature("transport.udp")) udpBindPort.value = text;
-        break;
-      case "udpHost":
-        if (hasAppFeature("transport.udp")) udpHost.value = text;
-        break;
-      case "udpPort":
-        if (hasAppFeature("transport.udp")) udpPort.value = text;
-        break;
-      case "wsUrl":
-        if (hasAppFeature("transport.websocket")) wsUrl.value = text;
-        break;
-      case "wsProtocols":
-        if (hasAppFeature("transport.websocket")) wsProtocols.value = text;
-        break;
-      case "wsReconnectSec":
-        if (hasAppFeature("transport.websocket")) wsReconnectSec.value = text;
-        break;
-    }
-  }
-}
 
 export const wsProtocols = hasAppFeature("transport.websocket") ? ref("") : undefined!;
 
@@ -167,19 +113,6 @@ function stateColor(): string {
   }
 }
 
-function tryOpen(): void {
-  flushFields();
-  if (hasAppFeature("transport.serial") && customBaudVisible.value && customBaudField) {
-    baud.value = customBaudField.text().trim() || "115200";
-  }
-  openCurrentConnection();
-}
-
-function toggleOpen(): void {
-  const s = connState.value;
-  if (s === "CONNECTED" || s === "LOST" || s === "CONNECTING") closeConnection();
-  else if (s === "DISCONNECTED") tryOpen();
-}
 
 // ---------------------------------------------------------------------------
 // 布局表（内容块 absolute 定位；块高固定，累计得内容总高与弹层锚点）
@@ -208,12 +141,12 @@ const panelScroll = ref(0);
 /** 文本框拖动选区命中区（屏幕绝对坐标）：控件顶 = 面板内容坐标 ctlTop，
  *  随面板滚动平移。x/w 为相对面板的偏移与宽（配对字段各占半宽）。 */
 function ctlRegion(ctlTop: number, xOff = 0, w = CONTENT_W): () => SelRect | null {
-  return () => ({
-    x: PAD_X + xOff,
-    y: PANEL_HEADER_H + 1 + ctlTop - panelScroll.value,
-    w,
-    h: CTL_H,
-  });
+  return () => {
+    if (workspace.value.compact && !connectionDrawerOpen()) return null;
+    const y = PANEL_HEADER_H + 1 + ctlTop - panelScroll.value;
+    if (y < PANEL_HEADER_H + 1 || y + CTL_H > viewportSize.value.h - PANEL_FOOTER_H) return null;
+    return { x: PAD_X + xOff, y, w, h: CTL_H };
+  };
 }
 
 /** label + 控件的标准字段块：控件顶 = 块顶 + LABEL_H + LABEL_GAP。 */
@@ -283,13 +216,96 @@ const layoutInfo = computed(() => {
   return { top, total: y + PAD_BOTTOM };
 });
 
-export function LeftPanel() {
+export function LeftPanel(props: { onClose?: () => void } = {}) {
+  let customBaudField: TextFieldHandle | undefined;
+  /** 文本字段句柄注册表：打开连接前把未提交的输入 flush 进 session 仓库。 */
+  const fieldHandles = new Map<string, TextFieldHandle>();
+  function bindField(key: string, target: { value: string }): {
+    onHandle: (h: TextFieldHandle) => void;
+    onEnter: (h: TextFieldHandle) => void;
+  } {
+    return {
+      onHandle: (h) => {
+        fieldHandles.set(key, h);
+      },
+      onEnter: (h) => {
+        target.value = h.text();
+      },
+    };
+  }
+
+  function flushFields(): void {
+    for (const [key, h] of fieldHandles) {
+      const text = h.text();
+      switch (key) {
+        case "tcpHost":
+          if (hasAppFeature("transport.tcp-client")) tcpHost.value = text;
+          break;
+        case "tcpPort":
+          if (hasAppFeature("transport.tcp-client")) tcpPort.value = text;
+          break;
+        case "tcpReconnectSec":
+          if (hasAppFeature("transport.tcp-client")) tcpReconnectSec.value = text;
+          break;
+        case "tcpsPort":
+          if (hasAppFeature("transport.tcp-server")) tcpsPort.value = text;
+          break;
+        case "udpBindPort":
+          if (hasAppFeature("transport.udp")) udpBindPort.value = text;
+          break;
+        case "udpHost":
+          if (hasAppFeature("transport.udp")) udpHost.value = text;
+          break;
+        case "udpPort":
+          if (hasAppFeature("transport.udp")) udpPort.value = text;
+          break;
+        case "wsUrl":
+          if (hasAppFeature("transport.websocket")) wsUrl.value = text;
+          break;
+        case "wsProtocols":
+          if (hasAppFeature("transport.websocket")) wsProtocols.value = text;
+          break;
+        case "wsReconnectSec":
+          if (hasAppFeature("transport.websocket")) wsReconnectSec.value = text;
+          break;
+      }
+    }
+  }
+  function tryOpen(): void {
+    flushFields();
+    if (hasAppFeature("transport.serial") && customBaudVisible.value && customBaudField) {
+      baud.value = customBaudField.text().trim() || "115200";
+    }
+    openCurrentConnection();
+  }
+
+  function toggleOpen(): void {
+    const s = connState.value;
+    if (s === "CONNECTED" || s === "LOST" || s === "CONNECTING") closeConnection();
+    else if (s === "DISCONNECTED") tryOpen();
+  }
+
   const viewH = () => Math.max(0, viewportSize.value.h - PANEL_HEADER_H - 1 - PANEL_FOOTER_H);
   const maxScroll = () => Math.max(0, layoutInfo.value.total - viewH());
 
-  onWheel("panel", (dy) => {
+  const scrollPanel = (dy: number): void => {
     closePopup(); // 滚动使锚点失效：先收弹层
     panelScroll.value = Math.max(0, Math.min(maxScroll(), panelScroll.value - dy));
+  };
+  panelScroll.value = Math.min(panelScroll.value, maxScroll());
+  onScopeDispose(onWheel("panel", scrollPanel));
+  const commitFields = (): void => {
+    flushFields();
+    if (hasAppFeature("transport.serial") && customBaudVisible.value && customBaudField) {
+      customBaud.value = customBaudField.text().trim() || "115200";
+      baud.value = customBaud.value;
+    }
+  };
+  if (props.onClose) watch(connectionDrawerOpen, (open) => { if (!open) commitFields(); });
+  onScopeDispose(() => {
+    commitFields();
+    fieldHandles.clear();
+    customBaudField = undefined;
   });
 
   /** 控制框屏幕锚点（弹层定位用）：面板从 (0,0) 开始，头部固定高。 */
@@ -305,7 +321,7 @@ export function LeftPanel() {
   const top = (id: string): number => layoutInfo.value.top[id] ?? 0;
 
   return (
-    <View class="flex-col" style={{ width: PANEL_W, bgColor: theme.value.panelBg }}>
+    <View class="flex-col" style={{ width: PANEL_W, height: viewportSize.value.h, bgColor: theme.value.panelBg }}>
       {/* 头部：标题 */}
       <View class="relative" style={{ height: PANEL_HEADER_H }}>
         <Text
@@ -314,6 +330,9 @@ export function LeftPanel() {
         >
           {t("app.title")}
         </Text>
+        {props.onClose ? <View class="absolute" style={{ insetR: 8, insetT: 8, width: 44, height: 28 }}>
+          <Btn width={44} height={28} label={() => t("panel.back")} onPress={() => props.onClose?.()} />
+        </View> : null}
         <Text
           class="absolute text-xs"
           style={{ insetL: PAD_X, insetT: 28, height: 14, lineHeight: 14, textColor: theme.value.dim }}
@@ -613,8 +632,12 @@ export function LeftPanel() {
           />
         </View>
         <View class="absolute" style={{ insetL: PAD_X, insetR: PAD_X, insetT: 44, height: 30 }}>
-          <Btn width={CONTENT_W} height={30} label={() => t("settings.open")} onPress={openSettingsModal} />
+          <Btn width={CONTENT_W} height={30} label={() => t("settings.open")} onPress={() => { openSettingsModal(); props.onClose?.(); }} />
         </View>
+        {props.onClose ? <View class="absolute flex-row" style={{ insetL: 148, insetT: 80, gap: 4, height: 22 }}>
+          <Btn width={50} height={22} label={() => t("panel.pageUp")} onPress={() => scrollPanel(Math.max(28, viewH() - 28))} />
+          <Btn width={50} height={22} label={() => t("panel.pageDown")} onPress={() => scrollPanel(-Math.max(28, viewH() - 28))} />
+        </View> : null}
         <View class="absolute flex-row items-center gap-2" style={{ insetL: PAD_X, insetT: 82, height: 16 }}>
           <StatusDot color={stateColor} size={8} />
           <Text class="text-xs" style={{ textColor: stateColor(), lineHeight: 16 }}>

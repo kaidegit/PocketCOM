@@ -17,10 +17,14 @@
  * iterating on the board assembly — board numbers stay the acceptance.
  *
  * Usage: probe <package.pocket> [--heap N] [--limit N] [--turns N]
+ *              [--tap X,Y@TURN] [--sample TURN] [--collect TURN]
  *   --heap N   emulate a unified-heap budget: allocations beyond N bytes
  *              fail (approximate breakpoint hunt; failures are counted)
  *   --limit N  QuickJS quota for JS_SetMemoryLimit (default 5 MiB)
  *   --turns N  idle turns after mount, default 120
+ *   --tap     one touch-down at TURN, released on the following turn
+ *   --sample  print an additional S6-turnN memory sample after TURN
+ *   --collect run guest GC after TURN and print S7-gcN (explicit experiment)
  */
 #include "pocketjs/guest.h"
 #include "pocketjs/guest_quickjs.h"
@@ -207,10 +211,18 @@ static size_t parse_size(const char *text) {
     }                                                                         \
   } while (0)
 
+#define PROBE_EVENT_LIMIT 512U
+static struct { unsigned x, y; long turn; } taps[PROBE_EVENT_LIMIT];
+static long sample_turns[PROBE_EVENT_LIMIT];
+static long collect_turns[PROBE_EVENT_LIMIT];
+
 int main(int argc, char **argv) {
   const char *package_path = NULL;
   size_t heap_limit = 5U * 1024U * 1024U;
   long turns = 120;
+  size_t tap_count = 0U;
+  size_t sample_count = 0U;
+  size_t collect_count = 0U;
 
   for (int index = 1; index < argc; index++) {
     const char *argument = argv[index];
@@ -220,15 +232,64 @@ int main(int argc, char **argv) {
       heap_limit = parse_size(argv[++index]);
     } else if (strcmp(argument, "--turns") == 0 && index + 1 < argc) {
       turns = strtol(argv[++index], NULL, 0);
+    } else if (strcmp(argument, "--tap") == 0 && index + 1 < argc) {
+      char trailing;
+      if (tap_count == PROBE_EVENT_LIMIT ||
+          sscanf(argv[++index], "%u,%u@%ld%c", &taps[tap_count].x,
+                 &taps[tap_count].y, &taps[tap_count].turn, &trailing) != 3 ||
+          taps[tap_count].x >= POCKETJS_AIC_CONTRACT_LOGICAL_WIDTH ||
+          taps[tap_count].y >= POCKETJS_AIC_CONTRACT_LOGICAL_HEIGHT ||
+          taps[tap_count].turn < 1) {
+        fprintf(stderr, "probe: --tap expects X,Y@TURN within the viewport (max 512)\n");
+        return 2;
+      }
+      tap_count++;
+    } else if (strcmp(argument, "--sample") == 0 && index + 1 < argc) {
+      char *end = NULL;
+      const long at = strtol(argv[++index], &end, 10);
+      if (sample_count == PROBE_EVENT_LIMIT || *end != '\0' || at < 1) {
+        fprintf(stderr, "probe: --sample expects a positive turn (max 512)\n");
+        return 2;
+      }
+      sample_turns[sample_count++] = at;
+    } else if (strcmp(argument, "--collect") == 0 && index + 1 < argc) {
+      char *end = NULL;
+      const long at = strtol(argv[++index], &end, 10);
+      if (collect_count == PROBE_EVENT_LIMIT || *end != '\0' || at < 1) {
+        fprintf(stderr, "probe: --collect expects a positive turn (max 512)\n");
+        return 2;
+      }
+      collect_turns[collect_count++] = at;
     } else if (argument[0] != '-') {
       package_path = argument;
+    } else {
+      fprintf(stderr, "probe: unknown or incomplete option: %s\n", argument);
+      return 2;
     }
   }
   if (package_path == NULL) {
     fprintf(stderr,
             "usage: probe <package.pocket> [--heap N] [--limit N] "
-            "[--turns N]\n");
+            "[--turns N] [--tap X,Y@TURN] [--sample TURN] [--collect TURN]\n");
     return 2;
+  }
+  for (size_t i = 0; i < tap_count; i++) {
+    if (taps[i].turn >= turns) {
+      fprintf(stderr, "probe: tap turn must precede --turns so release is observed\n");
+      return 2;
+    }
+  }
+  for (size_t i = 0; i < sample_count; i++) {
+    if (sample_turns[i] > turns) {
+      fprintf(stderr, "probe: sample turn exceeds --turns\n");
+      return 2;
+    }
+  }
+  for (size_t i = 0; i < collect_count; i++) {
+    if (collect_turns[i] > turns) {
+      fprintf(stderr, "probe: collection turn exceeds --turns\n");
+      return 2;
+    }
   }
 
   size_t package_size = 0;
@@ -313,6 +374,16 @@ int main(int argc, char **argv) {
     pocketjs_ui_input_t input;
     memset(&input, 0, sizeof(input));
     input.struct_size = sizeof(input);
+    pocketjs_ui_touch_t touch = {0};
+    for (size_t i = 0; i < tap_count; i++) {
+      if (taps[i].turn == turn) {
+        touch.x = (uint16_t)taps[i].x;
+        touch.y = (uint16_t)taps[i].y;
+        input.touches = &touch;
+        input.touch_count = 1U;
+        break;
+      }
+    }
     pocketjs_ui_frame_view_t frame;
     memset(&frame, 0, sizeof(frame));
     frame.struct_size = sizeof(frame);
@@ -321,6 +392,21 @@ int main(int argc, char **argv) {
       sample("S5-frame1");
     } else if (turn == turns) {
       sample("S5-steady");
+    }
+    for (size_t i = 0; i < sample_count; i++) {
+      if (sample_turns[i] == turn) {
+        char label[40];
+        snprintf(label, sizeof(label), "S6-turn%ld", turn);
+        sample(label);
+      }
+    }
+    for (size_t i = 0; i < collect_count; i++) {
+      if (collect_turns[i] == turn) {
+        pocketjs_guest_run_gc(guest);
+        char label[40];
+        snprintf(label, sizeof(label), "S7-gc%ld", turn);
+        sample(label);
+      }
     }
   }
   printf("[PJS-PROBE] done turns=%ld caps_live=%zu caps_peak=%zu "

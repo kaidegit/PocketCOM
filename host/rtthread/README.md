@@ -1,10 +1,10 @@
 # PocketCOM on AIC + RT-Thread
 
-本期接入 D12x demo68-nor：PocketCOM 应用包、固件构建与静态内存预算。固件 **XIP 运行**（`.text/.rodata` 在 SPI NOR 的 0x60000000 窗口原地执行，仅 `.data/.bss` 进 PSRAM），PSRAM 为 **统一 TLSF 系统堆**（不再划分 PocketJS 私有池）。2026-10-23 起切换为 480×272 共享完整 UI，按 JSON profile 裁剪，用于新一轮真机内存 perf（优化前 S4 挂载 OOM，节点共享原型优化后已通过首帧/120 帧零错误和基本交互）；没有 UART/网络/MCP `com.*` 设备桥或持久化。精简页保留为历史基线。构建不自动烧录；实测基线见 [D12x 8 MiB PSRAM 内存优化方案](../../docs/aic-memory-optimization.md)，后续应用恢复方向见[共享 UI 与编译期裁剪提案](../../docs/shared-ui-memory-optimization.md)（terminal / mcp.server / transport.* / ui.* 裁剪与离板 A/B 已实施，节点共享原型已完成本地与本轮真机启动/120 帧及基本交互验证，窄屏布局和容量方案仍待推进）。
+本期接入 D12x demo68-nor：PocketCOM 应用包、固件构建与静态内存预算。固件 **XIP 运行**（`.text/.rodata` 在 SPI NOR 的 0x60000000 窗口原地执行，仅 `.data/.bss` 进 PSRAM），PSRAM 为 **统一 TLSF 系统堆**（不再划分 PocketJS 私有池）。2026-10-23 起切换为 480×272 共享完整 UI，按 JSON profile 裁剪，用于新一轮真机内存 perf（优化前 S4 挂载 OOM，节点共享原型优化后已通过首帧/120 帧零错误和基本交互）；没有 UART/网络/MCP `com.*` 设备桥或持久化。精简页保留为历史基线。构建不自动烧录；实测基线见 [D12x 8 MiB PSRAM 内存优化方案](../../docs/aic-memory-optimization.md)，后续应用恢复方向见[共享 UI 与编译期裁剪提案](../../docs/shared-ui-memory-optimization.md)（terminal / mcp.server / transport.* / ui.* 裁剪与离板 A/B 已实施，节点共享原型已完成本地与本轮真机启动/120 帧及基本交互验证，连接配置延后创建已完成本地验证、待第 2 步上板；高级窄屏工具栏和容量方案仍待推进）。
 
 ## 阅读导航与当前结论
 
-- **当前优化步骤**：[第 1 步：共享节点兼容接口](../../docs/aic-node-prototype-step1.md)。本地 A/B、桌面回归、固件构建与本轮真机 120 帧验证已完成，无分配失败，用户确认画面和触摸下拉正常；长时/业务负载/WiFi 矩阵仍待验收。
+- **当前优化步骤**：[第 2 步：连接配置延后创建](../../docs/aic-narrow-panel-step2.md)，本地验证和固件完成、待上板；默认不创建，首次打开后复用，已验证无额外 GC 的快速开关及触摸记录环回卷。首次打开前启动峰值 4.53 MiB、空闲 3.49 MiB；操作后的常驻量另记。第 1 步真机 120 帧及基本交互结果继续作为已验收基线。
 - **优化前真机基线**：[2026-10-23 共享 UI 内存复测](../../docs/aic-memory-perf-2026-10-23.md)。S3 编译通过，S4 底层分配失败 8 次，系统历史峰值 6,839,160 / 7,340,032 bytes；无首帧与稳态数据。
 - **构建与采集操作**：本文的构建、产物和 P0 诊断章节，以及 [aic-build skill](../../.agents/skills/aic-build/SKILL.md)。
 - **历史证据与方案评估**：[内存优化方案](../../docs/aic-memory-optimization.md)；**后续共享实现路线**：[共享 UI 方案](../../docs/shared-ui-memory-optimization.md)。
@@ -169,7 +169,10 @@ pjs_mem reset        # 记账峰值回落到当前 live，用于增量测量
 npm run probe:aic                    # 测 dist/aic 当前包
 npm run probe:aic -- --heap 7340032  # 注入统一堆预算，粗找断点
 npm run probe:aic -- --heap 3m --turns 600
+npm run probe:aic -- --turns 240 --tap 60,16@5 --sample 60 --tap 238,22@65 --collect 120
 ```
+
+`--tap X,Y@TURN` 在该帧按下、下一帧释放，`--sample TURN` 输出 S6 附加采样，`--collect TURN` 显式 guest GC 后输出 S7；每类最多 512 条，tap 必须早于末帧，采样/GC 不超过末帧。显式 GC 仅供离板存活集实验，不模拟板端空闲 GC，也不改固件。默认无这些参数时保持原有空闲探针行为。
 
 前置：`npm run package:aic`（探针读 `.pocket` 包与生成的契约头）、cc、cargo。对象缓存在 `.pocket/aic/probe-host/`，重复运行只重链。**口径与偏差**：caps/js/guest/rloc 字段含义同板；64 位指针使数字系统性偏大（实测精简页 caps 峰值 +10%、js +15%，realloc 次数与板几乎一致），malloc 无碎片/无系统侧共享——回答"这个包大概吃多少、峰值在哪"，不替代板端验收。
 

@@ -27,7 +27,7 @@ import { SELECT_HISTORY_W, SELECT_TARGET_W, sendOptSelectX } from "./sendlayout"
 import { monoColAt, monoXAt } from "./textsel";
 import { theme, termColorCss } from "./theme";
 import { t } from "./i18n";
-import { PANEL_W, STATUS_H, viewportSize } from "./layout";
+import { STATUS_H, connectionDrawerOpen, viewportSize, workspace } from "./layout";
 import { onWheel } from "./wheel";
 import { setActiveField } from "./fields";
 import { getSvc } from "./svc";
@@ -114,10 +114,10 @@ const logStickBottom = ref(true);
 /** 日志窗屏幕几何（文本行画布；与渲染结构一一对应）。 */
 function logMetrics(): { x0: number; y0: number; w: number; h: number; lineH: number } {
   return {
-    x0: PANEL_W,
-    y0: TOOLBAR_H + 1,
-    w: Math.max(0, viewportSize.value.w - PANEL_W),
-    h: Math.max(0, viewportSize.value.h - STATUS_H - SEND_PANE_H - TOOLBAR_H - 1),
+    x0: workspace.value.x,
+    y0: workspace.value.y + TOOLBAR_H + 1,
+    w: Math.max(0, workspace.value.w),
+    h: Math.max(0, workspace.value.h - SEND_PANE_H - TOOLBAR_H - 1),
     lineH: FONT_LINE_H[fontSize.value],
   };
 }
@@ -292,7 +292,7 @@ function logSelRect(row: LogRow, index: number): { x: number; w: number } | null
 export function ReceivePane() {
   const lineH = () => FONT_LINE_H[fontSize.value];
 
-  const viewH = () => Math.max(0, viewportSize.value.h - STATUS_H - SEND_PANE_H - TOOLBAR_H - 1);
+  const viewH = () => Math.max(0, workspace.value.h - SEND_PANE_H - TOOLBAR_H - 1);
   const maxScroll = () => Math.max(0, logView.rows.length * lineH() - viewH());
 
   // 新数据：贴底跟随；否则保持（滚动锁定，SPEC §3.3）
@@ -306,7 +306,7 @@ export function ReceivePane() {
 
   // 视口变化：上报换行宽度 + 重排
   const reportWidth = () => {
-    rxWidth.value = Math.max(0, viewportSize.value.w - PANEL_W - 16);
+    rxWidth.value = Math.max(0, workspace.value.w - 16);
   };
   watch(viewportSize, () => {
     reportWidth();
@@ -355,7 +355,7 @@ export function ReceivePane() {
   };
 
   return (
-    <View class="flex-col" style={{ height: viewportSize.value.h - STATUS_H - SEND_PANE_H }}>
+    <View class="flex-col" style={{ height: workspace.value.h - SEND_PANE_H }}>
       {/* 工具栏：ASCII/HEX · 转义 · 时间戳 · 自动换行 ‖ 暂停 · 清屏 */}
       <View class="flex-row items-center gap-2 px-2" style={{ height: TOOLBAR_H }}>
         <View style={{ width: 92, height: TOOLBAR_CTL_H }}>
@@ -596,17 +596,18 @@ export function SendPane() {
       measureUi,
       showTarget(),
     );
-  const targetAnchor = () => anchorAt(PANEL_W + 8 + selectX().targetX, SELECT_TARGET_W);
-  const historyAnchor = () => anchorAt(PANEL_W + 8 + selectX().historyX, SELECT_HISTORY_W);
+  const targetAnchor = () => anchorAt(workspace.value.x + 8 + selectX().targetX, SELECT_TARGET_W);
+  const historyAnchor = () => anchorAt(workspace.value.x + 8 + selectX().historyX, SELECT_HISTORY_W);
 
   /** 发送输入框命中区（拖动选区）：布局 1 分隔线 + 8 paddingT + 22 选项行 +
    *  6 间距 → 输入行；flex-1 宽 = 行宽 - 发送按钮 64 - gap 8。 */
   const sendFieldRegion = (): SelRect | null => {
+    if (connectionDrawerOpen()) return null;
     const vp = viewportSize.value;
     return {
-      x: PANEL_W + 8,
+      x: workspace.value.x + 8,
       y: vp.h - STATUS_H - SEND_PANE_H + 1 + 8 + TOOLBAR_CTL_H + 6,
-      w: Math.max(0, vp.w - PANEL_W - 16 - 64 - 8),
+      w: Math.max(0, workspace.value.w - 16 - 64 - 8),
       h: 56,
     };
   };
@@ -725,7 +726,7 @@ export function SendPane() {
 
         {/* 输入框（多行，Cmd/Ctrl+Enter 发送）+ 发送按钮 */}
         <View class="flex-row gap-2" style={{ height: 56 }}>
-          <View class="flex-1" style={{ height: 56 }}>
+          <View style={{ width: Math.max(0, workspace.value.w - 16 - 64 - 8), height: 56 }}>
             <TextField
               multiline
               height={56}

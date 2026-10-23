@@ -74,7 +74,11 @@
     "terminal": "终端"
   },
   "panel": {
-    "mode": "模式"
+    "mode": "模式",
+    "connections": "连接配置",
+    "back": "返回",
+    "pageUp": "上翻",
+    "pageDown": "下翻"
   },
   "roadmap": {
     "m2": "M2",
