@@ -20,7 +20,7 @@ describe("normalizeConfig", () => {
       fontSize: 16,
       terminal: { scrollbackLines: 5000 },
       receive: { hex: true, escape: true, timestamp: true, wrap: false, color: true, historyLines: 8000 },
-      send: { escape: true, crlf: true, appendNewline: true },
+      send: { escape: true, crlf: true, appendNewline: true, collapsed: true },
       logPath: "/tmp/log.txt",
       mcp: { enabled: true, port: 8000, token: "t" },
     });
@@ -30,7 +30,7 @@ describe("normalizeConfig", () => {
     expect(cfg.terminal).toEqual({ scrollbackLines: 5000 });
     // 旧版本配置文件的 receive.wrap 键被忽略（自动换行已恒开，无开关）
     expect(cfg.receive).toEqual({ hex: true, escape: true, timestamp: true, color: true, historyLines: 8000 });
-    expect(cfg.send).toEqual({ escape: true, crlf: true, appendNewline: true });
+    expect(cfg.send).toEqual({ escape: true, crlf: true, appendNewline: true, collapsed: true });
     expect(cfg.logPath).toBe("/tmp/log.txt");
     expect(cfg.mcp).toEqual({ enabled: true, port: 8000, token: "t" });
   });
@@ -43,6 +43,7 @@ describe("normalizeConfig", () => {
       terminal: { scrollbackLines: -5 },
       mcp: { port: 0 },
       receive: { hex: "yes" },
+      send: { collapsed: "yes" },
       sendHistory: "nope",
     });
     expect(cfg.language).toBe(DEFAULT_CONFIG.language);
@@ -52,6 +53,7 @@ describe("normalizeConfig", () => {
     expect(cfg.mcp.port).toBe(1); // 0 clamp 到下限
     expect(cfg.receive.hex).toBe(false);
     expect(cfg.receive.historyLines).toBe(DEFAULT_CONFIG.receive.historyLines); // 非数字 → 默认
+    expect(cfg.send.collapsed).toBe(false); // 非布尔 → 默认（缺省亦为 false，见"空输入"用例）
     expect(cfg.sendHistory).toEqual([]);
   });
 

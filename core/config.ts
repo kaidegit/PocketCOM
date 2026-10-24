@@ -5,7 +5,8 @@
  * 未知字段丢弃，非法值回退默认，历史类字段封顶 50 条。
  *
  * 内容（SPEC §3.8）：语言、主题、字体大小、终端回滚行数、最近连接参数
- * （按类型）、发送历史、接收区开关项、日志路径、MCP 端口与 token。
+ * （按类型）、发送历史、接收区开关项、发送区开关项（含折叠）、日志路径、
+ * MCP 端口与 token。
  */
 
 export type ConfigLanguage = "zh-CN" | "en";
@@ -68,7 +69,7 @@ export interface AppConfig {
   fontSize: ConfigFontSize;
   terminal: { scrollbackLines: number };
   receive: { hex: boolean; escape: boolean; timestamp: boolean; color: boolean; historyLines: number };
-  send: { escape: boolean; crlf: boolean; appendNewline: boolean };
+  send: { escape: boolean; crlf: boolean; appendNewline: boolean; collapsed: boolean };
   lastConn: LastConnConfig;
   /** 发送历史：去重置顶、最旧在后，上限 50（SPEC §3.3/§3.8）。 */
   sendHistory: string[];
@@ -85,7 +86,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   fontSize: 14,
   terminal: { scrollbackLines: 10000 },
   receive: { hex: false, escape: false, timestamp: false, color: false, historyLines: 10000 },
-  send: { escape: false, crlf: false, appendNewline: false },
+  send: { escape: false, crlf: false, appendNewline: false, collapsed: false },
   lastConn: {},
   sendHistory: [],
   logPath: "",
@@ -225,6 +226,7 @@ export function normalizeConfig(raw: unknown): AppConfig {
       escape: asBool(asRecord(r.send).escape, DEFAULT_CONFIG.send.escape),
       crlf: asBool(asRecord(r.send).crlf, DEFAULT_CONFIG.send.crlf),
       appendNewline: asBool(asRecord(r.send).appendNewline, DEFAULT_CONFIG.send.appendNewline),
+      collapsed: asBool(asRecord(r.send).collapsed, DEFAULT_CONFIG.send.collapsed),
     },
     lastConn: {
       serial: lastConn.serial !== undefined ? normSerial(lastConn.serial) : undefined,

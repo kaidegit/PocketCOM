@@ -5,8 +5,8 @@ import { theme } from "./theme";
 import { activeField } from "./fields";
 import { toggleKeyboard } from "./soft-keyboard";
 import { t } from "./i18n";
-import { connState, connSummary, mcpState, rxCount, txCount } from "./session";
-import { Hairline, StatusDot } from "./widgets";
+import { connState, connSummary, mcpState, rxCount, sendCollapsed, txCount, uiMode } from "./session";
+import { Btn, Hairline, StatusDot } from "./widgets";
 
 function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -54,6 +54,18 @@ export function StatusBar(props: { height: number }) {
         {hasAppFeature("mcp.server") ? <Text class="text-xs" style={{ textColor: theme.value.dim }}>
           {mcpState.value.on ? `${t("mcp.on")} (${mcpState.value.clients})` : t("mcp.off")}
         </Text> : null}
+        {/* 发送区折叠（仅收发模式，SPEC §3.3）：▼ 展开（点击收起）/▲ 收起（点击展开）。
+            Btn 按下清活跃域，软键盘随之收起。符号需过 ui-glyph-coverage（MiSans cmap）。 */}
+        {uiMode.value === "transfer" ? (
+          <Btn
+            width={48}
+            height={22}
+            label={() => (sendCollapsed.value ? "▲" : "▼")}
+            onPress={() => {
+              sendCollapsed.value = !sendCollapsed.value;
+            }}
+          />
+        ) : null}
       </View>
     </View>
   );

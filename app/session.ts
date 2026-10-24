@@ -429,6 +429,8 @@ export const fontSize = ref<ConfigFontSize>(14);
 export const sendEscape = ref(false);
 export const sendCrlf = ref(false);
 export const sendAppendNl = ref(false);
+/** 发送区折叠（状态栏右端按钮切换，SPEC §3.3；随配置持久化，不进 MCP 白名单）。 */
+export const sendCollapsed = ref(false);
 /** 发送历史（去重置顶，上限 50，SPEC §3.3/§3.8）。 */
 export const sendHistory = ref<string[]>([]);
 /** 接收区可视宽度（px），ReceivePane 在 resize 时上报（换行用）。 */
@@ -700,6 +702,7 @@ function buildConfigJson(): string {
       escape: sendEscape.value,
       crlf: sendCrlf.value,
       appendNewline: sendAppendNl.value,
+      collapsed: sendCollapsed.value,
     },
     lastConn: lastConn.value,
     sendHistory: sendHistory.value,
@@ -792,6 +795,7 @@ function applyConfig(cfg: AppConfig): void {
   sendEscape.value = cfg.send.escape;
   sendCrlf.value = cfg.send.crlf;
   sendAppendNl.value = cfg.send.appendNewline;
+  sendCollapsed.value = cfg.send.collapsed;
   sendHistory.value = cfg.sendHistory;
   lastConn.value = cfg.lastConn;
   if (hasAppFeature("mcp.server")) {
@@ -864,6 +868,7 @@ for (const source of [
   sendEscape,
   sendCrlf,
   sendAppendNl,
+  sendCollapsed,
   sendHistory,
   lastConn,
   ...(hasAppFeature("mcp.server") ? [mcpEnabled, mcpToken] : []),

@@ -49,6 +49,7 @@ import {
   rxPaused,
   rxTimestamp,
   rxWidth,
+  sendCollapsed,
   sendHistory,
   sendText,
   session,
@@ -58,6 +59,9 @@ import {
 const TOOLBAR_H = 34;
 /** 发送区总高：1 分隔线 + 8 上 padding + 24 选项行 + 6 间距 + 56 输入行 + 8 下 padding。 */
 export const SEND_PANE_H = 103;
+
+/** 发送区当前高：折叠（状态栏按钮切换，SPEC §3.3）时 0，接收区占满剩余高度。 */
+const sendPaneH = (): number => (sendCollapsed.value ? 0 : SEND_PANE_H);
 
 const TOOLBAR_CTL_H = 22;
 
@@ -116,7 +120,7 @@ function logMetrics(): { x0: number; y0: number; w: number; h: number; lineH: nu
     x0: workspace.value.x,
     y0: workspace.value.y + TOOLBAR_H + 1,
     w: Math.max(0, workspace.value.w),
-    h: Math.max(0, workspace.value.h - SEND_PANE_H - TOOLBAR_H - 1),
+    h: Math.max(0, workspace.value.h - sendPaneH() - TOOLBAR_H - 1),
     lineH: FONT_LINE_H[fontSize.value],
   };
 }
@@ -291,7 +295,7 @@ function logSelRect(row: LogRow, index: number): { x: number; w: number } | null
 export function ReceivePane() {
   const lineH = () => FONT_LINE_H[fontSize.value];
 
-  const viewH = () => Math.max(0, workspace.value.h - SEND_PANE_H - TOOLBAR_H - 1);
+  const viewH = () => Math.max(0, workspace.value.h - sendPaneH() - TOOLBAR_H - 1);
   const maxScroll = () => Math.max(0, logView.rows.length * lineH() - viewH());
 
   // 新数据：贴底跟随；否则保持（滚动锁定，SPEC §3.3）
@@ -300,6 +304,10 @@ export function ReceivePane() {
   });
   // 字号变化：保持贴底语义
   if (hasAppFeature("ui.font-size-switch")) watch(fontSize, () => {
+    if (logStickBottom.value) logScroll.value = maxScroll();
+  });
+  // 发送区折叠：可视高度变化，保持贴底语义
+  watch(sendCollapsed, () => {
     if (logStickBottom.value) logScroll.value = maxScroll();
   });
 
@@ -352,7 +360,7 @@ export function ReceivePane() {
   };
 
   return (
-    <View class="flex-col" style={{ height: workspace.value.h - SEND_PANE_H }}>
+    <View class="flex-col" style={{ height: workspace.value.h - sendPaneH() }}>
       {/* 工具栏：ASCII/HEX · 转义 · 时间戳 ‖ 暂停 · 清屏（自动换行恒开，无开关） */}
       <View class="flex-row items-center gap-2 px-2" style={{ height: TOOLBAR_H }}>
         <View style={{ width: 92, height: TOOLBAR_CTL_H }}>
@@ -512,6 +520,9 @@ export function SendPane() {
   let field: TextFieldHandle | undefined;
   let intervalField: TextFieldHandle | undefined;
   let lastTimedAt = 0;
+  /** 输入草稿：折叠卸载输入框前暂存，重新展开经 initial 恢复（SPEC §3.3）。 */
+  let draft = "";
+  let intervalDraft = "300";
 
   const readIntervalMs = (): number => {
     const raw = intervalField?.text().trim() ?? "300";
@@ -559,6 +570,19 @@ export function SendPane() {
     }
   });
 
+  // 折叠：卸载输入框前保存草稿并断开句柄（timedPump 的 !field 守卫即暂停
+  // 定时发送）；重新展开时草稿经 initial 恢复、定时从当前时刻重新起拍
+  watch(sendCollapsed, (collapsed) => {
+    if (collapsed) {
+      draft = field?.text() ?? "";
+      intervalDraft = intervalField?.text() || intervalDraft;
+      field = undefined;
+      intervalField = undefined;
+    } else {
+      lastTimedAt = 0;
+    }
+  });
+
   // tcps 客户端列表变化：目标失效回广播
   if (hasAppFeature("transport.tcp-server")) watch(clientList, (list) => {
     if (target.value !== "broadcast" && !list.some((c) => String(c.handle) === target.value)) {
@@ -576,7 +600,7 @@ export function SendPane() {
    *  本体同位，弹层不再脱节。 */
   const anchorAt = (x: number, w: number) => (): PopupAnchor => ({
     x,
-    y: viewportSize.value.h - STATUS_H - SEND_PANE_H + 1 + 8,
+    y: viewportSize.value.h - STATUS_H - sendPaneH() + 1 + 8,
     w,
     h: TOOLBAR_CTL_H,
   });
@@ -592,7 +616,7 @@ export function SendPane() {
   /** 发送输入框命中区（拖动选区）：布局 1 分隔线 + 8 paddingT + 22 选项行 +
    *  6 间距 → 输入行；flex-1 宽 = 行宽 - 发送按钮 64 - gap 8。 */
   const sendFieldRegion = (): SelRect | null => {
-    if (connectionDrawerOpen()) return null;
+    if (connectionDrawerOpen() || sendCollapsed.value) return null;
     const vp = viewportSize.value;
     return {
       x: workspace.value.x + 8,
@@ -610,8 +634,9 @@ export function SendPane() {
   }
 
   return (
-    <View class="flex-col" style={{ height: SEND_PANE_H }}>
-      <Hairline />
+    <View class="flex-col overflow-hidden" style={{ height: sendPaneH() }}>
+      {!sendCollapsed.value ? <Hairline /> : null}
+      {!sendCollapsed.value ? (
       <View class="flex-col flex-1 px-2" style={{ paddingT: 8, gap: 6 }}>
         {/* 选项行：ASCII/HEX · 转义 · <CRLF> · 追加换行 ‖ 历史 · 定时 + 间隔 */}
         <View class="flex-row items-center gap-2" style={{ height: TOOLBAR_CTL_H }}>
@@ -695,8 +720,8 @@ export function SendPane() {
           {timed.value ? (
             <View style={{ width: 60, height: TOOLBAR_CTL_H }}>
               <TextField
+                initial={intervalDraft}
                 height={TOOLBAR_CTL_H}
-                initial="300"
                 onHandle={(h) => {
                   intervalField = h;
                   h.focus(); // 勾选定时后直接可输入间隔
@@ -719,6 +744,7 @@ export function SendPane() {
           <View style={{ width: Math.max(0, workspace.value.w - 16 - 64 - 8), height: 56 }}>
             <TextField
               multiline
+              initial={draft}
               height={56}
               monoSize={fontSize.value}
               placeholder={() => t("send.placeholder")}
@@ -734,6 +760,7 @@ export function SendPane() {
           </View>
         </View>
       </View>
+      ) : null}
     </View>
   );
 }
