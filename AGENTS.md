@@ -119,6 +119,7 @@ SPEC.md         # 功能规格（权威）
   SW 7 MiB（RT-Thread TLSF，QuickJS/Rust guest 与系统线程共用，无 PocketJS 私有池）；
   guest JS 配额 5 MiB。
 - 板端入口 `app/main.aic.tsx → app/app.tsx` 自 2026-10-23 起用于 **480×272 共享 UI 真机内存 perf**，功能只读取 JSON 的 `aic-diagnostic` profile；本次切换由用户明确要求，2026-10-23 优化前真机 S4 底层 OOM，见 [历史复测记录](docs/aic-memory-perf-2026-10-23.md)；节点共享原型优化后已进入首帧并完成 120 帧零错误、零分配失败，用户确认画面与触摸下拉正常，阶段数据见 [第 1 步记录](docs/aic-node-prototype-step1.md)。保留 `app/aic.tsx` 精简页作历史诊断基线。此前未裁剪完整 UI 常驻工作集 ≈8.1 MiB，挂载 OOM 可能伪装成 `TypeError: not a function`；不得把构建通过当成板端内存验收。
+- **GE 2D 加速已接入**（2026-10-24，fork `hosts/aic/port/pocketjs_ge.c`）：RGB565 渲染器的不透明填充走 GE fillrect、1:1 PSM 5650 搬运走 GE bitblt（BGR_565 源交换），A8 掩码混合留 CPU；每次 DMA 前后按行 clean/invalidate，失败按 DrawList 顺序软件回退，`POCKETJS_GE=0` 可编译关闭。真机烧录验证颜色/出帧/交互正常；perf A/B 与长时数据未采。详见 [host/rtthread/README.md](host/rtthread/README.md) GE 章节。
 - **WiFi 已点亮**（2026-10-11）：RTL8189FTV（SDIO/SDMC0，4-bit @40MHz）+ third-party lwIP
   （netif `WL0`），验证至 AP 扫描；驱动 `.bss` ≈259 KiB 进 PSRAM，运行时缓冲吃统一堆——
   恢复收发功能前必须补 WiFi 开/连 AP/断开状态下的堆基线测量。

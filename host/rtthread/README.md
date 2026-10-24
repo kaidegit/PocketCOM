@@ -200,8 +200,9 @@ mpp_ge，工作在 GE normal 模式（产品 `RT_USING_PM=y`，Kconfig 排除 cm
   fps 行新增 `ge_fill/ge_blend/ge_srm` 计数，启动打印 GE 就绪或禁用原因。
 - **验证状态**：host 侧 stub 回归（`vendor/pocketjs` `tests/aic-port.test.ts`，
   覆盖参数映射、clean→GE→invalidate 顺序、回退与禁用变体）与固件编译通过；
-  **真机未验证**——BGR_565 源交换的显示颜色、fill 颜色、fps/turn_max 对比与
-  长时稳定性待烧录实测，烧录后按第 1/2 步记录的板端口径验收。
+  2026-10-24 真机烧录验证通过——GE 就绪行、画面颜色（含 BGR_565 源交换）、
+  持续出帧与触摸交互正常；`POCKETJS_GE=0` A/B 的 fps/turn_max 数字与长时
+  稳定性、WiFi 组合尚未采样。
 
 ## 验证
 
