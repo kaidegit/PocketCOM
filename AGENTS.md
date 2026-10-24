@@ -39,7 +39,7 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 
 ## 技术栈与硬性约束
 
-- **字体**：UI 统一 MiSans（Regular/Medium/Semibold/Bold，vendor 在 `assets/fonts/`）；**mono 槽（接收区/终端网格）用 JetBrains Mono**——MiSans 非等宽，终端网格必须严格等宽。桌面端经 `text.layout.native` 走 CoreText 运行时排版，任意 Unicode 可显示；**烘焙字形约束只对嵌入式目标成立**（SPEC §5.4）。桌面可用 `npm run dev:aic-sim`（`--baked-text`）以板端同源 atlas 模拟烘焙字形观感（密度锚定 AIC profile，见 `docs/e2e.md`）。
+- **字体**：UI 统一 MiSans（Regular/Medium/Semibold/Bold，vendor 在 `assets/fonts/`）；**mono 槽（接收区/终端网格）用 JetBrains Mono**——MiSans 非等宽，终端网格必须严格等宽。**mono 槽只承载数据内容**（日志行/终端网格/文本框输入/地址/计数）；空态/提示/占位与下拉选项等 UI 文案一律走 MiSans 槽——烘焙 mono 槽无 CJK，i18n 文案落 mono 槽在板端必豆腐（SPEC §5.4）。桌面端经 `text.layout.native` 走 CoreText 运行时排版，任意 Unicode 可显示；**烘焙字形约束只对嵌入式目标成立**（SPEC §5.4）。桌面可用 `npm run dev:aic-sim`（`--baked-text`）以板端同源 atlas 模拟烘焙字形观感（密度锚定 AIC profile，见 `docs/e2e.md`）。
 - **无内置串口/WebSocket/raw socket**：所有 IO 走 `bridge/` 的 `com.*` HostOps 契约，核心层不得直接 import 任何平台 API。
 - 宿主事件只能在 **tick 边界**投递进 JS（FIFO 队列 drain），不得直接回调。
 - **无 DOM、无运行时 CSS**：动态样式用 `style={{…}}` 或整体 class 字面量三元，**禁止拼接 class 片段**（编译错误）。

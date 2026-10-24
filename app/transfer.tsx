@@ -22,7 +22,7 @@ import {
   type SelRect,
   type TextFieldHandle,
 } from "./widgets";
-import { LINE_H as FONT_LINE_H, MONO_CLASS, MONO_SLOTS } from "./fontsize";
+import { LINE_H as FONT_LINE_H, MONO_CLASS, MONO_SLOTS, TEXT_CLASS } from "./fontsize";
 import { SELECT_HISTORY_W, SELECT_TARGET_W, sendOptSelectX } from "./sendlayout";
 import { monoColAt, monoXAt } from "./textsel";
 import { theme, termColorCss } from "./theme";
@@ -423,7 +423,7 @@ export function ReceivePane() {
       <View class="relative flex-1 overflow-hidden" style={{ bgColor: theme.value.inputBg }}>
         {showEmpty() ? (
           <View class="absolute inset-0 flex-row items-center justify-center">
-            <Text class={MONO_CLASS[fontSize.value]} style={{ textColor: theme.value.dim }}>
+            <Text class={TEXT_CLASS[fontSize.value]} style={{ textColor: theme.value.dim }}>
               {t("receive.empty")}
             </Text>
           </View>

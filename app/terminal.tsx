@@ -13,7 +13,7 @@ import { getOps } from "@pocketjs/framework";
 import { onFrame } from "@pocketjs/framework/lifecycle";
 import { Scrollbar } from "./widgets";
 import { setActiveField } from "./fields";
-import { LINE_H, MONO_CLASS, MONO_SLOTS } from "./fontsize";
+import { LINE_H, MONO_SLOTS, TEXT_CLASS } from "./fontsize";
 import { theme, termColorCss } from "./theme";
 import { t } from "./i18n";
 import { viewportSize, workspace } from "./layout";
@@ -438,7 +438,7 @@ export function TerminalView() {
     >
       {screenBlank() ? (
         <View class="absolute inset-0 flex-row items-center justify-center">
-          <Text class={MONO_CLASS[fontSize.value]} style={{ textColor: theme.value.dim }}>
+          <Text class={TEXT_CLASS[fontSize.value]} style={{ textColor: theme.value.dim }}>
             {t("terminal.hint")}
           </Text>
         </View>

@@ -311,7 +311,7 @@ export function openContextMenu(
   options: SelectOption[],
   onPick: (v: string) => void,
 ): void {
-  const w = Math.max(96, ...options.map((o) => Math.ceil(measureMono(o.label, MONO_SLOTS[12])) + 28));
+  const w = Math.max(96, ...options.map((o) => Math.ceil(measureUi(o.label)) + 28));
   popup.value = {
     id: nextSelectId++,
     options,
@@ -403,7 +403,7 @@ function PopupBox(props: { p: PopupState }) {
                 cur?.onPick(opt.value);
               }}
             >
-              <Text class="text-xs font-mono" style={{ textColor: opt.disabled ? theme.value.dim : theme.value.fg }}>
+              <Text class="text-xs" style={{ textColor: opt.disabled ? theme.value.dim : theme.value.fg }}>
                 {opt.label}
               </Text>
             </View>
@@ -463,7 +463,7 @@ export function Select(props: {
       {/* 显示文本裁剪区：超长内容截断（不挤出箭头、不溢出面板） */}
       <View class="flex-1 overflow-hidden" style={{ height: CTL_H }}>
         <Text
-          class="text-xs font-mono"
+          class="text-xs"
           style={{
             lineHeight: CTL_H,
             textColor: props.display() === "" || disabled() ? theme.value.dim : theme.value.fg,
@@ -914,10 +914,10 @@ export function TextField(props: {
           <Text
             class={
               props.monoSize === 12
-                ? "absolute text-xs font-mono"
+                ? "absolute text-xs"
                 : props.monoSize === 16
-                  ? "absolute text-base font-mono"
-                  : "absolute text-sm font-mono"
+                  ? "absolute text-base"
+                  : "absolute text-sm"
             }
             style={{ insetT: 0, height: lineH, lineHeight: lineH, textColor: theme.value.dim }}
           >

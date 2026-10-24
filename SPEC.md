@@ -299,14 +299,19 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 
 ### 5.4 文本渲染与字形策略
 
-字体：UI 统一使用 **MiSans**（字重 Regular/Medium/Semibold/Bold；源文件 vendor 在 `assets/fonts/`）。**mono 槽（`font-mono`，接收区/终端网格/等宽文本框）使用 JetBrains Mono**（Regular，OFL，随 `assets/fonts/JetBrainsMono-Regular.ttf` vendor；嵌入式烘焙的 mono 槽本来就用它）——MiSans 非等宽字体，终端网格必须严格等宽才能保证列对齐与格宽度量一致。
+字体：UI 统一使用 **MiSans**（字重 Regular/Medium/Semibold/Bold；源文件 vendor 在 `assets/fonts/`）。**mono 槽（`font-mono`）使用 JetBrains Mono**（Regular，OFL，随 `assets/fonts/JetBrainsMono-Regular.ttf` vendor；嵌入式烘焙的 mono 槽本来就用它）——MiSans 非等宽字体，终端网格必须严格等宽才能保证列对齐与格宽度量一致。
+
+**mono 槽只承载"数据内容"，不承载 UI 文案**（2026-10-24 定，修复烘焙字形下 mono 槽 CJK 豆腐）：
+
+- **必须 mono**（等宽/列对齐/度量一致性所需）：接收区日志行（时间戳、来源前缀 `[系统]`/`[SYS]` 及内容整体）、终端网格、文本框内已输入的内容与预编辑、状态栏 Rx/Tx 计数与连接摘要、客户端地址、MCP URL/token 等机器生成值。
+- **必须 MiSans 槽**：空态/占位/提示文案（接收区空态、终端就绪提示、文本框 placeholder）、下拉控件的 display 与选项标签（含纯数字/地址类选项）、按钮与标签等一切 `t()`/固定 UI 文案——禁止对这些文案使用 `font-mono`。烘焙器每槽单一字体，mono 槽不烘 CJK，i18n 文案落在 mono 槽在板端必然豆腐。
 
 **macOS 桌面端（首期目标平台）**：pocket.json 声明 `requires: ["text.layout.native"]`，走 gpui 宿主的 CoreText 运行时排版——**任意 Unicode（含 CJK/emoji）可显示，无 tofu**，烘焙字形约束在桌面端不成立。MiSans 与 JetBrains Mono 注册进宿主字体链（`register_fonts` + `TextConfig::new("MiSans")`，mono 槽解析到 `mono_family` JetBrains Mono；CJK 等未覆盖字符走系统回退）。代价：放弃跨宿主字节级金样确定性（金样测试改在 gpui 宿主上比对，见 §7）。
 
 **嵌入式/未来 RT-Thread 端**：仍受构建期烘焙约束，策略为：
 
-1. 构建时强制烘焙：**可打印 ASCII 全集（0x20–0x7E）** + 常用符号 + 各 i18n 语言包全部文案字符 + 界面固定文案（MiSans 覆盖 GB 范围，UI 中文案无缺字风险）。
-2. 接收数据显示时：未烘焙字形 → 替换符 ``；用户可切 HEX 显示获得无损视图。
+1. 构建时强制烘焙：**可打印 ASCII 全集（0x20–0x7E）** + 常用符号 + 各 i18n 语言包全部文案字符 + 界面固定文案（MiSans 覆盖 GB 范围，UI 中文案无缺字风险——前提是 UI 文案按上文走 MiSans 槽；mono 槽只烘 ASCII 等 JetBrains Mono 字形，不含 CJK）。
+2. 接收数据显示时：未烘焙字形 → 替换符 ``；用户可切 HEX 显示获得无损视图。**允许豆腐的仅限"数据内容"**（接收行含 zh 来源前缀 `[系统]`、sys 消息内容、终端输出、宿主枚举的端口描述等运行时字符串）；空态/占位/提示与下拉选项等 UI 文案不得出现豆腐（走 MiSans 槽）。
 3. CJK 大字符集不预烘焙（体积不可控），在 FAQ/文档中明示该限制。
 4. 终端模式同样受此约束。
 
