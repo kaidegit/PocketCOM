@@ -505,9 +505,10 @@ const timedPumpers: (() => void)[] = [];
 /** app.tsx 每帧调用：驱动定时循环发送（帧基时钟）。 */
 export function pumpTimedSend(): void {
   for (const p of timedPumpers) p();
-}/** 发送历史选项的显示截断。 */
+}/** 发送历史选项的显示截断。换行以 ASCII 转义显示：⏎ 等符号不在 MiSans
+ *  cmap，板端烘焙成豆腐（SPEC §5.4）。 */
 function historyLabel(s: string): string {
-  const one = s.replace(/\n/g, "⏎");
+  const one = s.replace(/\n/g, "\\n");
   return one.length > 28 ? `${one.slice(0, 27)}…` : one;
 }
 

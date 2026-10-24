@@ -472,8 +472,9 @@ export function Select(props: {
           {props.display() === "" ? (props.emptyText?.() ?? "") : props.display()}
         </Text>
       </View>
+      {/* ▼ 必须取 MiSans 已映射字形：▾ 不在 cmap，板端烘焙成豆腐（SPEC §5.4）。 */}
       <Text class="text-xs" style={{ textColor: theme.value.dim, paddingL: 4 }}>
-        ▾
+        ▼
       </Text>
     </View>
   );
