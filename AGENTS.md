@@ -39,7 +39,7 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 
 ## 技术栈与硬性约束
 
-- **字体**：UI 统一 MiSans（Regular/Medium/Semibold/Bold，vendor 在 `assets/fonts/`）；**mono 槽（接收区/终端网格）用 JetBrains Mono**——MiSans 非等宽，终端网格必须严格等宽。**mono 槽只承载数据内容**（日志行/终端网格/文本框输入/地址/计数）；空态/提示/占位与下拉选项等 UI 文案一律走 MiSans 槽——烘焙 mono 槽无 CJK，i18n 文案落 mono 槽在板端必豆腐（SPEC §5.4）。桌面端经 `text.layout.native` 走 CoreText 运行时排版，任意 Unicode 可显示；**烘焙字形约束只对嵌入式目标成立**（SPEC §5.4）。桌面可用 `npm run dev:aic-sim`（`--baked-text`）以板端同源 atlas 模拟烘焙字形观感（密度锚定 AIC profile，见 `docs/e2e.md`）。
+- **字体**：UI 统一 MiSans（Regular/Medium/Semibold/Bold，vendor 在 `assets/fonts/`）；**mono 槽（接收区/终端网格）用 JetBrains Mono**——MiSans 非等宽，终端网格必须严格等宽。**mono 槽只承载数据内容**（日志行/终端网格/文本框输入/地址/计数）；空态/提示/占位与下拉选项等 UI 文案一律走 MiSans 槽——烘焙 mono 槽无 CJK，i18n 文案落 mono 槽在板端必豆腐（SPEC §5.4）。**UI 固定符号必须取 MiSans 已映射字形**（如 `▼ … — · ✓ →`；`▾`/`⏎` 不在 cmap，板端必豆腐），新增符号先过 `test/app/ui-glyph-coverage.test.ts`（SPEC §5.4）。桌面端经 `text.layout.native` 走 CoreText 运行时排版，任意 Unicode 可显示；**烘焙字形约束只对嵌入式目标成立**（SPEC §5.4）。桌面可用 `npm run dev:aic-sim`（`--baked-text`）以板端同源 atlas 模拟烘焙字形观感（密度锚定 AIC profile，见 `docs/e2e.md`）。
 - **无内置串口/WebSocket/raw socket**：所有 IO 走 `bridge/` 的 `com.*` HostOps 契约，核心层不得直接 import 任何平台 API。
 - 宿主事件只能在 **tick 边界**投递进 JS（FIFO 队列 drain），不得直接回调。
 - **无 DOM、无运行时 CSS**：动态样式用 `style={{…}}` 或整体 class 字面量三元，**禁止拼接 class 片段**（编译错误）。
@@ -121,11 +121,13 @@ SPEC.md         # 功能规格（权威）
   guest JS 配额 5 MiB。
 - 板端入口 `app/main.aic.tsx → app/app.tsx` 自 2026-10-23 起用于 **480×272 共享 UI 真机内存 perf**，功能只读取 JSON 的 `aic-diagnostic` profile；本次切换由用户明确要求，2026-10-23 优化前真机 S4 底层 OOM，见 [历史复测记录](docs/aic-memory-perf-2026-10-23.md)；节点共享原型优化后已进入首帧并完成 120 帧零错误、零分配失败，用户确认画面与触摸下拉正常，阶段数据见 [第 1 步记录](docs/aic-node-prototype-step1.md)。保留 `app/aic.tsx` 精简页作历史诊断基线。此前未裁剪完整 UI 常驻工作集 ≈8.1 MiB，挂载 OOM 可能伪装成 `TypeError: not a function`；不得把构建通过当成板端内存验收。
 - **GE 2D 加速已接入**（2026-10-24，fork `hosts/aic/port/pocketjs_ge.c`）：RGB565 渲染器的不透明填充走 GE fillrect、1:1 PSM 5650 搬运走 GE bitblt（BGR_565 源交换），A8 掩码混合留 CPU；每次 DMA 前后按行 clean/invalidate，失败按 DrawList 顺序软件回退，`POCKETJS_GE=0` 可编译关闭。真机烧录验证颜色/出帧/交互正常；perf A/B 与长时数据未采。详见 [host/rtthread/README.md](host/rtthread/README.md) GE 章节。
+- **LCD 静态字边跳动已修复**（2026-10-24）：产品 defconfig 的 RGB pixel clock 相位从 0° 恢复到 SDK 同板参考的 90°（`AIC_DEGREE_90` / `AIC_RGB_CLK_CTL=1`）。实际 AIC 包经原生 RGB565 离板回放，空闲双缓冲像素一致；修正相位后用户真机确认“确实好了”。固件与证据见 [字体显示排查](docs/aic-font-rendering-2026-10-24.md)；本次反馈仅验收字体观感/静态字边跳动，不扩展为长时或业务负载验收。
 - **WiFi 已点亮**（2026-10-11）：RTL8189FTV（SDIO/SDMC0，4-bit @40MHz）+ third-party lwIP
   （netif `WL0`），验证至 AP 扫描；驱动 `.bss` ≈259 KiB 进 PSRAM，运行时缓冲吃统一堆——
   恢复收发功能前必须补 WiFi 开/连 AP/断开状态下的堆基线测量。
 - **内存优化按步交付**：第 2 步已实现共享窄屏连接配置抽屉：默认不创建，首次打开后复用，以限制快速开关峰值；本地验证/固件及本轮真机启动/120 帧内存验证已完成；系统峰值 4,760,220 bytes、frame120 系统占用 3,534,768 bytes。首次触摸后观察系统峰值 5,331,368 bytes，3091 ms 卡顿按用户要求后置处理；完整反复开关内存采样待补（`docs/aic-narrow-panel-step2.md`）。启动空闲收益不代表首次打开后的常驻收益，高级收发工具栏窄屏折叠仍待做。2026-10-23 第 1 步节点共享原型已完成离板 A/B、桌面回归、固件构建及用户真机 120 帧/基本交互验证，记录见 `docs/aic-node-prototype-step1.md`；本轮系统历史峰值 5,810,936 bytes、caps 峰值 5,345,447 bytes，无分配失败。用户负责烧录并回传日志，每步记录后再推进下一项；本次通过仅限启动/短时空闲与已反馈交互，长时/业务流量/WiFi 矩阵仍待验收。
 - **连接配置触摸滑动**（2026-10-24）：共享面板内容区已接纵向 pan，补齐此前只有滚轮/翻页按钮的输入路径；真实 Vue Vapor/核心 WASM 回归、实际 AIC 包 QuickJS 连续触摸检查及固件构建通过，真机待用户复验。产物与证据见 `docs/aic-narrow-panel-step2.md` 的触摸滑动修复章节。
+- **com 串口桥**（2026-10-24）：fork 宿主经 `pocketjs_guest_quickjs_install_once` 挂载 `globalThis.com`（`hosts/aic/port/pocketjs_com.c`，`POCKETJS_COM=0` 可编译关闭），仅 uart1（PA.2/PA.3，与桌面 op 语义一致，RX 走 poll 事件，无网络/cfg/MCP 桥）；共享 App 在 `aic-diagnostic` profile 下据此解锁收发界面。板端 UART 引脚以官方数据手册为准（SDK `aic_gpio_id.h` 枚举有错，见 host/rtthread/README "UART 引脚"）；真机收发验收待用户烧录确认。
 
 ### 恢复路线（内存约束下的推进顺序）
 

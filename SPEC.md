@@ -9,7 +9,7 @@
 PocketCOM 是一个基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调试助手，功能定位参考 [COMTool](/Volumes/aigo_1t/GitRepo/COMTool) 的精简复刻：只保留**收发模式**与**终端模式**两个核心功能，并内置 **MCP 服务**，允许 AI agent 接入共享收发数据。
 
 - 首期目标平台：macOS（桌面宿主）
-- 嵌入式目标平台：AIC D12x + RT-Thread（本期接入构建与渲染；设备 IO 桥和小屏交互后续实现）
+- 嵌入式目标平台：AIC D12x + RT-Thread（本期接入构建与渲染；2026-10-24 起宿主实现 `com.*` 串口桥，仅 uart1（PA.2/PA.3），无网络/cfg/MCP 桥；小屏软键盘等交互后续实现）
 
 ### 1.1 设计原则
 
@@ -255,7 +255,7 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 
 - PocketCOM 负责产品源码、板端 manifest/host profile、启动入口和构建编排；PocketJS fork 的 `hosts/aic` 负责 QuickJS、触摸、RGB565 渲染和帧循环；luban-lite SDK 负责 RT-Thread、MPP、硬件驱动、链接与镜像打包。
 - `vendor/pocketjs` 跟踪 `kaidegit/pocketjs` 的 `feat/aic`，`vendor/luban-lite` 跟踪局域网 Gitea `yekai/luban-lite` 的 `feat/pocketjs`。显式 `git submodule update --remote` 更新分支；构建不拉取更新。父仓库 gitlink 仍按 Git 机制记录提交。
-- `host/rtthread/` 放产品配置与接入文档；复用 SDK 的 `application/rt-thread/pocketjs` 和 `d12x_demo68-nor_rt-thread_pocketjs_defconfig`，不复制通用宿主，不修改 vendor 已跟踪文件。
+- `host/rtthread/` 放产品配置与接入文档；复用 SDK 的 `application/rt-thread/pocketjs` 和 `d12x_demo68-nor_rt-thread_pocketjs_defconfig`，不复制通用宿主。板级显示时序在 SDK 的产品 defconfig 中维护，修正时保留为 SDK submodule 改动，不在应用层绕过。
 - 板端 Vue Vapor 应用使用 480×272、native presentation、density 1、60Hz，mount 前初始化视口。2026-10-23 起为新一轮真机内存 perf，`app/main.aic.tsx` 挂载共享 `app/app.tsx`（包含 session/连接面板/收发区/设置弹窗），按 `pocket.features.json` 的 `aic-diagnostic` profile 编译裁剪，不另设功能开关。保留 `app/aic.tsx` 精简页作历史诊断基线。此前未裁剪完整 UI 与 JSON 裁剪后的优化前版本曾挂载 OOM（见 docs/aic-memory-perf-2026-10-23.md）；节点共享原型优化后，本轮真机挂载/首帧/120 帧短时空闲通过，分配失败为 0，用户确认画面和触摸下拉正常（见 docs/aic-node-prototype-step1.md）。长时、业务负载与 WiFi 组合场景仍待验收；此结果不代表设备 IO 桥已实现；宿主无 `com.*` 时按共享 App 现有能力探测降级。保持现有内存配额和容量，以便比较；紧凑布局与板端设备桥仍按共享 UI 路线推进。
 - **板端 WiFi（2026-10-11 点亮，验证至 AP 扫描）**：RTL8189FTV（SDIO 接 SDMC0，4-bit @40MHz）+ third-party lwIP（netif `WL0`，`AIC_WLAN_REALTEK`/`AIC_USING_RTL8189_WLAN0` 配置链，非 RT-Thread wlan 框架/内核 lwIP）。驱动 `.bss` ≈259 KiB 静态落在 PSRAM，运行时收发缓冲吃统一堆；恢复网络功能前必须补 WiFi 开/关、连 AP/断开状态下的堆基线与峰值测量。模组 EN 与 SoC 断开（载板保证使能），固件不做电源控制；PM 睡眠驱动未编入。
 - `check:aic` 校验配置/类型；`package:aic` 生成 JS/PAK/.pocket、宿主契约头和内联 C 数组；`build:aic` 重新打包后经 SCons 构建固件。默认 SDK 为 submodule，支持 `--sdk <路径>` 和 `-- <scons 参数>`，工具链遵循 `RTT_EXEC_PATH`。产物在 `dist/aic`，中间文件在 `.pocket/aic`，宿主生成文件在其已忽略的 `hosts/aic/generated`。
@@ -263,6 +263,7 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 - 节点表示优化采用 PocketJS 共享的 DOM 兼容接口原型：访问器与方法使用接收者，children、属性缓存和可变 facade 容器按节点独立；保留克隆、原生根、retain/release、sweep、焦点与事件生命周期。2026-10-23 已完成本地 A/B、桌面回归及用户真机启动/120 帧零错误验证，用户确认画面和触摸下拉正常；本步不改变功能、容量或设备桥语义，记录见 `docs/aic-node-prototype-step1.md`。
 - PSRAM 8 MiB 统一堆：底部约 1 MiB 为 CMA 区（`.data/.bss` + 双 RGB565 framebuffer），其余约 7 MiB 为 RT-Thread 系统堆，算法为 TLSF（SDK `RT_USING_USERHEAP` + `bsp/artinchip/drv/mem/rt_tlsf_heap.c`），QuickJS/Rust guest 与系统线程共用，不再划分 PocketJS 私有池；guest JS 配额 5 MiB 为软上限。构建报告实际 ELF/map 的包大小、XIP/PSRAM 段拆分、CMA/SW 边界、framebuffer 与统一堆预算（guest 配额 + 系统预留）及 OS 分区占用，并校验 ITS XIP 段地址与 `XIP_FW_OFFSET = os 分区偏移 + 0x800` 一致；超限失败，不自动调整分区或提高配额，不自动烧录。
 - 字体 UI 使用 MiSans，mono 使用 JetBrains Mono；显式烘焙中英文语言包字符，未知字形遵守 §5.4。AIC 包独立压缩标识符与空白（不折叠表达式、不改宿主属性名、不再套一层 IIFE），降低 QuickJS 编译峰值；桌面构建不变。未来桥接仍由产品宿主实现，设备事件仅在 tick 边界进入 JS，core 保持纯 TS。
+- demo68-nor 的 480×272 RGB 屏使用与 SDK 同板参考方案一致的 **90° pixel clock 输出相位**（`AIC_DEGREE_90` / `AIC_RGB_CLK_CTL=1`）。2026-10-24 修正相位后，用户真机确认字体发虚/静态字边跳动已恢复正常。静止字边彩点/跳动须区分 framebuffer 像素变化与 LCD 采样不稳；软件像素一致或固件构建通过均不等于真机显示验收。
 
 ### 4.5 产品 feature 与离板裁剪实验
 
@@ -305,6 +306,8 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 
 - **必须 mono**（等宽/列对齐/度量一致性所需）：接收区日志行（时间戳、来源前缀 `[系统]`/`[SYS]` 及内容整体）、终端网格、文本框内已输入的内容与预编辑、状态栏 Rx/Tx 计数与连接摘要、客户端地址、MCP URL/token 等机器生成值。
 - **必须 MiSans 槽**：空态/占位/提示文案（接收区空态、终端就绪提示、文本框 placeholder）、下拉控件的 display 与选项标签（含纯数字/地址类选项）、按钮与标签等一切 `t()`/固定 UI 文案——禁止对这些文案使用 `font-mono`。烘焙器每槽单一字体，mono 槽不烘 CJK，i18n 文案落在 mono 槽在板端必然豆腐。
+
+**UI 固定符号必须取 MiSans 已映射的字形**（2026-10-24 定，修复下拉箭头豆腐）：源码字面量与 i18n 文案里的每个非 ASCII 字符都必须被 MiSans Regular/Bold 的 cmap 覆盖——烘焙器只收字符进集，MiSans 不映射的字形烘不出来，板端渲染为替换符；桌面 CoreText 系统回退会掩盖缺字。已映射可用：`▼ ▲ … — – · × ✓ →` 等；**不得使用** `▾`（U+25BE）、`⏎`（U+23CE）等 MiSans 缺映射符号。守卫测试 `test/app/ui-glyph-coverage.test.ts` 以烘焙器同口径扫描 app 字面量与全部 i18n 语言包并断言双面映射，新增 UI 符号前先过该测试。
 
 **macOS 桌面端（首期目标平台）**：pocket.json 声明 `requires: ["text.layout.native"]`，走 gpui 宿主的 CoreText 运行时排版——**任意 Unicode（含 CJK/emoji）可显示，无 tofu**，烘焙字形约束在桌面端不成立。MiSans 与 JetBrains Mono 注册进宿主字体链（`register_fonts` + `TextConfig::new("MiSans")`，mono 槽解析到 `mono_family` JetBrains Mono；CJK 等未覆盖字符走系统回退）。代价：放弃跨宿主字节级金样确定性（金样测试改在 gpui 宿主上比对，见 §7）。
 
@@ -380,9 +383,9 @@ MCP server 实现于**宿主层**（fork 的桌面宿主 crate 内的原生线�
 | M2 | TCP/UDP/WS + i18n + 深色模式 + 设置持久化 | §3.2 其余连接、§3.6/3.7/3.8 |
 | M3 | 终端模式 | §3.4 |
 | M4 | MCP 服务 | §6 全项 + 集成测试 |
-| M5 | AIC + RT-Thread 构建与宿主接入 | 应用包、固件构建、内存报告；设备 IO 桥/紧凑布局后续实现 |
+| M5 | AIC + RT-Thread 构建与宿主接入 | 应用包、固件构建、内存报告、串口设备桥（仅 uart1）；网络/MCP 桥、紧凑布局、软键盘后续实现 |
 
-M5 当前状态（2026-10-23）：应用打包、固件构建、内存报告、**XIP 固件 + 统一 TLSF 堆（2026-10-10 真机验证）**、精简验证页真机通过（启动/出帧/触摸）、**WiFi RTL8189FTV + lwIP 点亮至 AP 扫描（2026-10-11）**均已交付；UART/网络/MCP 设备桥、紧凑布局、软键盘仍为后续。共享 UI 已按 JSON 裁剪切回板端入口用于内存 perf，2026-10-23 优化前真机 S4 挂载 OOM 的历史记录保留；节点共享原型优化后真机已完成 120 帧零错误、零分配失败，用户确认画面和触摸下拉正常（详见 docs/aic-node-prototype-step1.md）。长时/IO/WiFi 组合验收待补；精简页保留为基线。
+M5 当前状态（2026-10-23）：应用打包、固件构建、内存报告、**XIP 固件 + 统一 TLSF 堆（2026-10-10 真机验证）**、精简验证页真机通过（启动/出帧/触摸）、**WiFi RTL8189FTV + lwIP 点亮至 AP 扫描（2026-10-11）**均已交付；共享 UI 已按 JSON 裁剪切回板端入口用于内存 perf，2026-10-23 优化前真机 S4 挂载 OOM 的历史记录保留；节点共享原型优化后真机已完成 120 帧零错误、零分配失败，用户确认画面和触摸下拉正常（详见 docs/aic-node-prototype-step1.md）。长时/IO/WiFi 组合验收待补；精简页保留为基线。2026-10-24 起宿主实现 `com.*` 串口桥（仅 uart1，PA.2/PA.3，`POCKETJS_COM=0` 可编译关闭）：op 语义与桌面一致（serialList/serialOpen/setSignals/write/close/poll，RX 事件 `{t:"data",h,b64}` 每 tick 经 poll 进 JS），无网络/cfg/MCP 桥，DTR/RTS 接受为 no-op；真机收发验收待用户烧录确认。
 
 ## 9. 风险与开放问题
 
@@ -395,7 +398,7 @@ M0 桌面宿主调研已完成（2026-09-04），#1/#3 已关闭：
 | 3 | 烘焙字体不支持任意字符 | ✅ 已关闭（桌面端） | gpui 后端 `requires: ["text.layout.native"]` 走 CoreText，任意 Unicode 可显示；烘焙约束仅剩嵌入式目标（§5.4） |
 | 4 | 终端网格渲染性能 | 开放 | M0 压测；native text 路径下按行渲染 `TEXT_RUN`，备选 `Image` 位图自绘网格 |
 | 5 | MCP 多读缓冲的会话语义 | 开放 | 首版共享缓冲，v1.1 按 session 隔离 |
-| 6 | AIC/RT-Thread 设备 IO 与内存预算 | 部分关闭 | Rust/固件构建与真机启动已验证（精简页，XIP + 统一 TLSF 堆）；WiFi/lwIP 已 bring-up 至 AP 扫描；UART 桥、紧凑布局、软键盘待实现；历史未裁剪完整 UI 常驻工作集约 8.1 MiB；当前裁剪诊断包经节点优化已通过真机 120 帧，caps 峰值约 5.10 MiB，长时/业务负载验收与紧凑装配待推进 |
+| 6 | AIC/RT-Thread 设备 IO 与内存预算 | 部分关闭 | Rust/固件构建与真机启动已验证（精简页，XIP + 统一 TLSF 堆）；WiFi/lwIP 已 bring-up 至 AP 扫描；**串口桥（仅 uart1）已实现（2026-10-24，真机验收待烧录确认）**；网络/MCP 桥、紧凑布局、软键盘待实现；历史未裁剪完整 UI 常驻工作集约 8.1 MiB；当前裁剪诊断包经节点优化已通过真机 120 帧，caps 峰值约 5.10 MiB，长时/业务负载验收与紧凑装配待推进 |
 | 7 | 金样测试需要 wasm32 target + headless Bun host；native text 路径放弃跨宿主字节确定性 | 开放 | UI 金样在 gpui 宿主或 wasm host 二选一，M3 前定 |
 
 ## 10. 附录

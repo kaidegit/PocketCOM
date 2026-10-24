@@ -99,6 +99,11 @@ PSRAM 8 MiB      CMA 1 MiB（.data/.bss + 双 RGB565 framebuffer 522,240 B）
 
 ## 板端现状速览
 
+- demo68-nor 480×272 RGB 屏的产品 defconfig 使用 SDK 同板参考的 90° pixel clock 相位
+  （`AIC_DEGREE_90` / `AIC_RGB_CLK_CTL=1`），不要恢复成默认 0°。2026-10-24 针对静止字边
+  彩点/跳动恢复该配置；离板空闲双缓冲像素一致，用户真机确认“确实好了”，见
+  [字体显示排查](../../../docs/aic-font-rendering-2026-10-24.md)。显示时序修正在 SDK 产品
+  defconfig 维护，不以改字体/density 代替；固件构建后核对生成的 `rtconfig.h` 中相位为 1。
 - 2026-10-24 补齐共享 `LeftPanel` 的触摸纵向 pan：内容节点子树接手势并复用滚轮的边界夹取，
   拖动取消点击，隐藏取消手势；真实 Vue Vapor/核心 WASM 与实际 AIC 包 QuickJS 连续触摸回归通过，
   固件快照在 `dist/aic/panel-touch-fix/`，真机手感待用户烧录复验。详见[本步记录](../../../docs/aic-narrow-panel-step2.md)。
@@ -110,7 +115,15 @@ PSRAM 8 MiB      CMA 1 MiB（.data/.bss + 双 RGB565 framebuffer 522,240 B）
 - AIC 打包对 SDK 编译器输出的自包含 IIFE 再压缩标识符和空白（不折叠表达式、不改宿主属性名），
   桌面构建不变。
 - 字体：UI MiSans、mono JetBrains Mono；从两份语言包字符串值提取额外字形烘焙；
-  未知字形回退替换符，HEX 视图无损。
+  未知字形回退替换符，HEX 视图无损。UI 固定符号必须取 MiSans 已映射字形
+  （`▾`/`⏎` 等缺映射符号板端豆腐），守卫测试 `test/app/ui-glyph-coverage.test.ts`（SPEC §5.4）。
+- 2026-10-24 核对 UART 引脚：SDK d12x `aic_gpio_id.h` 枚举有错（按 d21x 抄），以官方数据手册为准——
+  PA.2/PA.3 func5 = UART1（已随固件可用，`/dev/uart1`），PB.10/PB.11 func5 = UART3 但与 WiFi SDIO
+  互斥（func2 = SDC0_D1/D2），UART0 Kconfig 默认流控脚 PA.2/PA.3 不可用。详见 host/rtthread README
+  的 "UART 引脚" 小节，勿按头文件枚举名判断引脚。
+- 2026-10-24 起固件含 PocketCOM `com.*` 串口桥（fork `hosts/aic/port/pocketjs_com.c`）：仅
+  uart1（PA.2/PA.3），op 语义与桌面一致、RX 走 tick poll；`POCKETJS_COM=0` 编译关闭。
+  详见 host/rtthread README 的 "com 串口桥" 与 "UART 引脚" 小节。
 - WiFi（RTL8189FTV，2026-10-11 点亮至 AP 扫描）：SDIO 接 SDMC0（4-bit @40MHz）+ third-party
   lwIP（netif `WL0`，`AIC_WLAN_REALTEK` 配置链）；驱动 `.bss` ≈259 KiB 进 PSRAM、运行缓冲吃统一堆，
   恢复收发功能前必须补 WiFi 开/关、连 AP/断开状态的堆基线测量。模组 EN 由载板保证，固件不做电源控制；

@@ -1,6 +1,6 @@
 # PocketCOM on AIC + RT-Thread
 
-本期接入 D12x demo68-nor：PocketCOM 应用包、固件构建与静态内存预算。固件 **XIP 运行**（`.text/.rodata` 在 SPI NOR 的 0x60000000 窗口原地执行，仅 `.data/.bss` 进 PSRAM），PSRAM 为 **统一 TLSF 系统堆**（不再划分 PocketJS 私有池）。2026-10-23 起切换为 480×272 共享完整 UI，按 JSON profile 裁剪，用于新一轮真机内存 perf（优化前 S4 挂载 OOM，节点共享原型优化后已通过首帧/120 帧零错误和基本交互）；没有 UART/网络/MCP `com.*` 设备桥或持久化。精简页保留为历史基线。构建不自动烧录；实测基线见 [D12x 8 MiB PSRAM 内存优化方案](../../docs/aic-memory-optimization.md)，后续应用恢复方向见[共享 UI 与编译期裁剪提案](../../docs/shared-ui-memory-optimization.md)（terminal / mcp.server / transport.* / ui.* 裁剪与离板 A/B 已实施，节点共享原型已完成本地与本轮真机启动/120 帧及基本交互验证，第 2 步连接配置延后创建已完成真机启动/120 帧内存验证，完整交互采样待补；高级窄屏工具栏和容量方案仍待推进）。
+本期接入 D12x demo68-nor：PocketCOM 应用包、固件构建与静态内存预算。固件 **XIP 运行**（`.text/.rodata` 在 SPI NOR 的 0x60000000 窗口原地执行，仅 `.data/.bss` 进 PSRAM），PSRAM 为 **统一 TLSF 系统堆**（不再划分 PocketJS 私有池）。2026-10-23 起切换为 480×272 共享完整 UI，按 JSON profile 裁剪，用于新一轮真机内存 perf（优化前 S4 挂载 OOM，节点共享原型优化后已通过首帧/120 帧零错误和基本交互）；`com.*` 设备桥自 2026-10-24 起实现串口部分（仅 uart1，无网络/MCP 桥或持久化，见下文"com 串口桥"）。精简页保留为历史基线。构建不自动烧录；实测基线见 [D12x 8 MiB PSRAM 内存优化方案](../../docs/aic-memory-optimization.md)，后续应用恢复方向见[共享 UI 与编译期裁剪提案](../../docs/shared-ui-memory-optimization.md)（terminal / mcp.server / transport.* / ui.* 裁剪与离板 A/B 已实施，节点共享原型已完成本地与本轮真机启动/120 帧及基本交互验证，第 2 步连接配置延后创建已完成真机启动/120 帧内存验证，完整交互采样待补；高级窄屏工具栏和容量方案仍待推进）。
 
 ## 阅读导航与当前结论
 
@@ -28,6 +28,58 @@ MCP 对比用 `npm run probe:features -- --feature mcp.server`，输出 `dist/mc
 `app/main.aic.tsx` 在 mount 前初始化 480×272 应用视口并挂载共享 `app/app.tsx`/session，启停值只读取 JSON 的 `aic-diagnostic`；桌面入口独立。host profile 固定 density 1（native presentation 合约要求 logical×density == 物理面板 480×272，1:1 面板锁死 density=1；更高密度需引擎级超采样呈现，尚未实现）、native presentation、60Hz，仅声明真实宿主能力。UI 保持 MiSans，mono 用 fork 的 JetBrains Mono（与产品 vendor 字体相同）；从两份语言包的字符串值提取额外字形，不烘焙整个 CJK 字符域。未烘焙输入仍可能显示替换符，HEX 视图保证字节表达。
 
 SDK 复用 `application/rt-thread/pocketjs`，产品不复制引擎/QuickJS/显示/触摸源码。`POCKETJS_ROOT` 由脚本指向当前 fork。未来 `com.*` 属于本目录的产品桥；通用 guest 扩展接口属于 PocketJS，板级驱动属于 SDK。设备事件入 FIFO，在 tick 边界 drain；core 仍保持纯 TS。
+
+### LCD 字边噪声与 RGB 时钟
+
+demo68-nor 的 SDK 同板参考方案使用 **90° pixel clock 输出相位**。产品 defconfig 曾设为
+0°，2026-10-24 根据静止画面仍有字边彩点/跳动的反馈，恢复 `CONFIG_AIC_DEGREE_90=y`；
+生成的 `rtconfig.h` 应为 `AIC_RGB_CLK_CTL 1`。此相位控制 LCD 采样时序，不改变字体图集、
+480×272 framebuffer 或 density。原生 RGB565 离板回放的空闲双缓冲一致，只能证明所测软件
+路径未产生漂移；修正相位后，用户真机确认字体发虚/静态字边跳动“确实好了”。该反馈
+仅覆盖本次显示问题。证据、固件与复验方法见
+[字体显示排查](../../docs/aic-font-rendering-2026-10-24.md)。
+
+### UART 引脚（2026-10-24 核对）
+
+- **SDK d12x 引脚枚举头文件有错，以官方数据手册为准**：
+  `bsp/artinchip/sys/d12x/include/aic_gpio_id.h` 把 PA.2/PA.3 func5 标成 `UART0_RTS/UART0_CTS`、
+  PB.10/PB.11 func5 标成 `UART6_TX/UART6_RX`（d21x 家族表带入；D12x 只有 UART0–3，无 UART6）。
+  官方 D12x 数据手册表 5-3/5-5/5-6（aicdoc.artinchip.com）实为 **PA.2/PA.3 func5 = UART1_TX/RX、
+  PB.10/PB.11 func5 = UART3_TX/RX、PA.4/PA.5 func5 = UART2_TX/RX**。这些枚举名无代码引用
+  （板级 pinmux 一律写裸 func 值），不影响运行，但按头文件名判断引脚会得出错误结论
+  （2026-10-24 曾因此误判 uart1 不可用，被用户以 bootloader 日志实证纠正）。
+- **uart1 已随当前固件可用**：产品 defconfig `AIC_USING_UART1=y` + demo68-nor pinmux "uart1" 块
+  （PA.2=TX pull_dis、PA.3=RX pull_up）与手册一致。设备 `/dev/uart1`：115200 8N1、INT_RX、
+  2048 环形缓冲、无流控、无 DMA。bootloader console 即 UART1（`AIC_BOOTLOADER_CONSOLE_UART=1`，
+  日志出在 PA.2/PA.3），是该组引脚工作的实证；aic-isp 烧录协议固定跑 UART0
+  （`aicupg uart 0`，PA.0/PA.1），RT-Thread console 也是 UART0。
+- **uart3@PB.10/PB.11 与 WiFi 互斥**：该组脚 func2 = SDC0_D1/D2，RTL8189FTV 4-bit SDIO 需要
+  PB.6–PB.11 全部六根，开 UART3 必须放弃 WiFi，二选一。手册中 UART3 另有 PC.4(TX)/PC.5(RX)
+  func5 落点，本板 PC 口空闲（SDMC1 未启用），能否使用取决于载板走线。
+- **勿给 UART0 开 Kconfig 流控**：`Kconfig.dev` 默认 RTS=PA.3/CTS=PA.2 在 D12x 上实为
+  UART1_TX/RX，启用会把 uart1 复用抢走（真实 UART0_RTS 在 PB.5 func5）。
+
+### com 串口桥（2026-10-24）
+
+宿主在 guest 创建后、bundle 求值前经 PocketJS 的通用扩展点
+`pocketjs_guest_quickjs_install_once` 挂载 `globalThis.com`（`hosts/aic/port/pocketjs_com.c`，
+fork 侧）。op 语义与桌面 `host/macos` 对齐：
+
+- **能力面**：仅串口，仅 `uart1`（设备名固定，`serialList` 只列它）。`write`/`close`/`poll`
+  为契约必需三件套；`netOpen`/`cfg*`/`mcp*` 不实现，共享 App 按既有路径降级（cfg 缺失 →
+  DEFAULT_CONFIG 且不回写）。`aic-diagnostic` profile 本就只开 `transport.serial`。
+- **poll 驱动**：RX 不回调 JS。驱动 INT_RX 环形缓冲（2048 字节，驱动自管）暂存，JS 每 tick
+  `com.poll()` 拉取，C 侧把当次读到的字节合成一条 `{t:"data",h,b64}` 事件（base64）。
+  60Hz tick 下建议线速 ≤921600，更高的波特率可能在两次 poll 之间撑爆设备环。
+- **open**：标准 `RT_SERIAL_GET_CONFIG` → 改 baud/dataBits/parity/stopBits →
+  `RT_DEVICE_CTRL_CONFIG` → `RT_DEVICE_OFLAG_RDWR|RT_DEVICE_FLAG_INT_RX` 打开。保留
+  驱动自有字段（bufsz/uart_index/uart_freq/function）。`mark`/`space` 校验、`"1.5"` 停止位
+  与桌面同样拒绝；`flowControl` 仅接受 `"none"`（板端未接流控引脚），`setSignals` 接受为
+  no-op 并返回 true。
+- **编译开关**：`POCKETJS_COM=0` 编译关闭（同 `POCKETJS_GE` 模式）；关闭后 guest 无
+  `com` 全局，UI 回到"com 桥接不可用"占位。
+- **真机验收待补**：烧录后连接 uart1 的收发、波特率切换、与 console（uart0）共存互不干扰
+  均需用户确认；此前任何板端内存数据都不覆盖本桥的运行态。
 
 ## 初始化与更新
 
