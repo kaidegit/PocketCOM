@@ -126,7 +126,7 @@ SPEC.md         # 功能规格（权威）
   （netif `WL0`），验证至 AP 扫描；驱动 `.bss` ≈259 KiB 进 PSRAM，运行时缓冲吃统一堆——
   恢复收发功能前必须补 WiFi 开/连 AP/断开状态下的堆基线测量。
 - **内存优化按步交付**：第 2 步已实现共享窄屏连接配置抽屉：默认不创建，首次打开后复用，以限制快速开关峰值；本地验证/固件及本轮真机启动/120 帧内存验证已完成；系统峰值 4,760,220 bytes、frame120 系统占用 3,534,768 bytes。首次触摸后观察系统峰值 5,331,368 bytes，3091 ms 卡顿按用户要求后置处理；完整反复开关内存采样待补（`docs/aic-narrow-panel-step2.md`）。启动空闲收益不代表首次打开后的常驻收益，高级收发工具栏窄屏折叠仍待做。2026-10-23 第 1 步节点共享原型已完成离板 A/B、桌面回归、固件构建及用户真机 120 帧/基本交互验证，记录见 `docs/aic-node-prototype-step1.md`；本轮系统历史峰值 5,810,936 bytes、caps 峰值 5,345,447 bytes，无分配失败。用户负责烧录并回传日志，每步记录后再推进下一项；本次通过仅限启动/短时空闲与已反馈交互，长时/业务流量/WiFi 矩阵仍待验收。
-- **连接配置触摸滑动**（2026-10-24）：共享面板内容区已接纵向 pan，补齐此前只有滚轮/翻页按钮的输入路径；真实 Vue Vapor/核心 WASM 回归、实际 AIC 包 QuickJS 连续触摸检查及固件构建通过，真机待用户复验。产物与证据见 `docs/aic-narrow-panel-step2.md` 的触摸滑动修复章节。
+- **连接配置触摸滑动**（2026-10-24）：共享面板内容区已接纵向 pan，补齐滚轮之外的触摸输入路径（原页脚上翻/下翻按钮已于 2026-10-25 移除，滚动路径只剩滚轮 + 触摸拖动）；真实 Vue Vapor/核心 WASM 回归、实际 AIC 包 QuickJS 连续触摸检查及固件构建通过，真机待用户复验。产物与证据见 `docs/aic-narrow-panel-step2.md` 的触摸滑动修复章节。
 - **com 串口桥**（2026-10-24）：fork 宿主经 `pocketjs_guest_quickjs_install_once` 挂载 `globalThis.com`（`hosts/aic/port/pocketjs_com.c`，`POCKETJS_COM=0` 可编译关闭），仅 uart1（PA.2/PA.3，与桌面 op 语义一致，RX 走 poll 事件，无网络/cfg/MCP 桥）；共享 App 在 `aic-diagnostic` profile 下据此解锁收发界面。板端 UART 引脚以官方数据手册为准（SDK `aic_gpio_id.h` 枚举有错，见 host/rtthread/README "UART 引脚"）；真机收发验收待用户烧录确认。
 
 ### 恢复路线（内存约束下的推进顺序）

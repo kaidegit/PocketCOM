@@ -14,7 +14,6 @@ import {
   Scrollbar,
   SegCtrl,
   Select,
-  StatusDot,
   TextField,
   closePopup,
   type PopupAnchor,
@@ -100,19 +99,6 @@ function tokenDisplay(): string {
 
 
 export const wsProtocols = hasAppFeature("transport.websocket") ? ref("") : undefined!;
-
-function stateColor(): string {
-  switch (connState.value) {
-    case "CONNECTED":
-      return theme.value.stateConnected;
-    case "CONNECTING":
-      return theme.value.stateConnecting;
-    case "LOST":
-      return theme.value.stateLost;
-    default:
-      return theme.value.stateDisconnected;
-  }
-}
 
 
 // ---------------------------------------------------------------------------
@@ -630,7 +616,7 @@ export function LeftPanel(props: { onClose?: () => void } = {}) {
       </View>
       <Hairline />
 
-      {/* 页脚（固定）：打开/关闭 + 应用配置（设置弹窗入口）+ 状态灯 */}
+      {/* 页脚（固定）：打开/关闭 + 应用配置（设置弹窗入口）；连接状态只在主页底部状态栏 */}
       <View class="relative" style={{ height: PANEL_FOOTER_H - 1 }}>
         <View class="absolute" style={{ insetL: PAD_X, insetR: PAD_X, insetT: 10, height: 30 }}>
           <Btn
@@ -652,16 +638,6 @@ export function LeftPanel(props: { onClose?: () => void } = {}) {
         </View>
         <View class="absolute" style={{ insetL: PAD_X, insetR: PAD_X, insetT: 44, height: 30 }}>
           <Btn width={CONTENT_W} height={30} label={() => t("settings.open")} onPress={() => { openSettingsModal(); props.onClose?.(); }} />
-        </View>
-        {props.onClose ? <View class="absolute flex-row" style={{ insetL: 148, insetT: 80, gap: 4, height: 22 }}>
-          <Btn width={50} height={22} label={() => t("panel.pageUp")} onPress={() => scrollPanel(Math.max(28, viewH() - 28))} />
-          <Btn width={50} height={22} label={() => t("panel.pageDown")} onPress={() => scrollPanel(-Math.max(28, viewH() - 28))} />
-        </View> : null}
-        <View class="absolute flex-row items-center gap-2" style={{ insetL: PAD_X, insetT: 82, height: 16 }}>
-          <StatusDot color={stateColor} size={8} />
-          <Text class="text-xs" style={{ textColor: stateColor(), lineHeight: 16 }}>
-            {t(`conn.status.${connState.value.toLowerCase()}`)}
-          </Text>
         </View>
       </View>
     </View>

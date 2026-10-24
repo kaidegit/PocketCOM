@@ -222,7 +222,6 @@ function buildMcpConfigSnapshot(): Record<string, unknown> {
         hex: rxHex.value,
         escape: rxEscape.value,
         timestamp: rxTimestamp.value,
-        wrap: rxWrap.value,
         color: rxColor.value,
         historyLines: historyLines.value,
       },
@@ -255,7 +254,6 @@ function applyMcpConfigPatch(patch: McpConfigPatch): void {
       if (patch.receive.hex !== undefined) rxHex.value = patch.receive.hex;
       if (patch.receive.escape !== undefined) rxEscape.value = patch.receive.escape;
       if (patch.receive.timestamp !== undefined) rxTimestamp.value = patch.receive.timestamp;
-      if (patch.receive.wrap !== undefined) rxWrap.value = patch.receive.wrap;
       if (patch.receive.color !== undefined) rxColor.value = patch.receive.color;
       if (patch.receive.historyLines !== undefined) setHistoryLines(patch.receive.historyLines);
       needFormat = true;
@@ -421,7 +419,6 @@ function snapshotLastConn(kind: typeof connType.value): void {
 export const rxHex = ref(false);
 export const rxEscape = ref(false);
 export const rxTimestamp = ref(false);
-export const rxWrap = ref(true);
 /** ANSI 颜色转义（SPEC §3.3）：开启后数据行默认色为主题正文色（深色白/
  *  浅色黑），内容按 SGR 序列前景色渲染。 */
 export const rxColor = ref(false);
@@ -466,7 +463,7 @@ export const logView = new LogView(
     maxBytes: historyByteBudget(),
     showTx: hasAppFeature("mcp.server") ? mcpState.value.on : false,
     measure: (s) => getOps().measureText(s, MONO_SLOTS[fontSize.value]),
-    wrapWidth: () => (rxWrap.value ? rxWidth.value - 12 : 0),
+    wrapWidth: () => rxWidth.value - 12,
   },
 );
 
@@ -696,7 +693,6 @@ function buildConfigJson(): string {
       hex: rxHex.value,
       escape: rxEscape.value,
       timestamp: rxTimestamp.value,
-      wrap: rxWrap.value,
       color: rxColor.value,
       historyLines: historyLines.value,
     },
@@ -792,7 +788,6 @@ function applyConfig(cfg: AppConfig): void {
   rxHex.value = cfg.receive.hex;
   rxEscape.value = cfg.receive.escape;
   rxTimestamp.value = cfg.receive.timestamp;
-  rxWrap.value = cfg.receive.wrap;
   rxColor.value = cfg.receive.color;
   sendEscape.value = cfg.send.escape;
   sendCrlf.value = cfg.send.crlf;
@@ -865,7 +860,6 @@ for (const source of [
   rxHex,
   rxEscape,
   rxTimestamp,
-  rxWrap,
   rxColor,
   sendEscape,
   sendCrlf,

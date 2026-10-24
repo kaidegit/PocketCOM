@@ -76,9 +76,7 @@
   "panel": {
     "mode": "模式",
     "connections": "连接配置",
-    "back": "返回",
-    "pageUp": "上翻",
-    "pageDown": "下翻"
+    "back": "返回"
   },
   "roadmap": {
     "m2": "M2",
@@ -113,7 +111,6 @@
     "pause": "暂停",
     "resume": "继续",
     "timestamp": "时间戳",
-    "wrap": "自动换行",
     "escape": "转义",
     "color": "颜色转义",
     "hex": "HEX",

@@ -49,7 +49,6 @@ import {
   rxPaused,
   rxTimestamp,
   rxWidth,
-  rxWrap,
   sendHistory,
   sendText,
   session,
@@ -310,10 +309,8 @@ export function ReceivePane() {
   };
   watch(viewportSize, () => {
     reportWidth();
-    if (rxWrap.value) {
-      logView.refresh();
-      logVersion.value++;
-    }
+    logView.refresh();
+    logVersion.value++;
   });
   reportWidth();
 
@@ -356,7 +353,7 @@ export function ReceivePane() {
 
   return (
     <View class="flex-col" style={{ height: workspace.value.h - SEND_PANE_H }}>
-      {/* 工具栏：ASCII/HEX · 转义 · 时间戳 · 自动换行 ‖ 暂停 · 清屏 */}
+      {/* 工具栏：ASCII/HEX · 转义 · 时间戳 ‖ 暂停 · 清屏（自动换行恒开，无开关） */}
       <View class="flex-row items-center gap-2 px-2" style={{ height: TOOLBAR_H }}>
         <View style={{ width: 92, height: TOOLBAR_CTL_H }}>
           <SegCtrl
@@ -385,14 +382,6 @@ export function ReceivePane() {
           checked={() => rxTimestamp.value}
           onToggle={() => {
             rxTimestamp.value = !rxTimestamp.value;
-            applyLogFormat();
-          }}
-        />
-        <CheckRow
-          label={() => t("receive.wrap")}
-          checked={() => rxWrap.value}
-          onToggle={() => {
-            rxWrap.value = !rxWrap.value;
             applyLogFormat();
           }}
         />

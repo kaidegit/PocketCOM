@@ -28,7 +28,8 @@ describe("normalizeConfig", () => {
     expect(cfg.theme).toBe("system");
     expect(cfg.fontSize).toBe(16);
     expect(cfg.terminal).toEqual({ scrollbackLines: 5000 });
-    expect(cfg.receive).toEqual({ hex: true, escape: true, timestamp: true, wrap: false, color: true, historyLines: 8000 });
+    // 旧版本配置文件的 receive.wrap 键被忽略（自动换行已恒开，无开关）
+    expect(cfg.receive).toEqual({ hex: true, escape: true, timestamp: true, color: true, historyLines: 8000 });
     expect(cfg.send).toEqual({ escape: true, crlf: true, appendNewline: true });
     expect(cfg.logPath).toBe("/tmp/log.txt");
     expect(cfg.mcp).toEqual({ enabled: true, port: 8000, token: "t" });

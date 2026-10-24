@@ -76,9 +76,7 @@
   "panel": {
     "mode": "Mode",
     "connections": "Connection",
-    "back": "Back",
-    "pageUp": "Up",
-    "pageDown": "Down"
+    "back": "Back"
   },
   "roadmap": {
     "m2": "M2",
@@ -113,7 +111,6 @@
     "pause": "Pause",
     "resume": "Resume",
     "timestamp": "Timestamp",
-    "wrap": "Auto wrap",
     "escape": "Escapes",
     "color": "ANSI color",
     "hex": "HEX",

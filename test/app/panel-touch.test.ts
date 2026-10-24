@@ -142,12 +142,10 @@ globalThis.textAncestors = text => {
       frame(130, 70, hit); frame(); frame();
       expect(labelY()).toBe(closedY); // Closing cancels an in-flight pan.
       tap(60, 16);
-      tap(238, 257); // Existing page-down button still works.
-      const pagedY = labelY();
-      expect(pagedY).toBeLessThan(initialY - 70);
-      tap(184, 257);
-      expect(labelY()).toBeGreaterThan(pagedY);
-      tap(130, 222);
+      expect(labelY()).toBe(closedY); // Reopened drawer retains the scroll position.
+      drag(130, 140, 130, 90); // Page buttons are gone; pan remains the touch path.
+      expect(labelY()).toBeLessThan(closedY);
+      tap(130, 249); // Footer shrank to two buttons; settings entry moved down.
       expect(guest.state().settings).toBe(true);
       const settingsY = labelY();
       drag(130, 140, 130, 60);
