@@ -99,6 +99,9 @@ PSRAM 8 MiB      CMA 1 MiB（.data/.bss + 双 RGB565 framebuffer 522,240 B）
 
 ## 板端现状速览
 
+- 2026-10-24 补齐共享 `LeftPanel` 的触摸纵向 pan：内容节点子树接手势并复用滚轮的边界夹取，
+  拖动取消点击，隐藏取消手势；真实 Vue Vapor/核心 WASM 与实际 AIC 包 QuickJS 连续触摸回归通过，
+  固件快照在 `dist/aic/panel-touch-fix/`，真机手感待用户烧录复验。详见[本步记录](../../../docs/aic-narrow-panel-step2.md)。
 - 2026-10-24 修复 Vue Vapor Portal host 缺少 `hitPass: 1`：复用连接配置抽屉关闭后透明 host
   拦截 bounds 触摸，导致只能打开一次。真实核心回归及实际 AIC 包逐轮命中检查已通过，固件已重建，
   真机待用户复验。旧循环测试未检查每次开关结果，其数据不能作为成功反复开关的证据，见[更正记录](../../../docs/aic-narrow-panel-step2.md)。

@@ -5,7 +5,8 @@ import { hasAppFeature } from "@pocketcom/features";
 // 页脚（固定：打开/关闭按钮 + 状态灯，不随内容滚动）。
 // 连接类型四类 + 串口全参数；布局表随 connType/客户端数/字段显隐动态伸缩。
 import { computed, onScopeDispose, ref, watch } from "vue";
-import { Text, View } from "@pocketjs/framework/components";
+import { Text, View, type NodeMirror } from "@pocketjs/framework/components";
+import { createGesture } from "@pocketjs/framework/gesture";
 import {
   Btn,
   CheckRow,
@@ -294,6 +295,24 @@ export function LeftPanel(props: { onClose?: () => void } = {}) {
   };
   panelScroll.value = Math.min(panelScroll.value, maxScroll());
   onScopeDispose(onWheel("panel", scrollPanel));
+  // Touch hosts deliver contacts, not companion mouse-wheel events. Bind the
+  // clipped content subtree so headers, footers and overlaid popups cannot pan
+  // the panel. A pan claim also cancels the default tap-to-press recognizer.
+  let contentNode: NodeMirror | null = null;
+  const panelVisible = () => !workspace.value.compact || connectionDrawerOpen();
+  const pan = createGesture({
+    axis: "y",
+    region: {
+      node: () => contentNode,
+      rect: () => panelVisible() ? {
+        x: 0, y: PANEL_HEADER_H + 1,
+        w: workspace.value.compact ? workspace.value.drawerW : PANEL_W, h: viewH(),
+      } : null,
+    },
+    onPanStart: () => setActiveField(null),
+    onPanMove: c => { if (panelVisible()) scrollPanel(c.fdy); },
+  });
+  watch(panelVisible, visible => { if (!visible) pan.cancel(); });
   const commitFields = (): void => {
     flushFields();
     if (hasAppFeature("transport.serial") && customBaudVisible.value && customBaudField) {
@@ -343,7 +362,7 @@ export function LeftPanel(props: { onClose?: () => void } = {}) {
       <Hairline />
 
       {/* 内容滚动区 */}
-      <View class="relative flex-1 overflow-hidden">
+      <View class="relative flex-1 overflow-hidden" nodeRef={(node: NodeMirror | null) => { contentNode = node; }}>
         <View
           class="absolute left-0 right-0"
           style={{ insetT: 0, height: layoutInfo.value.total, translateY: -panelScroll.value }}

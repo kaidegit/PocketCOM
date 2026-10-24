@@ -57,6 +57,7 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 6. **焦点必须跟随指针**：mouse 分发时 `focusNode(hitFocusable(x, y))` 无条件调用（落空也要清焦点），否则点空白会把 press 发到上一次聚焦的控件。
 7. **Vue Vapor Portal host 固定为规格屏 480×272**（不读实时视口）→ 全屏遮罩弹层须按 `viewportSize` 显式给 width/height 自撑，不能 `inset 0` 寄生（`PopupLayer` 遮罩）。host 必须设置 `hitPass: 1`，使空容器自身不拦触摸、子节点仍正常命中；2026-10-24 已修复复用连接抽屉关闭后无法再打开的问题（本地通过，真机待复验）。
 8. **条件读取 getter 会漏注册响应式依赖**：数据源为非响应式宿主对象（logView.rows、terminal.totalLines）的纯指示组件，用 **onFrame 轮询 + 本地 ref**（值不变不写 ref），见 `Scrollbar`。
+9. **触摸拖动不会生成 companion 滚轮事件**：滚动内容需显式接 `createGesture` 的纵向 pan，区域绑定被裁剪的内容节点子树（`nodeRef`），避免头部/页脚/覆盖弹层也带动面板。pan 认领自动取消 tap；复用面板隐藏时取消进行中的手势，见 `app/panel.tsx` 与 `test/app/panel-touch.test.ts`。
 
 ## 架构与目录结构
 
@@ -124,6 +125,7 @@ SPEC.md         # 功能规格（权威）
   （netif `WL0`），验证至 AP 扫描；驱动 `.bss` ≈259 KiB 进 PSRAM，运行时缓冲吃统一堆——
   恢复收发功能前必须补 WiFi 开/连 AP/断开状态下的堆基线测量。
 - **内存优化按步交付**：第 2 步已实现共享窄屏连接配置抽屉：默认不创建，首次打开后复用，以限制快速开关峰值；本地验证/固件及本轮真机启动/120 帧内存验证已完成；系统峰值 4,760,220 bytes、frame120 系统占用 3,534,768 bytes。首次触摸后观察系统峰值 5,331,368 bytes，3091 ms 卡顿按用户要求后置处理；完整反复开关内存采样待补（`docs/aic-narrow-panel-step2.md`）。启动空闲收益不代表首次打开后的常驻收益，高级收发工具栏窄屏折叠仍待做。2026-10-23 第 1 步节点共享原型已完成离板 A/B、桌面回归、固件构建及用户真机 120 帧/基本交互验证，记录见 `docs/aic-node-prototype-step1.md`；本轮系统历史峰值 5,810,936 bytes、caps 峰值 5,345,447 bytes，无分配失败。用户负责烧录并回传日志，每步记录后再推进下一项；本次通过仅限启动/短时空闲与已反馈交互，长时/业务流量/WiFi 矩阵仍待验收。
+- **连接配置触摸滑动**（2026-10-24）：共享面板内容区已接纵向 pan，补齐此前只有滚轮/翻页按钮的输入路径；真实 Vue Vapor/核心 WASM 回归、实际 AIC 包 QuickJS 连续触摸检查及固件构建通过，真机待用户复验。产物与证据见 `docs/aic-narrow-panel-step2.md` 的触摸滑动修复章节。
 
 ### 恢复路线（内存约束下的推进顺序）
 

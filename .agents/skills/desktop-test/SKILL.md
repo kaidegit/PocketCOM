@@ -123,3 +123,16 @@ AIC 触摸使用 bounds 命中，桌面鼠标使用 ink 命中；2026-10-24 修�
 
 覆盖返回/遮罩交替关闭后重开、浮层显示时阻挡底层按钮、同一实例复用。实际 AIC 包还须用触摸输入
 逐轮检查展开/收起后的命中结果；仅有 `frames=N/0` 和零分配失败不能证明点击成功。
+
+`test/app/panel-touch.test.ts` 将共享 App 按 JSON `aic-diagnostic` profile 编译为真实 Vue Vapor，
+用原生核心 WASM 的 down-edge bounds fact 驱动纵向拖动，检查内容位移、上下边界、横向拖动、
+滑动不误触下拉、普通点击、头部/页脚/弹层隔离、隐藏时取消及复用后继续滚动。
+此项在缺少 `vendor/pocketjs/hosts/web/pocketjs.wasm` 时显式跳过；触摸修复必须先构建再单独执行，不能把跳过当通过：
+
+```sh
+(cd vendor/pocketjs && bun tools/wasm.ts)
+bun test test/app/panel-touch.test.ts
+```
+
+实际交付 AIC 包还须经 QuickJS/native core 连续触摸验证偏移，不能仅凭桌面 `--mouse d/u`
+或 `--wheel` 验收手指拖动；本次前后包证据见 `docs/aic-narrow-panel-step2.md` 触摸滑动修复章节。
