@@ -51,11 +51,11 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 
 1. **深层嵌套 flex-col 流式堆叠会失效**（子项重叠同位）→ 面板/列表内容一律 absolute + inset 显式定位（`app/panel.tsx` layoutInfo 布局表）；flex 只用于浅层行容器。
 2. **zIndex 只在兄弟间重排** → 下拉弹层不做内联 zIndex，一律走 `Portal` + 全屏透明遮罩 + 屏幕绝对坐标锚点（`app/widgets.tsx` PopupLayer/Select）。
-3. **命中 = 绘制的 ink**：透明 View 不命中、Text 只在字形上命中 → 整格可点控件必须给不透明或 `#00000001` 底色（下拉项/SegCtrl/CheckRow）。
+3. **桌面鼠标命中 = 绘制的 ink；AIC 触摸按 bounds 命中**：鼠标下透明 View 不命中、Text 只在字形上命中 → 整格可点控件必须给不透明或 `#00000001` 底色（下拉项/SegCtrl/CheckRow）。触摸下透明容器仍可截获命中，不能只用桌面鼠标验证浮层关闭。
 4. **style 对象 diff 只增不删**：条件性样式 key 必须常设、用透明色隐藏，不能时有时无。
 5. **Vue Vapor 组件不得返回 null**（宿主 JSX 运行时 anchor 崩溃）→ 空态用 0 尺寸占位 View，条件渲染放父级表达式子节点。
 6. **焦点必须跟随指针**：mouse 分发时 `focusNode(hitFocusable(x, y))` 无条件调用（落空也要清焦点），否则点空白会把 press 发到上一次聚焦的控件。
-7. **Portal host 固定为规格屏 480×272**（不读实时视口）→ 全屏遮罩弹层须按 `viewportSize` 显式给 width/height 自撑，不能 `inset 0` 寄生（`PopupLayer` 遮罩）。
+7. **Vue Vapor Portal host 固定为规格屏 480×272**（不读实时视口）→ 全屏遮罩弹层须按 `viewportSize` 显式给 width/height 自撑，不能 `inset 0` 寄生（`PopupLayer` 遮罩）。host 必须设置 `hitPass: 1`，使空容器自身不拦触摸、子节点仍正常命中；2026-10-24 已修复复用连接抽屉关闭后无法再打开的问题（本地通过，真机待复验）。
 8. **条件读取 getter 会漏注册响应式依赖**：数据源为非响应式宿主对象（logView.rows、terminal.totalLines）的纯指示组件，用 **onFrame 轮询 + 本地 ref**（值不变不写 ref），见 `Scrollbar`。
 
 ## 架构与目录结构

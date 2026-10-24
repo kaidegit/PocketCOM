@@ -113,3 +113,13 @@ PocketJS headless Bun host（byte-exact PNG golden）待落地；`--screenshot` 
 第 2 步使用同一共享 App 的 480×272 桌面实机 e2e 验证抽屉/下拉/翻页/设置、未提交参数与发送草稿保留、
 回环连接和收发计数连续；坐标及证据边界见 `docs/aic-narrow-panel-step2.md`。首次打开后面板复用，
 关闭移出视口；隐藏字段不应截获工作区选区/焦点。此测试不能替代 AIC 触摸及内存验收。
+
+AIC 触摸使用 bounds 命中，桌面鼠标使用 ink 命中；2026-10-24 修复 Vue Vapor Portal host
+缺少 `hitPass: 1` 导致抽屉关闭后拦截触摸。引擎回归使用真实 Vue Vapor 与原生核心 WASM：
+
+```sh
+(cd vendor/pocketjs && bun tools/wasm.ts && bun test --conditions=browser tests/portal-hit.test.ts tests/portal-hit-vue-vapor.test.ts)
+```
+
+覆盖返回/遮罩交替关闭后重开、浮层显示时阻挡底层按钮、同一实例复用。实际 AIC 包还须用触摸输入
+逐轮检查展开/收起后的命中结果；仅有 `frames=N/0` 和零分配失败不能证明点击成功。
