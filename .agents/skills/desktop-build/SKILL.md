@@ -45,6 +45,12 @@ node tools/dev.mjs     # 桌面运行；默认用 fork 产物 pocketcom-host，
 node tools/dev.mjs --resolution 480x272 -- --no-native-mouse-keyboard --quit-after 80
                        # 指定固定逻辑视口做 e2e；其余参数沿用桌面 plan
 
+npm run dev:aic-sim    # 一键板端字体观感模拟：build:aic-sim 后以 --baked-text
+                       # + 480×272 运行；分步为 bun tools/aic-sim.ts [--density=N]
+                       # + node tools/dev.mjs --baked-text [--resolution WxH]。
+                       # 烘 MiSans/i18n 字符集，密度默认锚定 host/rtthread/pocket.host.json，
+                       # 产物在 .pocket/aic-sim/（不覆盖 dist/）；保真边界见 docs/e2e.md
+
 tools/package-macos.sh # 前置：npm run build + cargo build 产物；组装 dist/PocketCOM.app
                        # 并打 dist/PocketCOM-<版本>-macos-arm64.dmg；VERSION=x.y.z 覆盖版本号
                        # 仅 ad-hoc 签名（未公证）：首次打开需右键→打开或 xattr -cr

@@ -9,6 +9,8 @@
     "check": "bun vendor/pocketjs/tools/pocket.ts check --target macos-gpui --manifest app/pocket.json --project-root . --app-features pocket.features.json --app-profile desktop",
     "build": "bun vendor/pocketjs/tools/pocket.ts compile --target macos-gpui --manifest app/pocket.json --project-root . --app-features pocket.features.json --app-profile desktop",
     "dev": "npm run build && node tools/dev.mjs",
+    "build:aic-sim": "bun tools/aic-sim.ts",
+    "dev:aic-sim": "npm run build:aic-sim && node tools/dev.mjs --baked-text --resolution 480x272",
     "install:macos": "npm run build && cargo build --locked --release --manifest-path host/macos/Cargo.toml && tools/package-macos.sh && tools/install-macos.sh",
     "check:aic": "bun host/rtthread/aic.ts check",
     "package:aic": "bun host/rtthread/aic.ts package",

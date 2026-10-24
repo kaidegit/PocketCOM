@@ -2,6 +2,9 @@
 // dev.mjs — run the built PocketCOM bundle on the PocketCOM gpui desktop host.
 // Flags derive from .pocket/macos-app/plan.json (same logic as upstream
 // tools/macos.ts): viewport, density, fixed, native-text, companions.
+// Launcher options before `--`: --resolution WxH (fixed viewport override)
+// and --baked-text (render from the AIC-faithful atlas built by
+// `npm run build:aic-sim` instead of CoreText).
 //
 // Host binary: our fork (host/macos, binary pocketcom-host — the stock host
 // plus the com.* serial bridge, SPEC §4.2) wins; fall back to the vendored
@@ -9,26 +12,32 @@
 import { readFileSync, existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-import { resolutionFlags } from "./dev-options.mjs";
+import { launcherFlags } from "./dev-options.mjs";
 
 // Options before `--` belong to the launcher; the rest belong to the host.
 const sep = process.argv.indexOf("--", 2);
-let overrides;
+let launcher;
 try {
-  overrides = resolutionFlags(process.argv.slice(2, sep === -1 ? undefined : sep));
+  launcher = launcherFlags(process.argv.slice(2, sep === -1 ? undefined : sep));
 } catch (err) {
   console.error(`[dev] ${err.message}`);
   process.exit(1);
 }
 
 const root = resolve(import.meta.dirname, "..");
-const planPath = resolve(root, ".pocket/macos-app/plan.json");
+// --baked-text renders text from the AIC-faithful atlas built by
+// `npm run build:aic-sim` (MiSans, board raster density) instead of CoreText.
+const baked = launcher.bakedText;
+const planPath = resolve(root, baked ? ".pocket/aic-sim/plan.json" : ".pocket/macos-app/plan.json");
+const distDir = baked ? resolve(root, ".pocket/aic-sim") : resolve(root, "dist");
+const planRel = baked ? ".pocket/aic-sim/plan.json" : ".pocket/macos-app/plan.json";
+const buildCmd = baked ? "npm run build:aic-sim" : "npm run build";
 
 if (!existsSync(planPath)) {
   const submodulePkg = resolve(root, "vendor/pocketjs/package.json");
   if (!existsSync(submodulePkg)) {
     console.error(
-      `[dev] 错误：未找到构建清单文件 (.pocket/macos-app/plan.json)\n\n` +
+      `[dev] 错误：未找到构建清单文件 (${planRel})\n\n` +
         `原因：PocketJS 引擎子模块尚未初始化。\n\n` +
         `解决办法：\n` +
         `  1. 初始化子模块并安装其依赖：\n` +
@@ -43,11 +52,11 @@ if (!existsSync(planPath)) {
   }
 
   console.error(
-    `[dev] 错误：未找到构建清单文件 (.pocket/macos-app/plan.json)\n\n` +
+    `[dev] 错误：未找到构建清单文件 (${planRel})\n\n` +
       `原因：应用前端代码尚未编译。\n\n` +
       `解决办法：\n` +
       `  1. 编译前端产物：\n` +
-      `     npm run build\n\n` +
+      `     ${buildCmd}\n\n` +
       `  2. 或者直接运行完整开发命令（自动编译前端并启动）：\n` +
       `     npm run dev\n\n` +
       `  提示：构建依赖 bun 环境，如遇找不到 bun 命令，请确保 ~/.bun/bin 已添加到 PATH。`,
@@ -63,20 +72,20 @@ try {
     `[dev] 错误：解析构建清单文件 (${planPath}) 失败：${err.message}\n\n` +
       `解决办法：\n` +
       `  清单文件可能已损坏，请重新编译前端产物：\n` +
-      `    npm run build\n`,
+      `    ${buildCmd}\n`,
   );
   process.exit(1);
 }
 
 const appOutput = plan.app?.output ?? "pocketcom-main";
-const bundleJs = resolve(root, "dist", `${appOutput}.js`);
-const bundlePak = resolve(root, "dist", `${appOutput}.pak`);
+const bundleJs = resolve(distDir, `${appOutput}.js`);
+const bundlePak = resolve(distDir, `${appOutput}.pak`);
 if (!existsSync(bundleJs) || !existsSync(bundlePak)) {
   console.error(
-    `[dev] 错误：未找到前端构建产物 (dist/${appOutput}.js 或 .pak)\n\n` +
+    `[dev] 错误：未找到前端构建产物 (${distDir}/${appOutput}.js 或 .pak)\n\n` +
       `解决办法：\n` +
       `  请先编译前端产物：\n` +
-      `    npm run build\n`,
+      `    ${buildCmd}\n`,
   );
   process.exit(1);
 }
@@ -109,13 +118,24 @@ if (existsSync(fork)) {
   process.exit(1);
 }
 
+// Baked-text mode keeps the host's native_text off (its default) so text
+// renders from the baked atlas — the same GLYPH_RUN path as the AIC board —
+// instead of CoreText.
+const nativeText = !baked && plan.features["text.layout.native"];
+if (baked) {
+  console.log(
+    "[dev] 烘焙字形模拟：使用 .pocket/aic-sim 产物（MiSans atlas，板端同源烘焙/密度），" +
+      "不传 --native-text，文本走烘焙 GLYPH_RUN 路径",
+  );
+}
+
 const flags = [
   "--app", plan.app.output,
   "--title", plan.app.title,
   "--viewport", `${plan.viewport.logical[0]}x${plan.viewport.logical[1]}`,
   "--density", String(plan.viewport.rasterDensity),
   ...(plan.viewport.policy === "fixed" ? ["--fixed"] : []),
-  ...(plan.features["text.layout.native"] ? ["--native-text"] : []),
+  ...(nativeText ? ["--native-text"] : []),
   ...(plan.companions?.length ? ["--companions", plan.companions.join(",")] : []),
   // editor dialect (svc: keyboard/IME/pointer/scroll) once a companion is declared
   ...(plan.companions?.length ? ["--editor"] : []),
@@ -126,9 +146,9 @@ const flags = [
 // `node tools/dev.mjs -- --screenshot out.png@120 --quit-after 130`).
 const extra = sep === -1 ? [] : process.argv.slice(sep + 1);
 
-const child = spawn(bin, [...flags, ...overrides, ...extra], {
+const child = spawn(bin, [...flags, ...launcher.viewportFlags, ...extra], {
   stdio: "inherit",
-  env: { ...process.env, POCKETJS_DIST: resolve(root, "dist"), RUST_LOG: process.env.RUST_LOG ?? "info" },
+  env: { ...process.env, POCKETJS_DIST: distDir, RUST_LOG: process.env.RUST_LOG ?? "info" },
 });
 child.on("error", (err) => {
   console.error(`[dev] 错误：启动桌面宿主程序失败 (${bin}):`, err.message);

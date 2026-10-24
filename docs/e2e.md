@@ -45,6 +45,29 @@ node tools/dev.mjs --resolution 480x272 -- \
 页脚和弹层会重新布局，需按目标尺寸重测。此命令运行桌面包，只用于共享 UI
 布局/交互验证；板端 feature profile、IO 和内存仍须单独验收。
 
+### 模拟 AIC 烘焙字体（--baked-text）
+
+在 `--` 前传 `--baked-text`，文本改走烘焙字形（GLYPH_RUN）路径而非
+CoreText，用与板端 `.pocket` 包同源的 atlas 在 macOS 上复现 AIC 字形观感
+（如评估 rasterDensity 对画质的影响）：
+
+```bash
+npm run build:aic-sim   # 烘 MiSans + i18n 字符集；密度默认取 host/rtthread/pocket.host.json
+node tools/dev.mjs --baked-text --resolution 480x272 -- \
+  --no-native-mouse-keyboard --screenshot /tmp/baked.png@120 --quit-after 130
+# 一键（含 480×272 板端尺寸）：npm run dev:aic-sim
+# 密度 A/B：bun tools/aic-sim.ts --density=2 重建后再跑
+```
+
+- 产物在 `.pocket/aic-sim/`，与 `dist/` 互不覆盖；`--baked-text` 时 dev.mjs
+  自动改读该目录的 plan/产物，且不传 `--native-text`（宿主默认即烘焙路径）。
+- 保真范围：同一烘焙器（字体文件、i18n 字符集超集、密度、布局度量逐字节
+  同源）+ 同一 GLYPH_RUN 绘制路径。**不**模拟 RGB565 颜色量化、面板像素距/
+  伽马，以及 coverage→物理像素的严格 1:1 映射（2x 屏上 density-1 coverage
+  会被上采样、density-2 恰好 1:1；与板端密度观感方向一致，可用于密度 A/B）。
+- mono 槽（接收区/终端网格）只烘 ASCII：mono 文本里的 CJK（如接收区空态
+  占位符）在板端同样显示豆腐块，模拟中看到属预期行为。
+
 截图的物理比例由 macOS 屏幕 backing scale 决定，与宿主 `--density` 不同。
 例如本机 2x 屏幕上 480×272 窗口截图含标题栏为 960×600。
 `coords-probe.py` 默认适配 2x、28pt 标题栏，可显式指定：
