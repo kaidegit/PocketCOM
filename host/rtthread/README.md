@@ -25,7 +25,7 @@ MCP 对比用 `npm run probe:features -- --feature mcp.server`，输出 `dist/mc
 传输对比用 `npm run probe:features -- --feature transport`，输出 `dist/transport-feature-heap/report.json`，见[传输测量记录](../../docs/transport-feature-heap.md)。
 详见 [terminal 测量记录](../../docs/terminal-feature-heap.md)、[MCP 测量记录](../../docs/mcp-feature-heap.md) 与 skill `mem-probe`；实验不改变正式入口。
 
-`app/main.aic.tsx` 在 mount 前初始化 480×272 应用视口并挂载共享 `app/app.tsx`/session，启停值只读取 JSON 的 `aic-diagnostic`；桌面入口独立。host profile 固定 density 1、native presentation、60Hz，仅声明真实宿主能力。UI 保持 MiSans，mono 用 fork 的 JetBrains Mono（与产品 vendor 字体相同）；从两份语言包的字符串值提取额外字形，不烘焙整个 CJK 字符域。未烘焙输入仍可能显示替换符，HEX 视图保证字节表达。
+`app/main.aic.tsx` 在 mount 前初始化 480×272 应用视口并挂载共享 `app/app.tsx`/session，启停值只读取 JSON 的 `aic-diagnostic`；桌面入口独立。host profile 固定 density 1（native presentation 合约要求 logical×density == 物理面板 480×272，1:1 面板锁死 density=1；更高密度需引擎级超采样呈现，尚未实现）、native presentation、60Hz，仅声明真实宿主能力。UI 保持 MiSans，mono 用 fork 的 JetBrains Mono（与产品 vendor 字体相同）；从两份语言包的字符串值提取额外字形，不烘焙整个 CJK 字符域。未烘焙输入仍可能显示替换符，HEX 视图保证字节表达。
 
 SDK 复用 `application/rt-thread/pocketjs`，产品不复制引擎/QuickJS/显示/触摸源码。`POCKETJS_ROOT` 由脚本指向当前 fork。未来 `com.*` 属于本目录的产品桥；通用 guest 扩展接口属于 PocketJS，板级驱动属于 SDK。设备事件入 FIFO，在 tick 边界 drain；core 仍保持纯 TS。
 

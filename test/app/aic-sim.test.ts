@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { parseSimDensity, resolveSimPlan, simRegistry } from "../../tools/aic-sim.ts";
 
 test("sim registry pins the fork macos-app contract to the requested density", () => {
@@ -20,9 +21,12 @@ test("resolved sim plan carries the density and keeps native text available", ()
 });
 
 test("density flag validates and defaults to the AIC host profile", () => {
-  // host/rtthread/pocket.host.json declares rasterDensity 1.
-  expect(parseSimDensity([])).toBe(1);
-  expect(parseSimDensity(["--density=2"])).toBe(2);
+  // The sim default must stay anchored to whatever the board profile declares.
+  const profile = JSON.parse(
+    readFileSync(new URL("../../host/rtthread/pocket.host.json", import.meta.url), "utf8"),
+  );
+  expect(parseSimDensity([])).toBe(profile.display.rasterDensity);
+  expect(parseSimDensity(["--density=1"])).toBe(1);
   for (const bad of [["--density=0"], ["--density=256"], ["--density=x"], ["--wat"]]) {
     expect(() => parseSimDensity(bad)).toThrow();
   }
