@@ -9,9 +9,9 @@
 // Prerequisites: the AIC package + contract header (npm run package:aic), cc,
 // cargo. Objects cache in .pocket/aic/probe-host/ by mtime; repeat runs only
 // relink. This is a measurement aid, not an acceptance gate: 64-bit pointers
-// and a malloc heap skew the numbers against the rv32/TLSF board (see the
+// still skew the numbers against the rv32 board; the fixed arena uses SDK TLSF (see the
 // header comment in probe/probe.c).
-import { statSync } from "node:fs";
+import { statSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdirSync } from "node:fs";
 import { run } from "./build-support";
 
@@ -22,10 +22,13 @@ const COMPONENTS = `${VENDOR}/hosts/esp-idf/components`;
 const QJS = `${HOST}/third_party/quickjs-ng`;
 const GENERATED = `${HOST}/generated`;
 const PROBE = `${ROOT}/host/rtthread/probe`;
+const TLSF = `${ROOT}/vendor/luban-lite/bsp/artinchip`;
 const BUILD = `${ROOT}/.pocket/aic/probe-host`;
 const DEFAULT_PACKAGE = `${ROOT}/dist/aic/pocketcom-aic.pocket`;
 
 const INCLUDES = [
+  PROBE,
+  `${TLSF}/include/drv_bare`,
   `${COMPONENTS}/pocketjs_package/include`,
   `${COMPONENTS}/pocketjs_guest/include`,
   `${COMPONENTS}/pocketjs_ui_core/include`,
@@ -47,17 +50,23 @@ function requireFile(path: string, hint: string) {
 }
 
 async function compile(source: string, object: string, extra: string[] = []) {
-  const sourceTime = statSync(source).mtimeMs;
+  const dependencies = [source, `${PROBE}/heap.h`, `${TLSF}/include/drv_bare/tlsf.h`,
+    `${GENERATED}/pocketjs_aic_contract.h`, `${HOST}/port/esp_compat/esp_heap_caps.h`];
+  const sourceTime = Math.max(...dependencies.map(path => statSync(path).mtimeMs));
+  const signature = JSON.stringify([...INCLUDES, ...extra]);
   try {
-    if (statSync(object).mtimeMs >= sourceTime) return;
+    if (statSync(object).mtimeMs >= sourceTime &&
+        readFileSync(object + ".flags", "utf8") === signature) return;
   } catch {
     // fall through and compile
   }
   await run(["cc", "-O2", "-c", source, "-o", object, ...INCLUDES, ...extra],
     ROOT);
+  writeFileSync(object + ".flags", signature);
 }
 
 async function main() {
+  requireFile(`${TLSF}/drv_bare/tlsf_heap/tlsf.c`, "initialize vendor/luban-lite submodule first");
   requireFile(`${ROOT}/package.json`, "run from the repository root");
   requireFile(`${GENERATED}/pocketjs_aic_contract.h`,
     'run "npm run package:aic" first');
@@ -85,6 +94,8 @@ async function main() {
   ];
   const componentGroup = [
     `${PROBE}/probe.c`,
+    `${PROBE}/heap.c`,
+    `${TLSF}/drv_bare/tlsf_heap/tlsf.c`,
     `${COMPONENTS}/pocketjs_package/src/package.c`,
     `${COMPONENTS}/pocketjs_guest/src/guest.c`,
     `${COMPONENTS}/pocketjs_ui_core/src/ui_core.c`,

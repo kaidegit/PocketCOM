@@ -98,7 +98,7 @@ for (const name of names) {
   const runs = [];
   for (let i = 1; i <= 3; i++) {
     console.log(`feature heap: probing ${name} ${i}/3`);
-    const stdout = await command([process.execPath, "host/rtthread/probe.ts", packagePath, "--turns", "120"], join(dir, `probe-${i}.log`));
+    const stdout = await command([process.execPath, "host/rtthread/probe.ts", packagePath, "--heap", "16m", "--turns", "120"], join(dir, `probe-${i}.log`));
     runs.push(samples(stdout));
   }
   results[name] = { fingerprint: features.fingerprint, values: features.values, packageSha256: sha(bytes), jsBytes: js.length, pakBytes: pak.length,
@@ -114,6 +114,8 @@ for (const stage of Object.keys(results[onProfile].runs[0])) {
   }
 }
 const version = await command(["git", "rev-parse", "HEAD"], join(out, "repository-revision.txt"));
+const sdkVersion = await command(["git", "-C", "vendor/luban-lite", "rev-parse", "HEAD"], join(out, "luban-lite-revision.txt"));
+const tlsfSha256 = sha(new Uint8Array(await Bun.file(join(root, "vendor/luban-lite/bsp/artinchip/drv_bare/tlsf_heap/tlsf.c")).arrayBuffer()));
 const vendorVersion = await command(["git", "-C", "vendor/pocketjs", "rev-parse", "HEAD"], join(out, "pocketjs-revision.txt"));
 await command(["git", "diff", "--binary"], join(out, "repository.patch"));
 await command(["git", "-C", "vendor/pocketjs", "diff", "--binary"], join(out, "pocketjs.patch"));
@@ -123,17 +125,17 @@ for (const [directory, prefix] of [[root, ""], [join(root, "vendor/pocketjs"), "
   const listing = await command(["git", "-C", directory, "ls-files", "-m", "--others", "--exclude-standard"],
     join(out, prefix ? "pocketjs-changed-files.txt" : "repository-changed-files.txt"));
   for (const file of new Set(listing.trim().split("\n"))) {
-    if (!/\.(ts|tsx|json|md)$/.test(file)) continue;
+    if (!/\.(ts|tsx|json|md|c|h|rs)$/.test(file)) continue;
     const content = new Uint8Array(await Bun.file(join(directory, file)).arrayBuffer());
     sourceHashes[prefix + file] = sha(content);
     await Bun.write(join(out, "sources", prefix, file + ".source"), content);
   }
 }
-const report = { feature, profiles: names, measuredAt: new Date().toISOString(), repositoryRevision: version.trim(), pocketjsRevision: vendorVersion.trim(), bun: Bun.version,
+const report = { feature, profiles: names, measuredAt: new Date().toISOString(), repositoryRevision: version.trim(), pocketjsRevision: vendorVersion.trim(), lubanLiteRevision: sdkVersion.trim(), tlsfSha256, bun: Bun.version,
   sourceHashes,
   configSha256: sha(await Bun.file(join(root, "pocket.features.json")).text()), planHash: plan.planHash,
-  conditions: { viewport: [480,272], jsLimit: 5*1024*1024, capsBudget: "unlimited", turns: 120, repetitions: 3,
-    workload: "shared App idle, no com bridge: left panel + bridge unavailable state; terminal view not mounted", native: "64-bit malloc probe, excludes RT-Thread/WiFi/TLSF" },
+  conditions: { viewport: [480,272], jsLimit: 5*1024*1024, capsBudget: 16 * 1024 * 1024, turns: 120, repetitions: 3,
+    workload: "shared App idle, no com bridge: left panel + bridge unavailable state; terminal view not mounted", native: "64-bit SDK TLSF fixed arena, excludes RT-Thread/WiFi", allocator: "tlsf-sdk", arenaBytes: 16 * 1024 * 1024 },
   results, comparison };
 await Bun.write(join(out, "report.json"), JSON.stringify(report, null, 2) + "\n");
 console.log(JSON.stringify(comparison, null, 2));

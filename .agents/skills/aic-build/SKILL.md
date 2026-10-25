@@ -49,9 +49,9 @@ RTT_EXEC_PATH=/Users/kai/DevTools/xpack-riscv-none-elf-gcc-15.2.0-1/bin npm run 
 npm run flash:aic -- -p /dev/cu.usbserial-XXX -b 3000000 --verify --reset
 npm run flash:aic -- --all -p /dev/cu.usbserial-XXX
 
-npm run probe:aic                    # 离板内存探针：同一套组件 + malloc shim，
+npm run probe:aic                    # 离板内存探针：同一套组件 + 固定连续区/SDK TLSF，
                        # [PJS-PROBE] 输出与板端 [PJS-DIAG] 字段一致；前置 package:aic + cc + cargo。
-                       # --heap N 注入堆预算粗找断点，--turns N 加长浸泡；64 位偏大 5–15%，
+                       # 默认 7 MiB；--heap N 固定池大小并模拟碎片，--turns N 加长浸泡；64 位指针/块布局仍与 RV32 有差异，
                        # 只做粗测不替代板端验收（详见 host/rtthread/README 的"离板内存探针"）
 ```
 

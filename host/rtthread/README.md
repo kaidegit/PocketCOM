@@ -215,18 +215,18 @@ pjs_mem reset        # 记账峰值回落到当前 live，用于增量测量
 
 ### 离板内存探针（无 AIC 快测）
 
-`npm run probe:aic` 把与固件同一套可移植组件（guest / ui_core / ui_qjs / package / render_rgb565 + 同一 QuickJS）编成原生二进制，`heap_caps` 走 malloc shim（与 port 同款 3 槽包装头 + live/peak/块数记账），加载路径走与固件相同的 `pocketjs_guest_eval_stages` 拆分。输出 `[PJS-PROBE]` 行，字段名与 `[PJS-DIAG]` 一致，可与 §2.1.3/§2.1.4 真机数据并排对比；共享 UI / 裁剪提案的每一步都可以先在这里量再上板。
+`npm run probe:aic` 把与固件同一套可移植组件（guest / ui_core / ui_qjs / package / render_rgb565 + 同一 QuickJS）编成原生二进制，`heap_caps` 走一次性固定连续内存区 + SDK 同源 TLSF（与 port 同款 3 槽包装头、realloc 先分配后释放 + live/peak/块数记账），加载路径走与固件相同的 `pocketjs_guest_eval_stages` 拆分。输出 `[PJS-PROBE]` 行，字段名与 `[PJS-DIAG]` 一致，可与 §2.1.3/§2.1.4 真机数据并排对比；共享 UI / 裁剪提案的每一步都可以先在这里量再上板。
 
 ```sh
 npm run probe:aic                    # 测 dist/aic 当前包
-npm run probe:aic -- --heap 7340032  # 注入统一堆预算，粗找断点
+npm run probe:aic -- --heap 7340032  # 固定 7 MiB TLSF 池（默认值），含真实碎片
 npm run probe:aic -- --heap 3m --turns 600
 npm run probe:aic -- --turns 240 --tap 60,16@5 --sample 60 --tap 238,22@65 --collect 120
 ```
 
 `--tap X,Y@TURN` 在该帧按下、下一帧释放，`--sample TURN` 输出 S6 附加采样，`--collect TURN` 显式 guest GC 后输出 S7；每类最多 512 条，tap 必须早于末帧，采样/GC 不超过末帧。显式 GC 仅供离板存活集实验，不模拟板端空闲 GC，也不改固件。默认无这些参数时保持原有空闲探针行为。
 
-前置：`npm run package:aic`（探针读 `.pocket` 包与生成的契约头）、cc、cargo。对象缓存在 `.pocket/aic/probe-host/`，重复运行只重链。**口径与偏差**：caps/js/guest/rloc 字段含义同板；64 位指针使数字系统性偏大（实测精简页 caps 峰值 +10%、js +15%，realloc 次数与板几乎一致），malloc 无碎片/无系统侧共享——回答"这个包大概吃多少、峰值在哪"，不替代板端验收。
+前置：`npm run package:aic`（探针读 `.pocket` 包与生成的契约头）、cc、cargo、已初始化的 `vendor/luban-lite`。直接编译板端同一份 `drv_bare/tlsf_heap/tlsf.c`，默认 7,340,032 bytes 固定池；`--heap` 调整池大小，禁止零值/扩池/malloc 回退。包缓冲模拟 XIP 在池外，其余 guest/Rust 分配走同一池。对象缓存在 `.pocket/aic/probe-host/`，追踪包装头/契约头和编译参数变化。新增 `sys/sys_max`、`walk_free/walk_maxfree/walk_frags` 及失败瞬间的固定 8 条失败环；caps/js/guest/rloc 含义保留。64 位指针与 TLSF 块布局不同于 RV32，且不含系统线程/WiFi 分配和 XIP 时延，仍不能替代板端验收。历史 malloc 数据不与新池的碎片断点直接换算。`probe:features` 显式用两组相同的固定 16 MiB 池，报告保存 allocator/arenaBytes。测试、发送框复测和产物见 [2026-10-25 记录](../../docs/aic-probe-tlsf-2026-10-25.md)。
 
 ## GE 2D 加速（feat/aic-gpu 分支，2026-10-24）
 

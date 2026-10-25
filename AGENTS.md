@@ -149,7 +149,7 @@ realloc（C）研究仍有效，每步以板端实测峰值/稳态验收，桌�
 
 ### 构建与烧录
 
-命令、产物、内存报告解读、烧录要点全部在 skill `aic-build`；`npm run probe:aic` 为离板内存探针（字段与板端 `[PJS-DIAG]` 一致，粗测不替代板端验收）；板端测试 `bun test test/host/rtthread/`。
+命令、产物、内存报告解读、烧录要点全部在 skill `aic-build`；`npm run probe:aic` 为固定连续区 + SDK 同源 TLSF 离板内存探针（默认 7 MiB，`--heap` 指定池大小，无 malloc 回退；报告最大连续块/碎片及失败瞬间，64 位与系统负载差异仍不替代板端验收）；板端测试 `bun test test/host/rtthread/`。
 
 ## 构建与测试索引
 

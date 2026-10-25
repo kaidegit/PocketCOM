@@ -3,7 +3,7 @@
  *
  * The same portable components the firmware compiles (guest, ui_core,
  * ui_qjs, package, render_rgb565 and the vendored QuickJS) are linked into
- * a native binary, with malloc backing the heap_caps surface through the
+ * a native binary, with one fixed SDK TLSF arena backing heap_caps through the
  * port's 3-slot header and live/peak/block accounting. The load path runs
  * the same staged eval as the firmware (pocketjs_guest_eval_stages), so
  * S3-compile and S4-mount report separately, and samples print the same
@@ -11,15 +11,15 @@
  *
  * What it is NOT: this is not a board simulator. Pointers are 64-bit here
  * and rv32 on the board (JS objects with raw pointers skew larger), the
- * heap is plain malloc (no TLSF, no system threads/WiFi sharing it, no
- * fragmentation modelling), and there is no XIP cache cost. It answers
+ * TLSF arena has no system threads/WiFi sharing it, and there is no XIP
+ * cache cost. Fragmentation is real but differs with pointer width/workload. It answers
  * "roughly how much does this package live/peak at, and where" while
  * iterating on the board assembly — board numbers stay the acceptance.
  *
  * Usage: probe <package.pocket> [--heap N] [--limit N] [--turns N]
  *              [--tap X,Y@TURN] [--sample TURN] [--collect TURN]
- *   --heap N   emulate a unified-heap budget: allocations beyond N bytes
- *              fail (approximate breakpoint hunt; failures are counted)
+ *   --heap N   fixed contiguous TLSF arena size (default 7 MiB), no growth
+ *              or malloc fallback; failures include fragmentation
  *   --limit N  QuickJS quota for JS_SetMemoryLimit (default 5 MiB)
  *   --turns N  idle turns after mount, default 120
  *   --tap     one touch-down at TURN, released on the following turn
@@ -32,6 +32,9 @@
 #include "pocketjs/ui_core.h"
 #include "pocketjs/ui_qjs.h"
 
+#include "heap.h"
+
+#include <errno.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -42,97 +45,13 @@
 
 #include "pocketjs_aic_contract.h"
 
-/* --- heap_caps shim over malloc, port-header compatible ----------------- */
-
-static size_t caps_live;
-static size_t caps_peak;
-static size_t caps_blocks;
-static size_t caps_fails;
-static size_t caps_budget; /* 0 = unlimited */
-
-void heap_caps_free(void *ptr);
-
-void *heap_caps_aligned_alloc(size_t alignment, size_t size, unsigned caps) {
-  (void)caps;
-  if (alignment < sizeof(void *) * 2) {
-    alignment = sizeof(void *) * 2;
-  }
-  const size_t overhead = 3 * sizeof(size_t);
-  if (size > SIZE_MAX - (alignment + overhead)) {
-    return NULL;
-  }
-  const size_t charged = size + alignment + overhead;
-  if (caps_budget != 0 && caps_live + charged > caps_budget) {
-    caps_fails++;
-    return NULL;
-  }
-  unsigned char *raw = malloc(charged);
-  if (raw == NULL) {
-    caps_fails++;
-    return NULL;
-  }
-  uintptr_t address = (uintptr_t)(raw + overhead);
-  address = (address + alignment - 1) & ~(uintptr_t)(alignment - 1);
-  ((size_t *)address)[-1] = (size_t)(address - (uintptr_t)raw);
-  ((size_t *)address)[-2] = charged;
-  ((size_t *)address)[-3] = size;
-  caps_live += charged;
-  if (caps_live > caps_peak) {
-    caps_peak = caps_live;
-  }
-  caps_blocks++;
-  return (void *)address;
-}
-
-void *heap_caps_malloc(size_t size, unsigned caps) {
-  return heap_caps_aligned_alloc(sizeof(void *) * 2, size, caps);
-}
-
-void *heap_caps_calloc(size_t count, size_t size, unsigned caps) {
-  if (count != 0 && size > SIZE_MAX / count) {
-    return NULL;
-  }
-  void *memory = heap_caps_malloc(count * size, caps);
-  if (memory != NULL) {
-    memset(memory, 0, count * size);
-  }
-  return memory;
-}
-
-void *heap_caps_realloc(void *ptr, size_t size, unsigned caps) {
-  if (ptr == NULL) {
-    return heap_caps_malloc(size, caps);
-  }
-  const size_t previous = ((size_t *)ptr)[-3];
-  void *fresh = heap_caps_malloc(size, caps);
-  if (fresh == NULL) {
-    return NULL;
-  }
-  if (previous != 0) {
-    memcpy(fresh, ptr, previous < size ? previous : size);
-  }
-  heap_caps_free(ptr);
-  return fresh;
-}
-
-void heap_caps_free(void *ptr) {
-  if (ptr == NULL) {
-    return;
-  }
-  const size_t back = ((size_t *)ptr)[-1];
-  caps_live -= ((size_t *)ptr)[-2];
-  caps_blocks--;
-  free((unsigned char *)ptr - back);
-}
-
 /* --- staged sampling, [PJS-DIAG]-style field names ----------------------- */
 
 static pocketjs_guest_t *sample_guest;
 
 static void sample(const char *stage) {
-  printf("[PJS-PROBE] %s caps_live=%zu caps_peak=%zu caps_blocks=%zu "
-         "caps_fails=%zu\n",
-         stage, caps_live, caps_peak, caps_blocks, caps_fails);
+  probe_heap_dump(stage);
+  if (!sample_guest) return;
   pocketjs_guest_memstats_t mem = {.struct_size = sizeof(mem)};
   pocketjs_guest_allocstats_t alloc = {.struct_size = sizeof(alloc)};
   pocketjs_guest_stats_t stats = {.struct_size = sizeof(stats)};
@@ -187,28 +106,25 @@ static unsigned char *read_file(const char *name, size_t *size) {
 
 static size_t parse_size(const char *text) {
   char *end = NULL;
+  errno = 0;
   unsigned long long value = strtoull(text, &end, 0);
-  if (end == NULL || *end == '\0') {
-    return (size_t)value; /* plain bytes */
-  }
-  if (*end == 'k' || *end == 'K') {
-    return (size_t)(value * 1024);
-  }
-  if (*end == 'm' || *end == 'M') {
-    return (size_t)(value * 1024 * 1024);
-  }
-  return (size_t)value;
+  size_t factor = 1;
+  if (end && (*end == 'k' || *end == 'K')) { factor = 1024; end++; }
+  else if (end && (*end == 'm' || *end == 'M')) { factor = 1024 * 1024; end++; }
+  if (errno || end == text || !end || *end || text[0] == '-' ||
+      !value || value > SIZE_MAX / factor) return 0;
+  return (size_t)value * factor;
 }
 
-#define CHECK(call)                                                           \
-  do {                                                                        \
-    int error = (call);                                                       \
-    if (error != 0) {                                                         \
-      fprintf(stderr, "probe: %s failed: %d (caps_live=%zu caps_peak=%zu "    \
-              "caps_fails=%zu)\n",                                            \
-              #call, error, caps_live, caps_peak, caps_fails);                \
-      return 1;                                                               \
-    }                                                                         \
+#define CHECK(call) \
+  do { \
+    int error = (call); \
+    if (error != 0) { \
+      fprintf(stderr, "probe: %s failed: %d\n", #call, error); \
+      sample("failed"); \
+      probe_heap_print_fails(); \
+      return 1; \
+    } \
   } while (0)
 
 #define PROBE_EVENT_LIMIT 512U
@@ -218,6 +134,7 @@ static long collect_turns[PROBE_EVENT_LIMIT];
 
 int main(int argc, char **argv) {
   const char *package_path = NULL;
+  size_t caps_budget = PROBE_HEAP_DEFAULT;
   size_t heap_limit = 5U * 1024U * 1024U;
   long turns = 120;
   size_t tap_count = 0U;
@@ -292,6 +209,17 @@ int main(int argc, char **argv) {
     }
   }
 
+  if (!caps_budget || !heap_limit) {
+    fprintf(stderr, "probe: --heap and --limit require positive sizes (bytes/k/m)\n");
+    return 2;
+  }
+  if (probe_heap_init(caps_budget) != 0) {
+    fprintf(stderr, "probe: cannot initialize %zu-byte TLSF arena\n", caps_budget);
+    return 2;
+  }
+  printf("[PJS-PROBE] allocator=tlsf-sdk arena=%zu pointer_bits=%zu\n",
+         caps_budget, 8 * sizeof(void *));
+
   size_t package_size = 0;
   unsigned char *package_bytes = read_file(package_path, &package_size);
   if (package_bytes == NULL) {
@@ -299,12 +227,6 @@ int main(int argc, char **argv) {
             package_path);
     return 2;
   }
-  if (caps_budget != 0) {
-    printf("[PJS-PROBE] budget caps_budget=%zu (allocation failures beyond "
-           "this are injected)\n",
-           caps_budget);
-  }
-
   pocketjs_guest_config_t guest_config;
   pocketjs_guest_config_defaults(&guest_config);
   guest_config.heap_limit = heap_limit;
@@ -409,16 +331,20 @@ int main(int argc, char **argv) {
       }
     }
   }
+  const probe_heap_stats_t final_heap = probe_heap_stats();
+  probe_heap_print_fails();
   printf("[PJS-PROBE] done turns=%ld caps_live=%zu caps_peak=%zu "
          "caps_fails=%zu\n",
-         turns, caps_live, caps_peak, caps_fails);
+         turns, final_heap.caps_live, final_heap.caps_peak, final_heap.caps_fails);
 
   pocketjs_ui_qjs_destroy(binding);
   pocketjs_guest_destroy(guest);
   pocketjs_ui_core_destroy(core);
   pocketjs_package_close(package);
   free(package_bytes);
-  return 0;
+  const int result = final_heap.caps_fails || probe_heap_check() || probe_heap_stats().caps_blocks;
+  probe_heap_destroy();
+  return result ? 1 : 0;
 }
 
 void rust_eh_personality(void) {
