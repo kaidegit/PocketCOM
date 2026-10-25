@@ -177,6 +177,10 @@
     "space": "Space",
     "Backspace": "Delete",
     "Enter": "Enter",
-    "close": "Hide"
+    "close": "Hide",
+    "sendTitle": "Send content",
+    "intervalTitle": "Send interval",
+    "baudTitle": "Custom baud rate",
+    "reconnectTitle": "Reconnect interval"
   }
 }

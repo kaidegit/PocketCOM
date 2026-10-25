@@ -177,6 +177,10 @@
     "space": "空格",
     "Backspace": "退格",
     "Enter": "回车",
-    "close": "收起"
+    "close": "收起",
+    "sendTitle": "发送内容",
+    "intervalTitle": "发送间隔",
+    "baudTitle": "自定义波特率",
+    "reconnectTitle": "重连间隔"
   }
 }

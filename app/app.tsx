@@ -24,7 +24,7 @@ import { Btn, PopupLayer, closePopup, popupOpen, popupWheel, textFieldMouse } fr
 import { SettingsModal, closeSettingsModal, modalWheel, settingsFieldMouse, settingsOpen } from "./settings-modal";
 import { pumpSession, refreshPorts, comAvailable, sendTermBytes, terminal, uiMode } from "./session";
 import { t } from "./i18n";
-import { SoftKeyboard, closeKeyboard, keyboardOpen, keyboardHit } from "./soft-keyboard";
+import { SoftKeyboard, closeKeyboard, keyboardOpen, keyboardHit, keyboardEditorMouse } from "./soft-keyboard";
 import { strToBytes } from "../core/codec";
 
 /** svc 键名别名：小写/口语名 → 控件层 Pascal 名（宿主 --key 脚本与
@@ -194,6 +194,7 @@ export default () => {
         lastMouse.y = y;
         const down = ev.d ?? false;
         if (hasAppFeature("ui.soft-keyboard") && keyboardHit(x, y)) {
+          keyboardEditorMouse(x, y, down);
           focusNode(hitFocusable(x, y));
           break;
         }

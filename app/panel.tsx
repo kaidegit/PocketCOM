@@ -393,7 +393,7 @@ export function LeftPanel(props: { onClose?: () => void } = {}) {
                 top("tcpHost"),
                 () => t("conn.host"),
                 <TextField
-                  initial={tcpHost.value}
+                  label={hasAppFeature("ui.soft-keyboard") ? () => t("conn.host") : undefined} initial={tcpHost.value}
                   placeholder={() => "127.0.0.1"}
                   selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("tcpHost")) : undefined}
                   {...bindField("tcpHost", tcpHost)}
@@ -402,7 +402,7 @@ export function LeftPanel(props: { onClose?: () => void } = {}) {
               {fieldBlock(
                 top("tcpPort"),
                 () => t("conn.remotePort"),
-                <TextField initial={tcpPort.value} selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("tcpPort")) : undefined} {...bindField("tcpPort", tcpPort)} />,
+                <TextField label={hasAppFeature("ui.soft-keyboard") ? () => t("conn.remotePort") : undefined} initial={tcpPort.value} selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("tcpPort")) : undefined} {...bindField("tcpPort", tcpPort)} />,
               )}
               <View
                 class="absolute"
@@ -425,7 +425,7 @@ export function LeftPanel(props: { onClose?: () => void } = {}) {
               {fieldBlock(
                 top("tcpsPort"),
                 () => t("conn.listenPort"),
-                <TextField initial={tcpsPort.value} selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("tcpsPort")) : undefined} {...bindField("tcpsPort", tcpsPort)} />,
+                <TextField label={hasAppFeature("ui.soft-keyboard") ? () => t("conn.listenPort") : undefined} initial={tcpsPort.value} selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("tcpsPort")) : undefined} {...bindField("tcpsPort", tcpsPort)} />,
               )}
               {clientList.value.length > 0 ? (
                 <View
@@ -462,7 +462,7 @@ export function LeftPanel(props: { onClose?: () => void } = {}) {
                 top("udpHost"),
                 () => t("conn.targetHost"),
                 <TextField
-                  initial={udpHost.value}
+                  label={hasAppFeature("ui.soft-keyboard") ? () => t("conn.targetHost") : undefined} initial={udpHost.value}
                   placeholder={() => "127.0.0.1"}
                   selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("udpHost")) : undefined}
                   {...bindField("udpHost", udpHost)}
@@ -473,7 +473,7 @@ export function LeftPanel(props: { onClose?: () => void } = {}) {
                   <FieldLabel text={() => t("conn.localPort")} />
                   <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
                     <TextField
-                      initial={udpBindPort.value}
+                      label={hasAppFeature("ui.soft-keyboard") ? () => t("conn.localPort") : undefined} initial={udpBindPort.value}
                       selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("udpPair"), 0, PAIR_W) : undefined}
                       {...bindField("udpBindPort", udpBindPort)}
                     />
@@ -483,7 +483,7 @@ export function LeftPanel(props: { onClose?: () => void } = {}) {
                   <FieldLabel text={() => t("conn.remotePort")} />
                   <View class="absolute left-0 right-0" style={{ insetT: LABEL_H + LABEL_GAP, height: CTL_H }}>
                     <TextField
-                      initial={udpPort.value}
+                      label={hasAppFeature("ui.soft-keyboard") ? () => t("conn.remotePort") : undefined} initial={udpPort.value}
                       selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("udpPair"), PAIR_W + PAIR_GAP, PAIR_W) : undefined}
                       {...bindField("udpPort", udpPort)}
                     />
@@ -500,7 +500,7 @@ export function LeftPanel(props: { onClose?: () => void } = {}) {
                 top("wsUrl"),
                 () => t("conn.wsUrl"),
                 <TextField
-                  initial={wsUrl.value}
+                  label={hasAppFeature("ui.soft-keyboard") ? () => t("conn.wsUrl") : undefined} initial={wsUrl.value}
                   placeholder={() => "ws://127.0.0.1:8080"}
                   selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("wsUrl")) : undefined}
                   {...bindField("wsUrl", wsUrl)}
@@ -509,7 +509,7 @@ export function LeftPanel(props: { onClose?: () => void } = {}) {
               {fieldBlock(
                 top("wsProtocols"),
                 () => t("conn.wsProtocols"),
-                <TextField initial={wsProtocols.value} selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("wsProtocols")) : undefined} {...bindField("wsProtocols", wsProtocols)} />,
+                <TextField label={hasAppFeature("ui.soft-keyboard") ? () => t("conn.wsProtocols") : undefined} initial={wsProtocols.value} selRegion={hasAppFeature("ui.selection") ? fieldRegion(top("wsProtocols")) : undefined} {...bindField("wsProtocols", wsProtocols)} />,
               )}
               <View
                 class="absolute"
@@ -534,6 +534,7 @@ export function LeftPanel(props: { onClose?: () => void } = {}) {
             >
               <View class="absolute left-0 right-0" style={{ insetT: 6, height: CTL_H }}>
                 <TextField
+                  label={hasAppFeature("ui.soft-keyboard") ? () => t("keyboard.reconnectTitle") : undefined}
                   initial={hasAppFeature("transport.tcp-client") && connType.value === "tcp" ? tcpReconnectSec.value : wsReconnectSec.value}
                   selRegion={hasAppFeature("ui.selection") ? ctlRegion(top("reconnectSec") + 6) : undefined}
                   {...(hasAppFeature("transport.tcp-client") && connType.value === "tcp"
@@ -717,6 +718,7 @@ function SerialBlocks(props: {
         {props.customBaudVisible.value ? (
           <View class="absolute left-0 right-0" style={{ insetT: FIELD_H + 6, height: CTL_H }}>
             <TextField
+              label={hasAppFeature("ui.soft-keyboard") ? () => t("keyboard.baudTitle") : undefined}
               initial={props.customBaud.value}
               selRegion={hasAppFeature("ui.selection") ? ctlRegion(props.top("baud") + FIELD_H + 6) : undefined}
               onHandle={(h) => {

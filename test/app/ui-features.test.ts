@@ -16,7 +16,7 @@ const load = (name: string) => loadAppFeatures(join(root, "pocket.features.json"
 test("UI profiles and dependencies agree with the product registry", async () => {
   for (const name of ["desktop", "aic-diagnostic", "ui-on", "ui-off"]) {
     const features = await load(name);
-    for (const key of ui) expect(features.values[key]).toBe(name === "desktop" || name === "ui-on");
+    for (const key of ui) expect(features.values[key]).toBe(name === "desktop" || name === "ui-on" || (name === "aic-diagnostic" && key === "ui.soft-keyboard"));
   }
   const on = await load("ui-on"), off = await load("ui-off");
   for (const key of Object.keys(on.values).filter(k => !k.startsWith("ui."))) expect(on.values[key]).toBe(off.values[key]);
@@ -96,13 +96,13 @@ for (const disabled of ui) test(`UI feature can be disabled independently: ${dis
 for (const profile of ["ui-on", "ui-off"]) test(`TextField editing and soft keyboard input: ${profile}`, async () => {
   const features = await load(profile), enabled = profile === "ui-on";
   const entry = join(dir, "input-" + profile + ".ts"), output = entry + ".mjs";
-  await Bun.write(entry, `export {TextField} from ${JSON.stringify(join(root, "app/widgets.tsx"))}; export * from ${JSON.stringify(join(root, "app/fields.ts"))}; export * from ${JSON.stringify(join(root, "app/soft-keyboard.tsx"))};`);
+  await Bun.write(entry, `export {TextField} from ${JSON.stringify(join(root, "app/widgets.tsx"))}; export * from ${JSON.stringify(join(root, "app/fields.ts"))}; ${enabled ? `export * from ${JSON.stringify(join(root, "app/soft-keyboard.tsx"))};` : ""}`);
   const build = await Bun.build({ entrypoints: [entry], target: "bun", format: "esm", plugins: [{ name: "input-specialize", setup(builder) {
     builder.onLoad({ filter: /app\/.*\.tsx?$/ }, async ({ path }) => ({ contents: await specializeAppSource(path, await Bun.file(path).text(), features), loader: path.endsWith("tsx") ? "tsx" : "ts" }));
     builder.onResolve({ filter: /^react\/jsx/ }, () => ({ path: "jsx", namespace: "jsx-stub" }));
     builder.onLoad({ filter: /.*/, namespace: "jsx-stub" }, () => ({ contents: "export const jsxDEV=()=>({}),jsx=()=>({}),jsxs=()=>({});", loader: "js" }));
     builder.onResolve({ filter: /^@pocketjs\/framework/ }, () => ({ path: "framework", namespace: "stub" }));
-    builder.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: `export const View=()=>{},Text=()=>{},Portal=()=>{},focusNode=()=>{},onFrame=()=>{},virtualNow=()=>0,getOps=()=>({measureText:s=>s.length*8});`, loader: "js" }));
+    builder.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: `export const View=()=>{},Text=()=>{},Portal=()=>{},focusNode=()=>{},setProp=()=>{},createGesture=()=>({}),onFrame=()=>{},virtualNow=()=>0,getOps=()=>({measureText:s=>s.length*8});`, loader: "js" }));
   } }] });
   expect(build.success).toBe(true);
   await Bun.write(output, build.outputs[0]!);
@@ -114,11 +114,19 @@ for (const profile of ["ui-on", "ui-off"]) test(`TextField editing and soft keyb
     f.onKey("Left",mods);f.onCh("X");a.equal(handle.text(),"aXb");
     f.onPaste("Y");a.equal(handle.text(),${enabled ? '"aXYb"' : '"aXb"'});
     f.onKey("Enter",{...mods,cmd:true});a.equal(submitted,${enabled ? 1 : 0});
+    if (${enabled}) {
     s.toggleKeyboard();a.equal(s.keyboardOpen(),${enabled});
     handle.setText("");s.keyboardInput("q");s.keyboardInput("space");s.keyboardInput("Enter");
     a.equal(handle.text(),${enabled ? '"q \\n"' : '""'});
     s.keyboardInput("Backspace");a.equal(handle.text(),${enabled ? '"q "' : '""'});
     a.equal(s.activeField.value,f);s.keyboardInput("close");a.equal(s.keyboardOpen(),false);
+    s.openKeyboard();s.openKeyboard();a.equal(s.keyboardOpen(),${enabled});
+    s.setActiveField(null);s.setActiveField(f);a.equal(s.keyboardOpen(),false);
+    let other;s.TextField({onHandle:h=>other=h});other.focus();
+    s.openKeyboard();a.equal(s.keyboardOpen(),${enabled});
+    handle.focus();a.equal(s.keyboardOpen(),false);
+    const saved=other.text();s.keyboardInput("z");a.equal(other.text(),saved);
+    } else { a.equal("keyboardInput" in s, false); }
   `], { cwd: root });
   expect(child.stderr.toString()).not.toContain("error:");
   expect(child.exitCode).toBe(0);

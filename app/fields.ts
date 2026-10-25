@@ -13,8 +13,18 @@ export interface KeyMods {
   sh: boolean;
 }
 
+/** Live access to the original field; the keyboard editor owns no draft. */
+export interface FieldEditor {
+  label?(): string;
+  text(): string;
+  caret(): number;
+  readonly monoSize: 12 | 14 | 16;
+  moveCaret(index: number): void;
+}
+
 /** 文本域协议：实现者通常是 app/widgets.tsx 的 TextField。 */
 export interface TextField {
+  editor?: FieldEditor;
   onCh(s: string): void;
   onKey(k: string, mods: KeyMods): void;
   onPaste(text: string): void;

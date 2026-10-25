@@ -17,6 +17,7 @@ import { STATUS_H, viewportSize } from "./layout";
 import { LINE_H as FONT_LINE_H, MONO_SLOTS } from "./fontsize";
 import { monoColAt } from "./textsel";
 import { activeField, setActiveField, type KeyMods, type TextField as TextFieldProto } from "./fields";
+import { openKeyboard } from "./soft-keyboard";
 
 /** 标准控件高（Select/SegCtrl/单行 TextField/Btn）。 */
 export const CTL_H = 28;
@@ -522,7 +523,7 @@ interface FieldSelEntry {
   region: () => SelRect | null;
   down(x: number, y: number): void;
   drag(x: number, y: number): void;
-  up(): void;
+  up(x: number, y: number): void;
 }
 
 const fieldSelEntries = hasAppFeature("ui.selection") ? new Set<FieldSelEntry>() : undefined!;
@@ -537,7 +538,7 @@ export function textFieldMouse(x: number, y: number, down: boolean): boolean {
       const e = fieldSelDrag;
       if (e !== null) {
         fieldSelDrag = null;
-        e.up();
+        e.up(x, y);
         return true;
       }
       return false;
@@ -560,6 +561,8 @@ export function textFieldMouse(x: number, y: number, down: boolean): boolean {
 }
 
 export function TextField(props: {
+  /** Name shown by the temporary soft-keyboard editor. */
+  label?: () => string;
   multiline?: boolean;
   initial?: string;
   placeholder?: () => string;
@@ -583,6 +586,9 @@ export function TextField(props: {
   const preedit = ref("");
   const scrollY = ref(0);
   let node: NodeMirror | undefined;
+  // Companion mouse selection focuses on DOWN, before the CIRCLE press.
+  // Commit a keyboard request on UP only, so a selection drag never opens it.
+  let mouseClick: { x: number; y: number; active: boolean; moved: boolean } | undefined;
 
   const bodyH = props.height ?? CTL_H;
   const lineH = FONT_LINE_H[props.monoSize ?? 14];
@@ -707,6 +713,7 @@ export function TextField(props: {
 
   /** 鼠标按下：清 IME、光标定位到点击处、选区锚点就位（未拖动即无选区）。 */
   const selDown = (gx: number, gy: number): void => {
+    if (hasAppFeature("ui.soft-keyboard")) mouseClick = { x: gx, y: gy, active: isActive(), moved: false };
     preedit.value = "";
     const pos = posAt(gx, gy);
     caret.value = pos;
@@ -718,6 +725,8 @@ export function TextField(props: {
 
   /** 拖动：延伸选区头部，光标跟随并滚动至可见。 */
   const selDrag = (gx: number, gy: number): void => {
+    if (hasAppFeature("ui.soft-keyboard") && mouseClick &&
+      (Math.abs(gx - mouseClick.x) > 8 || Math.abs(gy - mouseClick.y) > 8)) mouseClick.moved = true;
     const pos = posAt(gx, gy);
     if (pos === selHead.value) return;
     selHead.value = pos;
@@ -830,6 +839,19 @@ export function TextField(props: {
   };
 
   const impl: TextFieldProto = {
+    ...(hasAppFeature("ui.soft-keyboard") ? { editor: {
+      label: props.label,
+      text: dispText,
+      caret: dispCaret,
+      monoSize: props.monoSize ?? 14,
+      moveCaret: (index: number) => {
+        preedit.value = "";
+        setCaretClamped(index);
+        if (hasAppFeature("ui.selection")) selAnchor.value = selHead.value = caret.value;
+        caretPulse();
+        revealCaret();
+      },
+    } } : {}),
     onCh: (s) => {
       preedit.value = "";
       insert(s);
@@ -875,11 +897,23 @@ export function TextField(props: {
     },
   };
   props.onHandle?.(handle);
+  onScopeDispose(() => {
+    if (isActive()) setActiveField(null);
+  });
 
   // 拖动选中命中区注册（未给 selRegion 的实例不参与）；组件卸载时摘除，
   // 防止切连接类型/切模式后残留幽灵命中区。
   if (hasAppFeature("ui.selection") && props.selRegion) {
-    const entry: FieldSelEntry = { region: props.selRegion, down: selDown, drag: selDrag, up: () => {} };
+    const entry: FieldSelEntry = { region: props.selRegion, down: selDown, drag: selDrag, up: (x, y) => {
+      if (hasAppFeature("ui.soft-keyboard")) {
+        const click = mouseClick;
+        mouseClick = undefined;
+        const r = props.selRegion?.();
+        if (click?.active && !click.moved && isActive() && r &&
+          Math.abs(x - click.x) <= 8 && Math.abs(y - click.y) <= 8 &&
+          x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) openKeyboard();
+      }
+    } };
     fieldSelEntries.add(entry);
     onScopeDispose(() => {
       fieldSelEntries.delete(entry);
@@ -889,6 +923,7 @@ export function TextField(props: {
 
   return (
     <View
+      debugName="textField"
       class="relative rounded-md w-full overflow-hidden"
       style={{
         height: bodyH,
@@ -897,7 +932,11 @@ export function TextField(props: {
         borderWidth: 1,
       }}
       focusable
-      onPress={() => handle.focus()}
+      onPress={() => {
+        const wasActive = isActive();
+        handle.focus();
+        if (hasAppFeature("ui.soft-keyboard") && wasActive && !mouseClick) openKeyboard();
+      }}
       nodeRef={(n: NodeMirror | null) => {
         node = n ?? undefined;
       }}

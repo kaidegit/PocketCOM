@@ -720,6 +720,7 @@ export function SendPane() {
           {timed.value ? (
             <View style={{ width: 60, height: TOOLBAR_CTL_H }}>
               <TextField
+                label={hasAppFeature("ui.soft-keyboard") ? () => t("keyboard.intervalTitle") : undefined}
                 initial={intervalDraft}
                 height={TOOLBAR_CTL_H}
                 onHandle={(h) => {
@@ -743,6 +744,7 @@ export function SendPane() {
         <View class="flex-row gap-2" style={{ height: 56 }}>
           <View style={{ width: Math.max(0, workspace.value.w - 16 - 64 - 8), height: 56 }}>
             <TextField
+              label={hasAppFeature("ui.soft-keyboard") ? () => t("keyboard.sendTitle") : undefined}
               multiline
               initial={draft}
               height={56}

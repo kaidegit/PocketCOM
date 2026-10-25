@@ -136,3 +136,22 @@ bun test test/app/panel-touch.test.ts
 
 实际交付 AIC 包还须经 QuickJS/native core 连续触摸验证偏移，不能仅凭桌面 `--mouse d/u`
 或 `--wheel` 验收手指拖动；本次前后包证据见 `docs/aic-narrow-panel-step2.md` 触摸滑动修复章节。
+
+## 文本域二次点击软键盘
+
+共享 `TextField` 第一次点击只聚焦，再次点击当前域展开，无双击时间限制；程序 `focus()` 不展开。
+拖动/取消不展开，失焦/切换/卸载收起，键盘首次创建后移出视口复用；大小写更新同一组按键。
+`test/app/soft-keyboard-touch.test.ts` 按 JSON 的 AIC/开启/关闭 profile 编译真实共享 App，
+覆盖 AIC bounds 触摸（发送/自定义波特率/设置）、按住/拖动/CANCEL、桌面选区提前聚焦、
+大小写/输入/退格/回车、反复开关复用、收起后底层命中及后创建弹层上的键盘层级。
+自定义波特率用真实 Select 建立状态，因 480×272 下末项越屏而直接激活该选项；随后输入框和键盘均走 bounds 触摸。
+缺少 WASM 时显式跳过；验收前必须先构建 WASM，再单独运行本测试，不能将跳过算作通过。
+运行命令与 `panel-touch.test.ts` 相同，仅替换测试文件名；交付记录见
+[软键盘修复](../../../docs/aic-soft-keyboard-2026-10-25.md)。
+
+临时编辑面板增加 `test/app/keyboard-editor-layout.test.ts`：空值、首个换行、两行窗口、长行横向跟随、可见位置到原文索引。
+`soft-keyboard-touch.test.ts` 同时检查字段名/原文/光标实时一致，点击预览移动光标并继续输入，1000 字符长行、
+多行回车、单行提交及收起后光标保留。WASM harness 不含字体 atlas，命中几何用固定字宽；
+交付包仍须用其真实 MiSans/JetBrains Mono 经 native core/RGB565 回放验证键帽居中与预览。
+桌面 companion 鼠标在整个编辑面板内被门控，预览点击只移动当前域光标，不路由到背后的输入框。
+详见 [临时编辑面板](../../../docs/aic-keyboard-editor-2026-10-25.md)。

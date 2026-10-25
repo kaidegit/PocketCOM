@@ -129,6 +129,21 @@ PSRAM 8 MiB      CMA 1 MiB（.data/.bss + 双 RGB565 framebuffer 522,240 B）
   恢复收发功能前必须补 WiFi 开/关、连 AP/断开状态的堆基线测量。模组 EN 由载板保证，固件不做电源控制；
   PM 睡眠驱动未编入，固件不进睡眠。
 
+## 软键盘交付验证
+
+文本域首次点击聚焦、再次点击当前域展开键盘，程序聚焦不展开；首次展开创建，之后隐藏复用。
+功能启停只查 JSON。构建前运行真实 Vue Vapor/core bounds 触摸回归
+`bun test test/app/soft-keyboard-touch.test.ts`（WASM 缺失时先构建，不接受跳过）。
+构建后除启动/120 帧外，还要记录首次展开、大小写、反复开关、抽屉/设置内编辑及输入发送的真机
+堆峰值、稳态和分配失败；离板 QuickJS/核心成功不等于 RV32/TLSF 真机通过。
+用户负责烧录与回传日志，产物/测试边界见
+[软键盘修复](../../../docs/aic-soft-keyboard-2026-10-25.md)。
+
+临时编辑面板（`keyboard-editor.tsx`）直接使用原域状态，展开后显示字段名、两行文本和光标，
+按键居中；回归还包含 `keyboard-editor-layout.test.ts` 与实际字体 RGB565 回放。
+最新交付见 [临时编辑面板](../../../docs/aic-keyboard-editor-2026-10-25.md)，
+保留原配额，不能将静态构建或离板高占用下的成功等同真机内存验收。
+
 ## 回归验证
 
 ```sh

@@ -70,7 +70,7 @@ app/            # Vue Vapor 组件与页面状态（仅渲染 + 输入），pock
                 #   headless 可测）；transfer.tsx 接收区/发送区；terminal.tsx 终端视图（字符网格
                 #   按 run 合并渲染/光标/拖拽选区/滚轮回滚，几何与选区 helper 导出给 app.tsx 命中）；
                 #   widgets.tsx 基础控件（Btn/CheckRow/SegCtrl/Select+Portal/TextField（拖动选区）/
-                #   Scrollbar）；soft-keyboard.tsx 可裁剪 ASCII 软键盘（复用活跃文本域协议）；textsel.ts 文本选区纯几何；sendlayout.ts 发送区选项行流式几何；workspace-layout.ts 宽窄屏工作区几何；
+                #   Scrollbar）；soft-keyboard.tsx 可裁剪 ASCII 软键盘（所有文本域首次点击聚焦、再次点击展开，首次创建后隐藏复用）；keyboard-editor.tsx 临时编辑面板（直接复用原域文本/光标，keyboard-editor-layout.ts 限制两行可见窗口）；textsel.ts 文本选区纯几何；sendlayout.ts 发送区选项行流式几何；workspace-layout.ts 宽窄屏工作区几何；
                 #   session.ts 会话接线单例 + 连接参数仓库 + 设置持久化 + uiMode/终端模型装配
                 #   （bus→term 持续灌入、DSR/DA 应答泵）；theme.ts 主题令牌（深色/浅色/跟随系统 +
                 #   终端独立调色板）；i18n.ts/locale.ts 语言包；fontsize.ts 字号档位（mono 槽
@@ -127,6 +127,7 @@ SPEC.md         # 功能规格（权威）
   恢复收发功能前必须补 WiFi 开/连 AP/断开状态下的堆基线测量。
 - **内存优化按步交付**：第 2 步已实现共享窄屏连接配置抽屉：默认不创建，首次打开后复用，以限制快速开关峰值；本地验证/固件及本轮真机启动/120 帧内存验证已完成；系统峰值 4,760,220 bytes、frame120 系统占用 3,534,768 bytes。首次触摸后观察系统峰值 5,331,368 bytes，3091 ms 卡顿按用户要求后置处理；完整反复开关内存采样待补（`docs/aic-narrow-panel-step2.md`）。启动空闲收益不代表首次打开后的常驻收益，高级收发工具栏窄屏折叠仍待做。2026-10-23 第 1 步节点共享原型已完成离板 A/B、桌面回归、固件构建及用户真机 120 帧/基本交互验证，记录见 `docs/aic-node-prototype-step1.md`；本轮系统历史峰值 5,810,936 bytes、caps 峰值 5,345,447 bytes，无分配失败。用户负责烧录并回传日志，每步记录后再推进下一项；本次通过仅限启动/短时空闲与已反馈交互，长时/业务流量/WiFi 矩阵仍待验收。
 - **连接配置触摸滑动**（2026-10-24）：共享面板内容区已接纵向 pan，补齐滚轮之外的触摸输入路径（原页脚上翻/下翻按钮已于 2026-10-25 移除，滚动路径只剩滚轮 + 触摸拖动）；真实 Vue Vapor/核心 WASM 回归、实际 AIC 包 QuickJS 连续触摸检查及固件构建通过，真机待用户复验。产物与证据见 `docs/aic-narrow-panel-step2.md` 的触摸滑动修复章节。
+- **软键盘二次点击**（2026-10-25）：共享 `TextField` 首次点击聚焦、再次点击当前域展开 ASCII 软键盘，无双击时限；程序 `focus()` 不展开，拖动/取消不展开。键盘首次使用创建、之后隐藏复用，失焦/切换域/卸载收起；按键不清除文本域。范围及启停只查 JSON，真实 Vue Vapor/core bounds 触摸测试见 `test/app/soft-keyboard-touch.test.ts`，交付/内存及真机待验收边界见 [本次记录](docs/aic-soft-keyboard-2026-10-25.md)。 后续已加入字段名称/两行实时文本/光标的临时编辑面板及键帽居中，见 [临时编辑面板记录](docs/aic-keyboard-editor-2026-10-25.md)。
 - **com 串口桥**（2026-10-24）：fork 宿主经 `pocketjs_guest_quickjs_install_once` 挂载 `globalThis.com`（`hosts/aic/port/pocketjs_com.c`，`POCKETJS_COM=0` 可编译关闭），仅 uart1（PA.2/PA.3，与桌面 op 语义一致，RX 走 poll 事件，无网络/cfg/MCP 桥）；共享 App 在 `aic-diagnostic` profile 下据此解锁收发界面。板端 UART 引脚以官方数据手册为准（SDK `aic_gpio_id.h` 枚举有错，见 host/rtthread/README "UART 引脚"）；真机收发验收待用户烧录确认。
 
 ### 恢复路线（内存约束下的推进顺序）

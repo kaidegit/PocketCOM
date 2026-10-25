@@ -191,7 +191,9 @@
     "ui.soft-keyboard": {
       "status": "implemented",
       "modules": [
-        "app/soft-keyboard.tsx"
+        "app/soft-keyboard.tsx",
+        "app/keyboard-editor.tsx",
+        "app/keyboard-editor-layout.ts"
       ],
       "i18n": [
         "keyboard"
@@ -233,7 +235,7 @@
       "ui.theme-switch": false,
       "ui.theme-system": false,
       "ui.font-size-switch": false,
-      "ui.soft-keyboard": false
+      "ui.soft-keyboard": true
     },
     "terminal-on": {
       "terminal": true,

@@ -89,7 +89,7 @@ export function closeSettingsModal(): void {
   modalScroll.value = 0;
   historyField = undefined;
   scrollField = undefined;
-  // 卸载的输入框不得滞留活跃域（activeField 无卸载清理，悬挂会让键盘路由悬空）
+  // 同步清除活跃域，不等待响应式卸载，避免本 tick 后续输入进入正在关闭的弹窗。
   setActiveField(null);
 }
 
@@ -326,6 +326,7 @@ function SettingsBox() {
             </Text>
             <View class="absolute" style={{ insetL: LABEL_COL_W, insetR: 0, insetT: CTL_TOP_OFF, height: CTL_H }}>
               <TextField
+                label={hasAppFeature("ui.soft-keyboard") ? () => t("settings.historyLines") : undefined}
                 initial={String(historyLines.value)}
                 selRegion={hasAppFeature("ui.selection") ? historyFieldRegion : undefined}
                 onHandle={(h) => {
@@ -346,6 +347,7 @@ function SettingsBox() {
               </Text>
               <View class="absolute" style={{ insetL: LABEL_COL_W, insetR: 0, insetT: CTL_TOP_OFF, height: CTL_H }}>
                 <TextField
+                  label={hasAppFeature("ui.soft-keyboard") ? () => t("settings.scrollbackLines") : undefined}
                   initial={String(scrollbackLines.value)}
                   selRegion={hasAppFeature("ui.selection") ? scrollFieldRegion : undefined}
                   onHandle={(h) => {
