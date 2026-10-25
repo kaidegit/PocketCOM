@@ -1,9 +1,9 @@
 // ASCII keyboard shares the active text field protocol; keys retain field focus.
 import { hasAppFeature } from "@pocketcom/features";
-import { ref, watch } from "vue";
+import { onScopeDispose, ref, shallowRef, watch, watchEffect } from "vue";
 import { Portal, Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { onFrame } from "@pocketjs/framework/lifecycle";
-import { setProp } from "@pocketjs/framework/renderer";
+import { createTextNode, detachNode, insertNode, replaceText, setProp } from "@pocketjs/framework/renderer";
 import { activeField } from "./fields";
 import { viewportSize, STATUS_H } from "./layout";
 import { theme } from "./theme";
@@ -43,6 +43,60 @@ export function keyboardInput(key: string): void {
 // Create keys once on first use and reuse them to bound repeated-open peaks.
 const ROWS = ["1234567890", "qwertyuiop", "asdfghjkl;", "zxcvbnm,./"];
 const SHIFTED_ROWS = ["!@#$%^&*()", "QWERTYUIOP", "ASDFGHJKL:", 'ZXCVBNM<>?'];
+/** The fixed keyboard needs no per-key Vapor list scopes or prop effects.
+ * Keep one Text primitive and one press handler per key; two shared effects
+ * update geometry/theme and labels. Renderer nodes retain ordinary input and
+ * tree cleanup semantics, including when the component is unmounted. */
+function KeyboardKeys() {
+  const host = shallowRef<NodeMirror | null>(null);
+  const keys: NodeMirror[] = [];
+  const actions = ["shift", "space", "Backspace", "Enter", "close"];
+  const value = (i: number): string => i < 40
+    ? (shifted.value ? SHIFTED_ROWS : ROWS)[Math.floor(i / 10)]![i % 10]!
+    : actions[i - 40]!;
+  watchEffect(() => {
+    const parent = host.value;
+    if (!parent) return;
+    if (keys.length === 0) {
+      for (let i = 0; i < 45; i++) {
+        const key = createTextNode("");
+        setProp(key, "class", "absolute rounded-md text-xs");
+        setProp(key, "focusable", true);
+        setProp(key, "onPress", () => keyboardInput(value(i)));
+        insertNode(parent, key);
+        keys.push(key);
+      }
+    }
+    const rowWidth = viewportSize.value.w - 12;
+    const colors = theme.value;
+    for (let i = 0; i < keys.length; i++) {
+      const columns = i < 40 ? 10 : 5;
+      const x = i < 40 ? i % 10 : i - 40;
+      const top = i < 40 ? 4 + Math.floor(i / 10) * 32 : 132;
+      const key = keys[i]!;
+      setProp(key, "style", {
+        insetL: 6 + x * rowWidth / columns, insetT: top,
+        width: Math.max(1, rowWidth / columns) - 3, height: 28,
+        lineHeight: 28, textAlign: 1, bgColor: colors.btnBg, textColor: colors.fg,
+      }, key.domAttrs?.style);
+    }
+  });
+  watchEffect(() => {
+    if (!host.value) return;
+    for (let i = 0; i < keys.length; i++) {
+      const label = i < 40 ? value(i) : t(`keyboard.${actions[i - 40]}`);
+      if (keys[i]!.text !== label) replaceText(keys[i]!, label);
+    }
+  });
+  onScopeDispose(() => {
+    for (const key of keys) if (key.parent) detachNode(key.parent, key);
+    keys.length = 0;
+  });
+  // The full class literal is also compiled for the manually-created keys.
+  return <View class="absolute rounded-md text-xs" nodeRef={(n: NodeMirror | null) => { host.value = n; }}
+    style={{ insetL: 0, insetT: EDITOR_H, width: viewportSize.value.w, height: KEYBOARD_H }} />;
+}
+
 export function SoftKeyboard() {
   const mounted = ref(false);
   let node: NodeMirror | null = null;
@@ -56,27 +110,10 @@ export function SoftKeyboard() {
     }
   });
   watch(keyboardOpen, open => { if (open) mounted.value = true; }, { flush: "sync" });
-  const width = () => Math.max(1, (viewportSize.value.w - 12) / 10);
-  // A key is one painted Text node. Binding the common native input props
-  // avoids a View + component scope around every character on the small heap.
-  const bindKey = (n: NodeMirror | null, value: () => string): void => {
-    if (!n) return;
-    setProp(n, "focusable", true);
-    setProp(n, "onPress", () => keyboardInput(value()));
-  };
   return <View style={{ width: 0, height: 0 }}>{mounted.value ? <Portal>
     <View class="absolute" debugName="softKeyboard" nodeRef={(n: NodeMirror | null) => { node = n; }} style={{ insetL: 0, insetT: keyboardOpen() ? panelTop() : viewportSize.value.h, width: viewportSize.value.w, height: KEYBOARD_H + EDITOR_H, bgColor: theme.value.panelBg }}>
       <KeyboardEditor width={() => viewportSize.value.w} top={panelTop} opened={keyboardOpen} />
-      {ROWS.map((row, y) => row.split("").map((ch, x) => <Text
-        class="absolute rounded-md text-xs"
-        style={{ insetL: 6 + x * width(), insetT: EDITOR_H + 4 + y * 32, width: width() - 3, height: 28, lineHeight: 28, textAlign: 1, bgColor: theme.value.btnBg, textColor: theme.value.fg }}
-        nodeRef={(n: NodeMirror | null) => bindKey(n, () => shifted.value ? SHIFTED_ROWS[y]![x]! : ch)}
-      >{shifted.value ? SHIFTED_ROWS[y]![x]! : ch}</Text>))}
-      {["shift", "space", "Backspace", "Enter", "close"].map((key, x) => <Text
-        class="absolute rounded-md text-xs"
-        style={{ insetL: 6 + x * (viewportSize.value.w - 12) / 5, insetT: EDITOR_H + 132, width: (viewportSize.value.w - 12) / 5 - 3, height: 28, lineHeight: 28, textAlign: 1, bgColor: theme.value.btnBg, textColor: theme.value.fg }}
-        nodeRef={(n: NodeMirror | null) => bindKey(n, () => key)}
-      >{t(`keyboard.${key}`)}</Text>)}
+      <KeyboardKeys />
     </View>
   </Portal> : null}</View>;
 }

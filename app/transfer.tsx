@@ -19,6 +19,7 @@ import {
   measureMono,
   measureUi,
   openContextMenu,
+  closePopup,
   type SelRect,
   type TextFieldHandle,
 } from "./widgets";
@@ -520,8 +521,8 @@ export function SendPane() {
   let field: TextFieldHandle | undefined;
   let intervalField: TextFieldHandle | undefined;
   let lastTimedAt = 0;
-  /** 输入草稿：折叠卸载输入框前暂存，重新展开经 initial 恢复（SPEC §3.3）。 */
-  let draft = "";
+  /** 首次展开创建，之后复用同一组控件，避免重建时新旧子树的内存峰值。 */
+  const created = ref(!sendCollapsed.value);
   let intervalDraft = "300";
 
   const readIntervalMs = (): number => {
@@ -547,7 +548,7 @@ export function SendPane() {
   // 定时循环发送（默认 300ms 可配，SPEC §3.3）；SendPane 卸载（切终端模式）
   // 时摘除 pumper，避免闭包泄漏
   const timedPump = (): void => {
-    if (!timed.value || !session || session.state !== "CONNECTED" || !field) return;
+    if (sendCollapsed.value || !timed.value || !session || session.state !== "CONNECTED" || !field) return;
     const now = virtualNow();
     if (lastTimedAt === 0 || (now - lastTimedAt) * 1000 >= readIntervalMs()) {
       lastTimedAt = now;
@@ -570,15 +571,16 @@ export function SendPane() {
     }
   });
 
-  // 折叠：卸载输入框前保存草稿并断开句柄（timedPump 的 !field 守卫即暂停
-  // 定时发送）；重新展开时草稿经 initial 恢复、定时从当前时刻重新起拍
+  // 折叠只隐藏：草稿/光标保留在原域，焦点、键盘与锚点弹层须同步收起。
+  // 定时发送由 sendCollapsed 门控；重新展开从当前时刻起拍。
   watch(sendCollapsed, (collapsed) => {
     if (collapsed) {
-      draft = field?.text() ?? "";
+      field?.blur();
+      intervalField?.blur();
+      closePopup();
       intervalDraft = intervalField?.text() || intervalDraft;
-      field = undefined;
-      intervalField = undefined;
     } else {
+      created.value = true;
       lastTimedAt = 0;
     }
   });
@@ -634,9 +636,10 @@ export function SendPane() {
   }
 
   return (
-    <View class="flex-col overflow-hidden" style={{ height: sendPaneH() }}>
-      {!sendCollapsed.value ? <Hairline /> : null}
-      {!sendCollapsed.value ? (
+    <View class="relative overflow-hidden" style={{ height: sendPaneH() }}>
+      {created.value ? (
+      <View class="absolute flex-col" style={{ insetL: sendCollapsed.value ? viewportSize.value.w : 0, insetT: 0, width: workspace.value.w, height: SEND_PANE_H }}>
+      <Hairline />
       <View class="flex-col flex-1 px-2" style={{ paddingT: 8, gap: 6 }}>
         {/* 选项行：ASCII/HEX · 转义 · <CRLF> · 追加换行 ‖ 历史 · 定时 + 间隔 */}
         <View class="flex-row items-center gap-2" style={{ height: TOOLBAR_CTL_H }}>
@@ -746,7 +749,6 @@ export function SendPane() {
             <TextField
               label={hasAppFeature("ui.soft-keyboard") ? () => t("keyboard.sendTitle") : undefined}
               multiline
-              initial={draft}
               height={56}
               monoSize={fontSize.value}
               placeholder={() => t("send.placeholder")}
@@ -761,6 +763,7 @@ export function SendPane() {
             <Btn width={64} height={56} accent label={() => t("send.send")} onPress={doSend} />
           </View>
         </View>
+      </View>
       </View>
       ) : null}
     </View>

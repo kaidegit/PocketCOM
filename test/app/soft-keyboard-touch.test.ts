@@ -35,8 +35,11 @@ import { rootMirror } from ${JSON.stringify(join(root, "vendor/pocketjs/framewor
 import { pressNode, focusNode } from "@pocketjs/framework/input";
 ${enabled ? `import { keyboardOpen, closeKeyboard } from ${JSON.stringify(join(root, "app/soft-keyboard.tsx"))};` : `const keyboardOpen = () => false; const closeKeyboard = () => {};`}
 import { activeField, setActiveField } from ${JSON.stringify(join(root, "app/fields.ts"))};
-import { connectionDrawerOpen, setViewport } from ${JSON.stringify(join(root, "app/layout.ts"))};
+import { connectionPanelOpen, connectionDrawerOpen, setViewport } from ${JSON.stringify(join(root, "app/layout.ts"))};
 import { sendCollapsed } from ${JSON.stringify(join(root, "app/session.ts"))};
+import { setLocale } from ${JSON.stringify(join(root, "app/i18n.ts"))};
+import { themeMode } from ${JSON.stringify(join(root, "app/theme.ts"))};
+import { closeSettingsModal } from ${JSON.stringify(join(root, "app/settings-modal.tsx"))};
 setViewport(480,272);
 globalThis.dispose = mount(App);
 const nodes = () => { const all=[]; const visit=n=>{all.push(n);n.children.forEach(visit)};visit(rootMirror);return all; };
@@ -50,6 +53,10 @@ globalThis.blur = () => setActiveField(null);
 globalThis.focus = id => focusNode(nodes().find(n=>n.id===id));
 globalThis.press = id => pressNode(nodes().find(n=>n.id===id));
 globalThis.collapse = () => { sendCollapsed.value = !sendCollapsed.value; };
+globalThis.presentation = (w,language,mode) => { setViewport(w,272);setLocale(language);themeMode.value=mode; };
+globalThis.nodeStyle = id => nodes().find(n=>n.id===id)?.domAttrs?.style;
+globalThis.prepareRemount = () => { closeSettingsModal();connectionPanelOpen.value=false; };
+globalThis.remount = () => { globalThis.dispose();globalThis.dispose=mount(App); };
 `);
       const build = await Bun.build({
         entrypoints: [entry], format: "iife", target: "browser", conditions: ["browser"],
@@ -80,6 +87,9 @@ globalThis.collapse = () => { sendCollapsed.value = !sendCollapsed.value; };
         editorView(): { text: string; caret: number; value: string; cursorX: number };
         state(): { open: boolean; active: boolean; drawer: boolean };
         close(): void; blur(): void; focus(id: number): void; press(id: number): void; collapse(): void;
+        presentation(w: number, language: string, mode: string): void;
+        nodeStyle(id: number): { insetL: number; width: number; bgColor: string };
+        prepareRemount(): void; remount(): void;
       };
       runInNewContext(await build.outputs[0]!.text(), guest);
       const frame = (x?: number, y?: number, hit?: number, buttons = 0) => {
@@ -148,6 +158,15 @@ globalThis.collapse = () => { sendCollapsed.value = !sendCollapsed.value; };
           expect(guest.editorView().value).toBe("w\n");
           expect(guest.editorView().text).toContain("w");
           const qId = button("q").id;
+          const originalStyle = guest.nodeStyle(qId);
+          guest.presentation(640, "en", "light"); frame(); frame();
+          expect(button("q").id).toBe(qId);
+          expect(guest.nodeStyle(qId).width).toBeCloseTo((640 - 12) / 10 - 3);
+          if (features.values["ui.theme-switch"]) expect(guest.nodeStyle(qId).bgColor).not.toBe(originalStyle.bgColor);
+          if (features.values["ui.language-switch"]) expect(button("Space")).toBeDefined();
+          guest.presentation(480, "zh-CN", "dark"); frame(); frame();
+          expect(guest.nodeStyle(qId)).toMatchObject(originalStyle);
+          expect(button("空格")).toBeDefined();
           for (let i = 0; i < 3; i++) {
             tap(...point(button("大小写").id));
             expect(button("Q").id).toBe(qId);
@@ -235,6 +254,23 @@ globalThis.collapse = () => { sendCollapsed.value = !sendCollapsed.value; };
           expect(guest.editorView().text).toContain("接收区历史行数");
           tap(...point(button("收起").id));
           expect(guest.state().open).toBe(false);
+        }
+        // Remove the whole app with the keyboard open; renderer-owned key
+        // handlers must disappear, then a fresh mount must accept real taps.
+        if (enabled) {
+          guest.prepareRemount(); frame(); frame();
+          const [rx, ry] = point(field().id);
+          tap(rx, ry); tap(rx, ry);
+          expect(guest.state().open).toBe(true);
+          const oldIds = guest.inspect().map(n => n.id);
+          guest.remount(); frame(); frame();
+          const freshField = field();
+          const [fx, fy] = point(freshField.id);
+          tap(fx, fy); tap(fx, fy);
+          expect(guest.state().open).toBe(true);
+          expect(oldIds).not.toContain(button("q").id);
+          tap(...point(button("q").id));
+          expect(guest.editorView().value).toBe("q");
         }
       } finally { guest.dispose(); }
     } finally { await rm(dir, { recursive: true, force: true }); }

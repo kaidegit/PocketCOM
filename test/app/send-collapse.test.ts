@@ -15,7 +15,8 @@ import type { HostOps } from "../../vendor/pocketjs/framework/src/host";
 const root = resolve(import.meta.dir, "../..");
 const wasmPath = join(root, "vendor/pocketjs/hosts/web/pocketjs.wasm");
 
-test.skipIf(!existsSync(wasmPath))("status-bar button collapses and restores the send pane", async () => {
+for (const initiallyCollapsed of [false, true]) {
+test.skipIf(!existsSync(wasmPath))(`send pane reuses controls; initially collapsed: ${initiallyCollapsed}`, async () => {
   const dir = await mkdtemp(join(tmpdir(), "pocketcom-send-collapse-"));
   try {
     const features = await loadAppFeatures(join(root, "pocket.features.json"), "aic-diagnostic");
@@ -32,9 +33,14 @@ import { mount } from "@pocketjs/framework";
 import { rootMirror } from ${JSON.stringify(join(root, "vendor/pocketjs/framework/src/native-tree.ts"))};
 import { setViewport } from ${JSON.stringify(join(root, "app/layout.ts"))};
 import { sendCollapsed } from ${JSON.stringify(join(root, "app/session.ts"))};
+import { activeField } from ${JSON.stringify(join(root, "app/fields.ts"))};
 setViewport(480, 272);
 globalThis.dispose = mount(App);
-globalThis.state = () => ({ collapsed: sendCollapsed.value });
+let originalField;
+globalThis.type = text => { originalField=activeField.value; originalField.onCh(text); };
+globalThis.state = () => ({ collapsed: sendCollapsed.value, active: !!activeField.value, draft: originalField?.editor.text(), caret: originalField?.editor.caret() });
+globalThis.ancestors = id => { const find=n=>n.id===id?n:n.children.map(find).find(Boolean);const ids=[];for(let n=find(rootMirror);n;n=n.parent)ids.push(n.id);return ids; };
+globalThis.fieldId = () => { const find = n => n.debugName === "textField" ? n.id : n.children.map(find).find(Boolean); return find(rootMirror); };
 globalThis.textAncestors = text => {
   const find = node => node.text === text ? node : node.children.map(find).find(Boolean);
   const ids = [];
@@ -59,7 +65,7 @@ globalThis.textAncestors = text => {
     const wasm = await createWasmUi(await Bun.file(wasmPath).arrayBuffer());
     wasm.ops.loadStyles!(styles.bin);
     // app.tsx 主区受 comAvailable 门控：vm 全局注入最小 com 命名空间
-    // （connectCom 探测六个基础 op；cfgRead=null → 默认配置展开态）。
+    // （connectCom 探测六个基础 op），覆盖持久化的初始展开/折叠态。
     const com = {
       serialList: () => "[]",
       serialOpen: () => '{"error":{"code":"mock","msg":"no serial in test"}}',
@@ -67,13 +73,16 @@ globalThis.textAncestors = text => {
       write: () => true,
       close: () => true,
       poll: () => null,
-      cfgRead: () => null,
+      cfgRead: () => JSON.stringify({ send: { collapsed: initiallyCollapsed } }),
       cfgWrite: () => true,
     };
     const guest = { ui: wasm.ops, console, com } as unknown as {
       frame: (buttons: number, analog?: number, touches?: number[], hits?: number[]) => void;
       dispose(): void;
-      state(): { collapsed: boolean };
+      state(): { collapsed: boolean; active: boolean; draft: string; caret: number };
+      type(text: string): void;
+      fieldId(): number;
+      ancestors(id: number): number[];
       textAncestors(text: string): number[];
     };
     runInNewContext(await build.outputs[0]!.text(), guest);
@@ -88,23 +97,38 @@ globalThis.textAncestors = text => {
     const BTN = { x: 444, y: 258 };
     try {
       frame();
+      if (initiallyCollapsed) {
+        expect(guest.state().collapsed).toBe(true);
+        expect(guest.fieldId()).toBeUndefined();
+        expect(guest.textAncestors("发送")).toHaveLength(0);
+        tap(BTN.x, BTN.y);
+      }
       // 展开态：发送按钮与 ▼ 图标在，接收区空态在。
       expect(guest.state().collapsed).toBe(false);
       expect(guest.textAncestors("发送").length).toBeGreaterThan(0);
       expect(guest.textAncestors("▼").length).toBeGreaterThan(0);
       expect(guest.textAncestors("（暂无数据）").length).toBeGreaterThan(0);
-      tap(BTN.x, BTN.y);
-      // 收起态：发送区内容卸载（不可见即不可命中），图标翻转为 ▲，接收区仍在。
-      expect(guest.state().collapsed).toBe(true);
-      expect(guest.textAncestors("发送").length).toBe(0);
-      expect(guest.textAncestors("▼").length).toBe(0);
-      expect(guest.textAncestors("▲").length).toBeGreaterThan(0);
-      expect(guest.textAncestors("（暂无数据）").length).toBeGreaterThan(0);
-      tap(BTN.x, BTN.y);
-      // 再展开：发送区恢复。
-      expect(guest.state().collapsed).toBe(false);
-      expect(guest.textAncestors("发送").length).toBeGreaterThan(0);
-      expect(guest.textAncestors("▼").length).toBeGreaterThan(0);
+      const fieldId = guest.fieldId();
+      const sendTextId = guest.textAncestors("发送")[0];
+      tap(100, 200);
+      guest.type("draft123"); frame();
+      expect(guest.state()).toMatchObject({ draft: "draft123", caret: 8, active: true });
+      for (let cycle = 0; cycle < 20; cycle++) {
+        tap(BTN.x, BTN.y);
+        expect(guest.state()).toMatchObject({ collapsed: true, active: false, draft: "draft123", caret: 8 });
+        expect(guest.textAncestors("▲").length).toBeGreaterThan(0);
+        expect(guest.textAncestors("（暂无数据）").length).toBeGreaterThan(0);
+        // Retained controls must not hit at their former field/button bounds.
+        expect(guest.ancestors(wasm.ops.hitTestBounds!(100, 200))).not.toContain(fieldId);
+        expect(guest.ancestors(wasm.ops.hitTestBounds!(444, 200))).not.toContain(guest.textAncestors("发送")[1]!);
+        expect(guest.fieldId()).toBe(fieldId);
+        tap(BTN.x, BTN.y);
+        expect(guest.state()).toMatchObject({ collapsed: false, draft: "draft123", caret: 8 });
+        expect(guest.fieldId()).toBe(fieldId);
+        expect(guest.textAncestors("发送")[0]).toBe(sendTextId);
+        expect(guest.ancestors(wasm.ops.hitTestBounds!(100, 200))).toContain(fieldId);
+        expect(guest.textAncestors("▼").length).toBeGreaterThan(0);
+      }
     } finally {
       guest.dispose();
     }
@@ -112,3 +136,5 @@ globalThis.textAncestors = text => {
     await rm(dir, { recursive: true, force: true });
   }
 }, 30_000);
+
+}

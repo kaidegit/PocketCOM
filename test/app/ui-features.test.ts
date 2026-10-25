@@ -102,7 +102,7 @@ for (const profile of ["ui-on", "ui-off"]) test(`TextField editing and soft keyb
     builder.onResolve({ filter: /^react\/jsx/ }, () => ({ path: "jsx", namespace: "jsx-stub" }));
     builder.onLoad({ filter: /.*/, namespace: "jsx-stub" }, () => ({ contents: "export const jsxDEV=()=>({}),jsx=()=>({}),jsxs=()=>({});", loader: "js" }));
     builder.onResolve({ filter: /^@pocketjs\/framework/ }, () => ({ path: "framework", namespace: "stub" }));
-    builder.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: `export const View=()=>{},Text=()=>{},Portal=()=>{},focusNode=()=>{},setProp=()=>{},createGesture=()=>({}),onFrame=()=>{},virtualNow=()=>0,getOps=()=>({measureText:s=>s.length*8});`, loader: "js" }));
+    builder.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: `export const View=()=>{},Text=()=>{},Portal=()=>{},focusNode=()=>{},setProp=()=>{},createTextNode=()=>({}),detachNode=()=>{},insertNode=()=>{},replaceText=()=>{},createGesture=()=>({}),onFrame=()=>{},virtualNow=()=>0,getOps=()=>({measureText:s=>s.length*8});`, loader: "js" }));
   } }] });
   expect(build.success).toBe(true);
   await Bun.write(output, build.outputs[0]!);

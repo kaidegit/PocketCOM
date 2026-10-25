@@ -155,3 +155,9 @@ bun test test/app/panel-touch.test.ts
 交付包仍须用其真实 MiSans/JetBrains Mono 经 native core/RGB565 回放验证键帽居中与预览。
 桌面 companion 鼠标在整个编辑面板内被门控，预览点击只移动当前域光标，不路由到背后的输入框。
 详见 [临时编辑面板](../../../docs/aic-keyboard-editor-2026-10-25.md)。
+
+`send-collapse.test.ts` 覆盖初始展开/持久化折叠、首次展开延后创建，之后 20 轮隐藏复用、草稿/光标、失焦和 bounds 命中隔离。
+板端实际包的固定池 TLSF 对比及分配器 ASan/UBSan 用例见 [本次记录](../../../docs/aic-send-collapse-tlsf-2026-10-25.md)。
+
+软键盘固定键位批量更新回归增加语言/主题/视口切换后节点身份、几何/颜色更新，以及键盘打开时卸载整个 App 后重新挂载输入。
+原生 RGB565 前后回放像素一致；固定池无 GC 长时/快速压力与显式 GC 对照分别记结果，不将二者混作通过。

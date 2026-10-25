@@ -154,3 +154,9 @@ npm run check && npm run build  # 桌面回归（allocator/字节码类改动需
 
 后续恢复按 docs/shared-ui-memory-optimization.md §9 的共享 UI 路线推进；实测基线、诊断阶段和
 容量 / allocator 研究继续参考 docs/aic-memory-optimization.md。本次共享入口切换已更新 SPEC，仅用于真机 perf；产品验收仍以真机内存结果为准。
+
+2026-10-25 发送框折叠改为首次创建后隐藏复用，避免重建峰值；离板探针已换成 SDK 同源固定池 TLSF，
+新增碎片/最大连续块及失败瞬间记录。交付和真机待验收边界见 [本次记录](../../../docs/aic-send-collapse-tlsf-2026-10-25.md)。
+
+后续候选还将 45 个固定键位改为共享渲染器 Text 批量更新，保持交互及字体像素一致，
+最新固件在 `dist/aic/send-collapse-key-batch/`。7 MiB 短测通过，不把长压测的额外 GC 对照当作无 GC 通过；详见同一记录后续章节。
