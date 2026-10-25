@@ -41,15 +41,16 @@ export function measureMono(text: string, slot: number): number {
   return w;
 }
 
-/** UI 字体（text-xs = 12px regular，font slot 0）宽度测量：缓存按文本键。
- *  CheckRow 等 flex 行内控件的占位宽随标签文字变化，弹层锚点须按此累计。 */
-export function measureUi(text: string): number {
+/** UI 字体宽度测量：默认 text-xs（12px regular，font slot 0），可按档位取
+ *  UI 槽（fontsize.UI_SLOTS，sys 行折行/选区度量用，SPEC §5.4）；缓存按 槽:文本 键。 */
+export function measureUi(text: string, slot = 0): number {
   if (text === "") return 0;
-  let w = measureCache.get(`0:${text}`);
+  const key = `${slot}:${text}`;
+  let w = measureCache.get(key);
   if (w === undefined) {
-    w = getOps().measureText(text, 0);
+    w = getOps().measureText(text, slot);
     if (measureCache.size > 4096) measureCache.clear();
-    measureCache.set(`0:${text}`, w);
+    measureCache.set(key, w);
   }
   return w;
 }

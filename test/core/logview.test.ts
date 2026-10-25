@@ -190,6 +190,47 @@ describe("LogView", () => {
     expect(lv.rows.length).toBe(1);
   });
 
+  test("sys 行折行用 measureUi（UI 槽），数据行仍用 measure（SPEC §5.4）", () => {
+    // sys 前缀/内容走 MiSans 槽渲染，折行须按 UI 槽度量；数据行不受影响
+    const lv = new LogView(FORMAT, LABELS, {
+      measure: () => 10,
+      measureUi: () => 12,
+      wrapWidth: () => 100,
+    });
+    const bus = new MessageBus();
+    feed(bus, { dir: "sys", source: "system", payload: strToBytes("abcdefgh") });
+    feed(bus, { payload: strToBytes("abcd") });
+    lv.sync(bus);
+    // sys 行 "[SYS] abcdefgh"（13 字符）按 12px/字符折在第 8 字符；
+    // 数据行 "<= abcd"（7 字符 × 10px）单行
+    expect(lv.rows.map((r) => r.dir)).toEqual(["sys", "sys", "rx"]);
+    expect(lv.rows.map((r) => r.text)).toEqual(["[SYS] ab", "cdefgh", "<= abcd"]);
+  });
+
+  test("未注入 measureUi：sys 行回退数据行度量", () => {
+    const lv = new LogView(FORMAT, LABELS, { measure: () => 10, wrapWidth: () => 100 });
+    const bus = new MessageBus();
+    feed(bus, { dir: "sys", source: "system", payload: strToBytes("abcdefgh") });
+    lv.sync(bus);
+    expect(lv.rows.map((r) => r.text)).toEqual(["[SYS] abcd", "efgh"]);
+  });
+
+  test("remeasure 清 UI 槽宽度缓存：sys 行随度量语义变化重折行", () => {
+    let uiW = 12;
+    const lv = new LogView(FORMAT, LABELS, {
+      measure: () => 10,
+      measureUi: () => uiW,
+      wrapWidth: () => 100,
+    });
+    const bus = new MessageBus();
+    feed(bus, { dir: "sys", source: "system", payload: strToBytes("abcdefgh") });
+    lv.sync(bus);
+    expect(lv.rows.map((r) => r.text)).toEqual(["[SYS] ab", "cdefgh"]);
+    uiW = 20; // 度量语义变化（字号档位切换）
+    lv.remeasure();
+    expect(lv.rows.map((r) => r.text)).toEqual(["[SYS]", " abcd", "efgh"]);
+  });
+
   test("折行也受行数上限约束", () => {
     const lv = new LogView(FORMAT, LABELS, {
       maxRows: 4,

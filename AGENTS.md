@@ -39,7 +39,7 @@ PocketCOM：基于 [PocketJS](https://pocketjs.dev) 运行时的串口/网络调
 
 ## 技术栈与硬性约束
 
-- **字体**：UI 统一 MiSans（Regular/Medium/Semibold/Bold，vendor 在 `assets/fonts/`）；**mono 槽（接收区/终端网格）用 JetBrains Mono**——MiSans 非等宽，终端网格必须严格等宽。**mono 槽只承载数据内容**（日志行/终端网格/文本框输入/地址/计数）；空态/提示/占位与下拉选项等 UI 文案一律走 MiSans 槽——烘焙 mono 槽无 CJK，i18n 文案落 mono 槽在板端必豆腐（SPEC §5.4）。**UI 固定符号必须取 MiSans 已映射字形**（如 `▼ … — · ✓ →`；`▾`/`⏎` 不在 cmap，板端必豆腐），新增符号先过 `test/app/ui-glyph-coverage.test.ts`（SPEC §5.4）。桌面端经 `text.layout.native` 走 CoreText 运行时排版，任意 Unicode 可显示；**烘焙字形约束只对嵌入式目标成立**（SPEC §5.4）。桌面可用 `npm run dev:aic-sim`（`--baked-text`）以板端同源 atlas 模拟烘焙字形观感（密度锚定 AIC profile，见 `docs/e2e.md`）。
+- **字体**：UI 统一 MiSans（Regular/Medium/Semibold/Bold，vendor 在 `assets/fonts/`）；**mono 槽（接收区/终端网格）用 JetBrains Mono**——MiSans 非等宽，终端网格必须严格等宽。**mono 槽只承载数据内容**（日志行时间戳与 RX/TX 数据内容/终端网格/文本框输入/地址/计数；sys 行的前缀 `[系统]` 与内容是 i18n UI 文案，走 MiSans 槽渲染并以 UI 槽度量折行/选区）；空态/提示/占位与下拉选项等 UI 文案一律走 MiSans 槽——烘焙 mono 槽无 CJK，i18n 文案落 mono 槽在板端必豆腐（SPEC §5.4）。**UI 固定符号必须取 MiSans 已映射字形**（如 `▼ … — · ✓ →`；`▾`/`⏎` 不在 cmap，板端必豆腐），新增符号先过 `test/app/ui-glyph-coverage.test.ts`（SPEC §5.4）。桌面端经 `text.layout.native` 走 CoreText 运行时排版，任意 Unicode 可显示；**烘焙字形约束只对嵌入式目标成立**（SPEC §5.4）。桌面可用 `npm run dev:aic-sim`（`--baked-text`）以板端同源 atlas 模拟烘焙字形观感（密度锚定 AIC profile，见 `docs/e2e.md`）。
 - **无内置串口/WebSocket/raw socket**：所有 IO 走 `bridge/` 的 `com.*` HostOps 契约，核心层不得直接 import 任何平台 API。
 - 宿主事件只能在 **tick 边界**投递进 JS（FIFO 队列 drain），不得直接回调。
 - **无 DOM、无运行时 CSS**：动态样式用 `style={{…}}` 或整体 class 字面量三元，**禁止拼接 class 片段**（编译错误）。
@@ -129,6 +129,7 @@ SPEC.md         # 功能规格（权威）
 - **连接配置触摸滑动**（2026-10-24）：共享面板内容区已接纵向 pan，补齐滚轮之外的触摸输入路径（原页脚上翻/下翻按钮已于 2026-10-25 移除，滚动路径只剩滚轮 + 触摸拖动）；真实 Vue Vapor/核心 WASM 回归、实际 AIC 包 QuickJS 连续触摸检查及固件构建通过，真机待用户复验。产物与证据见 `docs/aic-narrow-panel-step2.md` 的触摸滑动修复章节。
 - **软键盘二次点击**（2026-10-25）：共享 `TextField` 首次点击聚焦、再次点击当前域展开 ASCII 软键盘，无双击时限；程序 `focus()` 不展开，拖动/取消不展开。键盘首次使用创建、之后隐藏复用，失焦/切换域/卸载收起；按键不清除文本域。范围及启停只查 JSON，真实 Vue Vapor/core bounds 触摸测试见 `test/app/soft-keyboard-touch.test.ts`，交付/内存及真机待验收边界见 [本次记录](docs/aic-soft-keyboard-2026-10-25.md)。 后续已加入字段名称/两行实时文本/光标的临时编辑面板及键帽居中，见 [临时编辑面板记录](docs/aic-keyboard-editor-2026-10-25.md)。
 - **发送框折叠与离板 TLSF**（2026-10-25）：发送区首次展开创建、之后移出视口隐藏复用，收起清焦点/键盘/下拉并暂停定时发送，保留草稿/光标。旧包反复重建峰值触发系统堆碎片失败；另将软键盘 45 个键的响应更新合并，首次键盘/发送折叠短测在 LP64 7 MiB 固定池通过；9 MiB 无额外 GC 三组各 48,000 帧/200 轮通过，7/8 MiB 更长无 GC 压测仍有失败，真机待复验，见 [本次记录](docs/aic-send-collapse-tlsf-2026-10-25.md)。
+- **接收区系统消息豆腐修复**（2026-10-25）：sys 行的 `[系统]` 前缀与 i18n 内容改走 MiSans 槽渲染（时间戳段与 RX/TX 数据内容保持 mono，数据豆腐仍属 SPEC 允许），折行/选区度量按行类别分派 UI 槽；本地单测/烘焙观感验证完成，真机待烧录复验，见 [本次记录](docs/aic-sys-tofu-2026-10-25.md)。
 - **com 串口桥**（2026-10-24）：fork 宿主经 `pocketjs_guest_quickjs_install_once` 挂载 `globalThis.com`（`hosts/aic/port/pocketjs_com.c`，`POCKETJS_COM=0` 可编译关闭），仅 uart1（PA.2/PA.3，与桌面 op 语义一致，RX 走 poll 事件，无网络/cfg/MCP 桥）；共享 App 在 `aic-diagnostic` profile 下据此解锁收发界面。板端 UART 引脚以官方数据手册为准（SDK `aic_gpio_id.h` 枚举有错，见 host/rtthread/README "UART 引脚"）；真机收发验收待用户烧录确认。
 
 ### 恢复路线（内存约束下的推进顺序）

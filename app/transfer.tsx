@@ -23,7 +23,7 @@ import {
   type SelRect,
   type TextFieldHandle,
 } from "./widgets";
-import { LINE_H as FONT_LINE_H, MONO_CLASS, MONO_SLOTS, TEXT_CLASS } from "./fontsize";
+import { LINE_H as FONT_LINE_H, MONO_CLASS, MONO_SLOTS, TEXT_CLASS, UI_SLOTS } from "./fontsize";
 import { SELECT_HISTORY_W, SELECT_TARGET_W, sendOptSelectX } from "./sendlayout";
 import { monoColAt, monoXAt } from "./textsel";
 import { theme, termColorCss } from "./theme";
@@ -90,6 +90,19 @@ function rowContent(row: LogRow): string {
   return row.prefix !== "" ? row.text.slice(row.prefixAt + row.prefix.length) : row.text;
 }
 
+/** sys 行的前缀/内容是 i18n UI 文案，走 MiSans 槽——mono 槽烘焙无 CJK，
+ *  落 mono 槽在板端必豆腐（SPEC §5.4）；RX/TX 数据内容与时间戳段保持 mono。
+ *  颜色分段（contentRuns）只出现在数据行，恒 mono。 */
+function rowTextClass(row: LogRow): string {
+  return (row.dir === "sys" ? TEXT_CLASS : MONO_CLASS)[fontSize.value];
+}
+
+/** 来源前缀槽位：sys 标记 `[系统]` 是 i18n 文案走 MiSans；rx `<=` 与 TX 来源
+ *  前缀（仅 MCP 运行中显示，嵌入式不装配 mcp.server）保持 mono 列对齐。 */
+function prefixTextClass(row: LogRow): string {
+  return (row.prefixKind === "sys" ? TEXT_CLASS : MONO_CLASS)[fontSize.value];
+}
+
 /** 颜色转义开启时的内容分段渲染：相邻同色字符合并成一段，默认色段取
  *  主题正文色（深色白/浅色黑，SPEC §3.3），其余按 SGR 解析色（term 调色板）。
  *  row.fg 与整行 text 对齐（前缀区恒默认色），内容段从前缀之后开始切。 */
@@ -144,8 +157,12 @@ function logCellAt(x: number, y: number): LogSelCell {
   if (hasAppFeature("ui.selection")) {
     const m = logMetrics();
     const row = Math.max(0, Math.min(logView.rows.length - 1, Math.floor((y - m.y0 + logScroll.value) / m.lineH)));
-    const text = logView.rows[row]?.text ?? "";
-    const col = monoColAt(text, x - (m.x0 + 8), (s) => measureMono(s, MONO_SLOTS[fontSize.value]));
+    const entry = logView.rows[row];
+    const text = entry?.text ?? "";
+    // sys 行文案按 MiSans 渲染，选区几何用 UI 槽同口径度量（SPEC §5.4）
+    const measure = (s: string): number =>
+      entry?.dir === "sys" ? measureUi(s, UI_SLOTS[fontSize.value]) : measureMono(s, MONO_SLOTS[fontSize.value]);
+    const col = monoColAt(text, x - (m.x0 + 8), measure);
     return { row, col };
   }
   return { row: 0, col: 0 };
@@ -285,7 +302,9 @@ function logSelRect(row: LogRow, index: number): { x: number; w: number } | null
     const from = index === fwd.a.row ? fwd.a.col : 0;
     const to = index === fwd.b.row ? Math.min(fwd.b.col, text.length) : text.length;
     if (to <= from) return null;
-    const measure = (s: string): number => measureMono(s, MONO_SLOTS[fontSize.value]);
+    // sys 行文案按 MiSans 渲染，选区高亮用 UI 槽度量（与 logCellAt 同口径）
+    const measure = (s: string): number =>
+      row.dir === "sys" ? measureUi(s, UI_SLOTS[fontSize.value]) : measureMono(s, MONO_SLOTS[fontSize.value]);
     const x = monoXAt(text, from, measure);
     const w = monoXAt(text, to, measure) - x;
     return w > 0 ? { x, w } : null;
@@ -457,7 +476,7 @@ export function ReceivePane() {
                   ) : null}
                   {row.prefix !== "" ? (
                     <Text
-                      class={MONO_CLASS[fontSize.value]}
+                      class={prefixTextClass(row)}
                       style={{ textColor: prefixColor(row.prefixKind), lineHeight: lineH(), height: lineH() }}
                     >
                       {row.prefix}
@@ -465,7 +484,7 @@ export function ReceivePane() {
                   ) : null}
                   {row.fg === null ? (
                     <Text
-                      class={MONO_CLASS[fontSize.value]}
+                      class={rowTextClass(row)}
                       style={{ textColor: dirColor(row.dir), lineHeight: lineH(), height: lineH() }}
                     >
                       {rowContent(row)}

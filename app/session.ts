@@ -41,6 +41,7 @@ import {
 } from "../core/mcp";
 import { locale, setLocale, t, type Locale } from "./i18n";
 import { setSystemAppearance, themeMode } from "./theme";
+import { UI_SLOTS } from "./fontsize";
 
 // ---------------------------------------------------------------------------
 // 桥接与会话
@@ -465,6 +466,8 @@ export const logView = new LogView(
     maxBytes: historyByteBudget(),
     showTx: hasAppFeature("mcp.server") ? mcpState.value.on : false,
     measure: (s) => getOps().measureText(s, MONO_SLOTS[fontSize.value]),
+    // sys 行前缀/内容走 MiSans 槽渲染（SPEC §5.4），折行用 UI 槽同口径度量
+    measureUi: (s) => getOps().measureText(s, UI_SLOTS[fontSize.value]),
     wrapWidth: () => rxWidth.value - 12,
   },
 );

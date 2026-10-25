@@ -6,6 +6,10 @@ import type { ConfigFontSize } from "../core/config";
 /** 档位 → mono 字形槽 id（measureText 用）。 */
 export const MONO_SLOTS: Record<ConfigFontSize, number> = { 12: 16, 14: 17, 16: 18 };
 
+/** 档位 → UI（MiSans）字形槽 id（fontSlotFor：12/14/16px regular → 0/1/2；
+ *  sys 行文案的折行/选区度量用，SPEC §5.4）。 */
+export const UI_SLOTS: Record<ConfigFontSize, number> = { 12: 0, 14: 1, 16: 2 };
+
 /** 档位 → 行高（1.3×，对齐 text-xs/sm/base 的默认行高）。 */
 export const LINE_H: Record<ConfigFontSize, number> = { 12: 16, 14: 18, 16: 21 };
 

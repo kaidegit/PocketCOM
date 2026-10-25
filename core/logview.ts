@@ -29,6 +29,9 @@ export interface LogViewOptions {
   showTx?: boolean;
   /** 文本宽度测量（px）；缺省不换行 */
   measure?: (text: string) => number;
+  /** sys 行文案的宽度测量（px，UI 槽——sys 前缀/内容走 MiSans 槽渲染，
+   *  SPEC §5.4；时间戳段混同行测量，误差仅折行点）。缺省 sys 行同用 measure。 */
+  measureUi?: (text: string) => number;
   /** 换行宽度（px）；<= 0 不换行。可为响应式 getter */
   wrapWidth?: () => number;
 }
@@ -109,8 +112,10 @@ export class LogView {
   private maxRows: number;
   private maxBytes: number;
   private readonly measure?: (text: string) => number;
+  private readonly measureUi?: (text: string) => number;
   private readonly wrapWidth?: () => number;
   private widthCache = new Map<string, number>();
+  private widthCacheUi = new Map<string, number>();
 
   constructor(format: LogFormatOptions, labels: LogLineLabels, opts: LogViewOptions = {}) {
     this.format = format;
@@ -122,6 +127,7 @@ export class LogView {
       throw new ParamError("PARAM_INVALID", "log history limits must be positive (maxRows integer)");
     }
     this.measure = opts.measure;
+    this.measureUi = opts.measureUi;
     this.wrapWidth = opts.wrapWidth;
     this.layoutWidth = this.wrapWidth?.() ?? 0;
   }
@@ -151,7 +157,10 @@ export class LogView {
     this.format = { ...format };
     this.labels = { ...labels };
     if (opts.showTx !== undefined) this.showTx = opts.showTx;
-    if (opts.remeasure) this.widthCache.clear();
+    if (opts.remeasure) {
+      this.widthCache.clear();
+      this.widthCacheUi.clear();
+    }
     if (opts.maxRows !== undefined) this.maxRows = opts.maxRows;
     if (opts.maxBytes !== undefined) this.maxBytes = opts.maxBytes;
     if (limitsChanged) this.trim();
@@ -174,6 +183,7 @@ export class LogView {
   /** 测量函数语义变化（如字号切换）：宽度缓存随之失效，清缓存并重排版。 */
   remeasure(): void {
     this.widthCache.clear();
+    this.widthCacheUi.clear();
     this.rebuild();
   }
 
@@ -216,6 +226,7 @@ export class LogView {
     this.colorize = new AnsiFgScanner();
     this.dirty = false;
     this.widthCache.clear();
+    this.widthCacheUi.clear();
     if (upToMsgId !== undefined) this.lastMsgId = Math.max(this.lastMsgId, upToMsgId);
   }
 
@@ -270,11 +281,16 @@ export class LogView {
       fg = new Uint32Array(line.length).fill(TERM_DEFAULT_COLOR);
       fg.set(parse.fg, head.length);
     }
+    // sys 行文案走 MiSans 槽渲染（SPEC §5.4），折行取 UI 槽度量与独立宽度
+    // 缓存；未注入 measureUi 时回退数据行度量
+    const ui = msg.dir === "sys" && this.measureUi !== undefined;
+    const measure = ui ? this.measureUi : this.measure;
+    const widthCache = ui ? this.widthCacheUi : this.widthCache;
     let first = true;
     // 先按硬换行拆行（帧内嵌 \r\n/\n/\r），再对每条逻辑行做宽度折行；
     // 拆分/折行出的后续行均无方向前缀（SPEC §3.3/§3.7）
     for (const piece of splitFgLines(line, fg)) {
-      for (const chunk of this.wrap(piece.text, piece.fg)) {
+      for (const chunk of this.wrap(piece.text, piece.fg, measure, widthCache)) {
         rows.push({
           key: this.rowSeq++,
           msgId: msg.id,
@@ -293,21 +309,27 @@ export class LogView {
     this.rows = rows;
   }
 
-  /** 贪心按字符折行；无测量或宽度非法时不折行。宽度缓存按字符；
+  /** 贪心按字符折行；无测量或宽度非法时不折行。宽度缓存按字符（调用方按
+   *  行类别传入数据/ UI 槽度量与对应缓存，二者不得混用）；
    *  前景色数组随切片同步切分（子数组共享底层缓冲，不拷贝）。 */
-  private wrap(text: string, fg: Uint32Array | null): FgPiece[] {
+  private wrap(
+    text: string,
+    fg: Uint32Array | null,
+    measure: ((text: string) => number) | undefined,
+    widthCache: Map<string, number>,
+  ): FgPiece[] {
     const width = this.wrapWidth?.() ?? 0;
-    if (!this.measure || width <= 0) return [{ text, fg }];
+    if (!measure || width <= 0) return [{ text, fg }];
     const out: FgPiece[] = [];
     let current = "";
     let currentW = 0;
     let start = 0;
     for (let i = 0; i < text.length; i++) {
       const ch = text.charAt(i);
-      let w = this.widthCache.get(ch);
+      let w = widthCache.get(ch);
       if (w === undefined) {
-        w = this.measure(ch);
-        this.widthCache.set(ch, w);
+        w = measure(ch);
+        widthCache.set(ch, w);
       }
       if (currentW + w > width && current !== "") {
         out.push({ text: current, fg: fg === null ? null : fg.subarray(start, i) });
