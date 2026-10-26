@@ -4,8 +4,9 @@ import { hasAppFeature } from "@pocketcom/features";
 // 暂停 = 停止从总线同步（数据继续入总线），清屏归零计数。
 // 发送区：ASCII/HEX 互转、转义/CRLF/追加换行、定时循环、发送历史（M2 持久化）、
 // TCP Server 多客户端定向/广播发送（M2）。
-import { onUnmounted, ref, watch } from "vue";
-import { Text, View } from "@pocketjs/framework/components";
+import { onScopeDispose, onUnmounted, ref, watch } from "vue";
+import { Text, View, type NodeMirror } from "@pocketjs/framework/components";
+import { createGesture } from "@pocketjs/framework/gesture";
 import { onFrame } from "@pocketjs/framework/lifecycle";
 import { virtualNow } from "@pocketjs/framework/clock";
 import {
@@ -20,6 +21,7 @@ import {
   measureUi,
   openContextMenu,
   closePopup,
+  popupOpen,
   type SelRect,
   type TextFieldHandle,
 } from "./widgets";
@@ -32,6 +34,8 @@ import { STATUS_H, connectionDrawerOpen, viewportSize, workspace } from "./layou
 import { onWheel } from "./wheel";
 import { setActiveField } from "./fields";
 import { getSvc } from "./svc";
+import { settingsOpen } from "./settings-modal";
+import { keyboardOpen } from "./soft-keyboard";
 import { convertInputText, type SendOptions } from "../core/send";
 import type { PopupAnchor } from "./widgets";
 import type { LogRow } from "../core/logview";
@@ -342,10 +346,30 @@ export function ReceivePane() {
   });
   reportWidth();
 
-  onWheel("log", (dy) => {
+  const scrollLog = (dy: number): void => {
     logScroll.value = Math.max(0, Math.min(maxScroll(), logScroll.value - dy));
     logStickBottom.value = logScroll.value >= maxScroll() - 1;
+  };
+  onScopeDispose(onWheel("log", scrollLog));
+
+  // AIC contacts do not emit wheel events. Own only the clipped log subtree;
+  // the toolbar, send fields and overlay nodes must never start a log pan.
+  let contentNode: NodeMirror | null = null;
+  const touchBlocked = (): boolean => connectionDrawerOpen() || popupOpen() || settingsOpen() || (hasAppFeature("ui.soft-keyboard") && keyboardOpen());
+  const pan = createGesture({
+    axis: "y",
+    region: {
+      node: () => touchBlocked() ? null : contentNode,
+      rect: () => {
+        if (touchBlocked()) return null;
+        const m = logMetrics();
+        return { x: m.x0, y: m.y0, w: m.w, h: m.h };
+      },
+    },
+    onPanStart: () => setActiveField(null),
+    onPanMove: c => { if (!touchBlocked()) scrollLog(c.fdy); },
   });
+  watch(touchBlocked, blocked => { if (blocked) pan.cancel(); });
 
   // 拖拽选区越界自动滚动：指针停在日志区上/下沿外时按帧持续滚动并延伸选区
   // （指针不动时宿主不再发 mouse 事件，必须帧泵驱动；随组件卸载自动注销）。
@@ -437,7 +461,7 @@ export function ReceivePane() {
       {/* 日志视窗：未变换裁剪 + 平移画布（IM 契约），只挂可视切片。
           行结构：外层块只放 absolute 子层（选区高亮在下、文本层在上），
           文本层自己承担 px-2 的内边距 —— 高亮与文字共用同一坐标基准。 */}
-      <View class="relative flex-1 overflow-hidden" style={{ bgColor: theme.value.inputBg }}>
+      <View class="relative flex-1 overflow-hidden" nodeRef={(node: NodeMirror | null) => { contentNode = node; }} style={{ bgColor: theme.value.inputBg }}>
         {showEmpty() ? (
           <View class="absolute inset-0 flex-row items-center justify-center">
             <Text class={TEXT_CLASS[fontSize.value]} style={{ textColor: theme.value.dim }}>

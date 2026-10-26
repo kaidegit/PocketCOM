@@ -133,6 +133,7 @@ SPEC.md         # 功能规格（权威）
 - **组合面板 OOM**（2026-10-26）：PocketJS 编译器按导入绑定降低普通 View/Text 的组件/属性代理开销，同作用域批量更新；展开属性、组件 ref、动态 slot 等保留普通路径。设置弹窗首次创建后隐藏复用，每次打开重置配置草稿，隐藏时禁用选区命中。LP64 固定 7 MiB 下旧包复现失败，新包首次组合 20/20、正常/无空闲/快速三组各 50 轮 420/420、零分配失败；五张 RGB565 对照零像素差异，桌面回归/固件构建通过。固件 `dist/aic/combined-oom-fix/`；真机峰值、GC 停顿及 UART/WiFi 组合仍待验收，见 [本次记录](docs/aic-combined-oom-2026-10-26.md)。
 - **接收区系统消息豆腐修复**（2026-10-25）：sys 行的 `[系统]` 前缀与 i18n 内容改走 MiSans 槽渲染（时间戳段与 RX/TX 数据内容保持 mono，数据豆腐仍属 SPEC 允许），折行/选区度量按行类别分派 UI 槽；本地单测/烘焙观感验证完成，真机待烧录复验，见 [本次记录](docs/aic-sys-tofu-2026-10-25.md)。
 - **com 串口桥**（2026-10-24）：fork 宿主经 `pocketjs_guest_quickjs_install_once` 挂载 `globalThis.com`（`hosts/aic/port/pocketjs_com.c`，`POCKETJS_COM=0` 可编译关闭），仅 uart1（PA.2/PA.3，与桌面 op 语义一致，RX 走 poll 事件，无网络/cfg/MCP 桥）；共享 App 在 `aic-diagnostic` profile 下据此解锁收发界面。板端 UART 引脚以官方数据手册为准（SDK `aic_gpio_id.h` 枚举有错，见 host/rtthread/README "UART 引脚"）；真机收发验收待用户烧录确认。
+- **接收区触摸拖动**（2026-10-26）：原接收区仅有滚轮/桌面鼠标选区，AIC 手指拖动无滚动路径；现共享日志内容区增加纵向 pan，复用边界与贴底锁定，工具栏/发送区/弹层隔离，弹层打开取消手势。真实 Vue Vapor/core bounds 回归与固件构建通过，真机及实际包连续触摸待复验；固件 `dist/aic/receive-touch-fix/`，见 [本次记录](docs/aic-receive-touch-2026-10-26.md)。
 - **UART 接收显示延迟**（2026-10-26）：用户以 UART1 TX/RX 跳线短接发送 `aaa`，反馈 TX/RX 立即各为 3 B、文本延后显示。当前 AIC 未启用 RTC，`gettimeofday()` 失败且 QuickJS 未检查返回值，旧会话泵用不可靠的 `Date.now()` 驱动合流静默超时；现改用 `virtualNow() × 1000`，消息日历时间戳来源保留。真实 Vue Vapor/core 的 AIC/桌面 profile 回归覆盖冻结/回拨时钟、接收文字及低波特率阈值；修复后真机延迟待烧录复验，见 [排查记录](docs/aic-uart-receive-delay-2026-10-26.md)。
 
 ### 恢复路线（内存约束下的推进顺序）

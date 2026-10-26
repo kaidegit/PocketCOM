@@ -182,3 +182,11 @@ PocketJS 编译器普通 View/Text 路径的真实 Vapor/core 回归在
 `vendor/pocketjs/tests/vapor-primitives.test.ts`，与 Portal/frame/action 等测试一起用
 `bun test --conditions=browser` 从引擎目录执行。五张 native RGB565 前后回放零像素差异；
 产物及真机待验收范围见 [组合修复记录](../../../docs/aic-combined-oom-2026-10-26.md)。
+
+## 接收日志触摸滚动
+
+`test/app/receive-touch.test.ts` 用 JSON AIC profile 的真实 Vue Vapor/core bounds 接触点回归日志纵向拖动、
+上下边界、历史锁定与恢复贴底、横向/工具栏/发送区隔离、抽屉中断、下拉/设置遮挡及发送区折叠后的命中。
+WASM 前置同面板触摸测试，执行 `bun test ./test/app/receive-touch.test.ts`；缺少 WASM 的跳过不算验收。
+实际 AIC 包 QuickJS/native 连续触摸与真机内存仍需单独验收；记录见
+[接收拖动修复](../../../docs/aic-receive-touch-2026-10-26.md)。
