@@ -266,6 +266,7 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 - PSRAM 8 MiB 统一堆：底部约 1 MiB 为 CMA 区（`.data/.bss` + 双 RGB565 framebuffer），其余约 7 MiB 为 RT-Thread 系统堆，算法为 TLSF（SDK `RT_USING_USERHEAP` + `bsp/artinchip/drv/mem/rt_tlsf_heap.c`），QuickJS/Rust guest 与系统线程共用，不再划分 PocketJS 私有池；guest JS 配额 5 MiB 为软上限。构建报告实际 ELF/map 的包大小、XIP/PSRAM 段拆分、CMA/SW 边界、framebuffer 与统一堆预算（guest 配额 + 系统预留）及 OS 分区占用，并校验 ITS XIP 段地址与 `XIP_FW_OFFSET = os 分区偏移 + 0x800` 一致；超限失败，不自动调整分区或提高配额，不自动烧录。
 - AIC 在挂载完成后、首帧前回收一次循环垃圾；之后只在完整帧结束的安全边界回收：guest+Rust 占用自上次回收增长 128 KiB 时触发，系统堆余量 ≤1 MiB 时增长门槛降至 32 KiB。保留 2 秒空闲回收，低余量下即使持续重绘也最多等 2 秒。每次回收后重测基线，避免不可回收的常驻对象导致逐帧 GC；统计 GC 次数和最大耗时。不得在分配器/宿主回调中重入 JS 回收，不改变堆/JS 配额或产品功能值。
 - 字体 UI 使用 MiSans，mono 使用 JetBrains Mono；显式烘焙中英文语言包字符，未知字形遵守 §5.4。AIC 包独立压缩标识符与空白（不折叠表达式、不改宿主属性名、不再套一层 IIFE），降低 QuickJS 编译峰值；桌面构建不变。未来桥接仍由产品宿主实现，设备事件仅在 tick 边界进入 JS，core 保持纯 TS。
+- AIC GE 在同步 normal 模式下加速不透明填充、1:1 PSM5650 搬运和 A8 遮罩混合。A8 先在 CPU 将覆盖率与全局 alpha 合成为 ARGB8888，GE 混合到私有 RGB565 暂存面，成功后才写回；失败时原目标保持不变，由渲染器软件重放。暂存区按 SDK 示例从 MEM_CMA 首次使用分配并复用，源和目标行 stride 均按 8 字节对齐（共用 4 像素对齐 pitch），上限按补齐后的 8192 像素计算、49152 字节加最多 63 字节首地址对齐；超限、分配失败或不支持的几何保留 CPU 路径。不改变产品堆或 JS 配额；硬件混合舍入、真机峰值和性能收益需实测。
 - demo68-nor 的 480×272 RGB 屏使用与 SDK 同板参考方案一致的 **90° pixel clock 输出相位**（`AIC_DEGREE_90` / `AIC_RGB_CLK_CTL=1`）。2026-10-24 修正相位后，用户真机确认字体发虚/静态字边跳动已恢复正常。静止字边彩点/跳动须区分 framebuffer 像素变化与 LCD 采样不稳；软件像素一致或固件构建通过均不等于真机显示验收。
 
 ### 4.5 产品 feature 与离板裁剪实验

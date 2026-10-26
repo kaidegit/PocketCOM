@@ -179,3 +179,22 @@ LP64 7 MiB 忙帧长测/快速组通过，当时抽屉+设置组合仍失败，�
 零分配失败，五张 RGB565 对照零像素差异，固件静态预算通过。未改 feature/堆/配额；
 真机峰值、GC 停顿及 UART/WiFi 组合仍待验收。源码、产物 hash 和完整数据见
 [组合修复记录](../../../docs/aic-combined-oom-2026-10-26.md)。
+
+2026-10-26 GE 补齐 A8：CPU 合并遮罩与全局 alpha 为 ARGB8888，再由 GE 混合到私有 RGB565
+暂存面，成功才写回。首次使用申请并复用 49152+63 B，超 8192 像素/分配失败/GE 失败回退 CPU。
+拒绝异步 cmdq。端口回归 `cd vendor/pocketjs && bun test tests/aic-port.test.ts` 覆盖缓存、
+局部区域、alpha 与部分失败。硬件舍入、峰值和性能必须真机 A/B 验证，不能由 mock 推定；
+固件与记录见 [GE A8](../../../docs/aic-ge-a8-2026-10-26.md)。
+
+GE A8 初版用户真机黑屏（S5-gc 后无 frame1）。修正必须对照 SDK
+`packages/artinchip/mpp/mpp_test/ge_test/example/alpha_blend_example.c` 与
+`public/ge_mem.c`：源/输出每行 stride 均对齐 8 B，图像暂存从 MEM_CMA 分配，
+首地址对齐不能代替行 stride 对齐。共用 4 像素 pitch，容量按 padding 后像素计。
+示例 bitblt → emit → sync 后才读输出；当前 normal 的后两者为 no-op，不能据此归因卡死。
+修正版 `dist/aic/ge-a8-layout-fix/`，纯 CPU 恢复对照 `dist/aic/ge-a8-recovery-cpu/`。
+新增首次 fill/A8 begin/submit/end 日志，回传到哪一行用于定位；本地通过不能宣布黑屏已修复。
+
+A8 修正版后续用户回传已确认黑屏恢复、首次 fill/A8 rc=0、首帧/120 帧及触摸后出帧。
+frame120 caps_fails=0，CMA 增加 49240 B、余额 177852 B；触摸后系统峰值 5589620 B。
+仍有首次触摸 turn_max=1763 ms 与重绘 fps=1 样本；turn_max 不含 GE 绘制等待，
+不能由该值或 ge_blend 计数宣称加速。首帧恢复已验收，性能/长时范围见同一 GE A8 记录。

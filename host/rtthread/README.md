@@ -258,7 +258,7 @@ mpp_ge，工作在 GE normal 模式（产品 `RT_USING_PM=y`，Kconfig 排除 cm
   ARGB8888 源，565 通道低位复制保证 ARGB→RGB565 截断往返精确）；1:1 PSM 5650
   纹理搬运→一次 GE bitblt，源格式声明 `MPP_FMT_BGR_565`，由格式转换完成 PSM
   5650 与 framebuffer RGB565 的 R/B 交换，mirror 映射 `MPP_FLIP_H/V`。
-  A8 掩码混合（字形/alpha 四边形）没有 GE 源格式，保持 CPU 光栅。
+  A8 掩码混合（字形/alpha 四边形）经 CPU 转 ARGB8888 后走 GE，范围与验证边界见下文。
 - **同步与 cache**：normal 模式 ioctl 阻塞到 finish IRQ；每次 DMA 前 clean 目的
   行、后 invalidate，按行维护避免窄矩形冲掉同行相邻 CPU 写，维持 PpaOps
   "返回即对后续 CPU 可见"契约（同帧内 CPU 软件回退与 GE 交替写同一 strip）。
@@ -276,6 +276,29 @@ mpp_ge，工作在 GE normal 模式（产品 `RT_USING_PM=y`，Kconfig 排除 cm
   2026-10-24 真机烧录验证通过——GE 就绪行、画面颜色（含 BGR_565 源交换）、
   持续出帧与触摸交互正常；`POCKETJS_GE=0` A/B 的 fps/turn_max 数字与长时
   稳定性、WiFi 组合尚未采样。
+
+### A8 遮罩混合补齐（2026-10-26）
+
+字形和透明四边形的 A8 覆盖率在 CPU 上与全局 alpha 合并（`(mask * alpha + 127) / 255`），
+生成 straight ARGB8888，GE `GE_PD_NONE` 做源 alpha / 逆源 alpha 混合到私有 RGB565 面，
+成功后逐行写回目标。SDK `alpha_en` 注释与驱动相反，按 `hal_ge_normal.c` 设置为 1。
+不直接在原 framebuffer 混合，因此 GE 部分写入后失败也可由 CPU 重放，避免重复叠加。
+
+暂存区按 SDK `ge_test/public/ge_mem.c` 从 MEM_CMA 首次使用分配、后续复用，按 padding 后
+8192 像素 = 49152 B + 63 B 对齐空间；源/输出 stride 均为 8 B 的倍数，首地址各自
+64 B 对齐，clean → bitblt/emit/sync → invalidate（失败也 invalidate 私有输出）后才读取结果。
+初版真机黑屏，日志停在 S5-gc；已修正初版漏掉的行 stride 对齐并按示例改用 MEM_CMA，
+增加首次 fill/A8 提交前后日志。修正版 `dist/aic/ge-a8-layout-fix/` 用户回传已确认
+黑屏恢复、A8 rc=0、首帧/120 帧及触摸后出帧；frame120 caps_fails=0，CMA 增加
+49240 B。首次触摸 turn_max=1763 ms、部分重绘样本 fps=1，性能 A/B 与长时验证仍待补。
+超限、分配失败、非法几何仍走 CPU；首次分配失败后不反复申请，关闭宿主释放。
+不扩堆/配额。异步 cmdq 模式拒绝挂载加速表，防止未完成就读取 DMA 输出。
+
+端口回归覆盖遮罩/全局 alpha、局部矩形、缓存顺序、复用、分配失败与部分 DMA 失败。
+测试中的混合模型不能证明硬件舍入与 CPU 逐像素一致，也不能证明更快；真机需检查
+字边/透明叠层、`ge_blend`、帧耗时、系统堆峰值，并与 `POCKETJS_GE=0` 对照。
+旋转、缩放及超过上限的混合仍在 CPU；本次固件与验收记录见
+[GE A8 支持记录](../../docs/aic-ge-a8-2026-10-26.md)。
 
 ## 验证
 
