@@ -217,6 +217,22 @@ pjs_mem reset        # 记账峰值回落到当前 live，用于增量测量
 
 `npm run probe:aic` 把与固件同一套可移植组件（guest / ui_core / ui_qjs / package / render_rgb565 + 同一 QuickJS）编成原生二进制，`heap_caps` 走一次性固定连续内存区 + SDK 同源 TLSF（与 port 同款 3 槽包装头、realloc 先分配后释放 + live/peak/块数记账），加载路径走与固件相同的 `pocketjs_guest_eval_stages` 拆分。输出 `[PJS-PROBE]` 行，字段名与 `[PJS-DIAG]` 一致，可与 §2.1.3/§2.1.4 真机数据并排对比；共享 UI / 裁剪提案的每一步都可以先在这里量再上板。
 
+2026-10-25 AIC 宿主增加帧边界压力 GC：首帧前回收一次；caps 自上次回收后增长 128 KiB
+触发回收，系统余量 ≤1 MiB 时门槛降为 32 KiB，低余量持续重绘最多等 2 秒。
+旧 2 秒空闲回收保留，回收后重测基线，判断只读 O(1) 计数；`S5-gc` 与累计 `gc/gc_max` 记录
+内存和停顿。探针 `--aic-gc` 复用同源策略，`--aic-gc-idle` 对照旧版，均与 `--collect` 互斥；
+按虚拟契约时钟/raster revision 近似空闲，不能模拟真机停顿。固定池触摸压力入口为
+`python3 tools/aic-memory-stress.py --busy --gc compare --tag busy-7m`（`--rapid` 测快速操作）。
+busy 只给调度器持续非空闲输入，不制造真实 IO/damage。7 MiB 三组长测/快速组通过，
+当时抽屉+设置组合仍失败；历史固件见 [压力 GC 记录](../../docs/aic-gc-pressure-2026-10-25.md)。
+
+2026-10-26 后续通过普通 View/Text 编译器路径降低组件/属性代理开销，同作用域批量更新，
+并复用首次创建的设置弹窗，每次打开重新快照配置。固定 7 MiB 同策略旧包复现失败，新包
+首次组合 20/20、正常/无空闲/快速三组各 50 轮 420/420、零分配失败；五张 RGB565 对照
+零像素差异。入口 `--scenario combined --combined-cycles 50 --gc policy`，可加 `--busy`/`--rapid`。
+当前固件在 `dist/aic/combined-oom-fix/`，真机内存/GC 停顿/UART/WiFi 尚待验收，见
+[组合修复记录](../../docs/aic-combined-oom-2026-10-26.md)。
+
 ```sh
 npm run probe:aic                    # 测 dist/aic 当前包
 npm run probe:aic -- --heap 7340032  # 固定 7 MiB TLSF 池（默认值），含真实碎片

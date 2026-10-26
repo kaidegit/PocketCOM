@@ -161,3 +161,18 @@ bun test test/app/panel-touch.test.ts
 
 软键盘固定键位批量更新回归增加语言/主题/视口切换后节点身份、几何/颜色更新，以及键盘打开时卸载整个 App 后重新挂载输入。
 原生 RGB565 前后回放像素一致；固定池无 GC 长时/快速压力与显式 GC 对照分别记结果，不将二者混作通过。
+
+AIC 帧边界压力回收的 `test/host/rtthread/gc-policy.test.ts` 编译同源 C 策略并经 ASan/UBSan
+验证首次回收、增长/压力边界、忙帧超时、不可回收常驻基线和 32 位时钟回卷。
+实际包压力用 `python3 tools/aic-memory-stress.py --busy --gc compare --tag busy-7m`
+及 `--rapid`，前置 `npm run package:aic`；它逐次核对触摸状态/节点身份。
+busy 只是调度器无空闲输入，不代表真实串口/绘制；压力 GC 的独立历史结果见
+[压力 GC 记录](../../../docs/aic-gc-pressure-2026-10-25.md)。
+
+2026-10-26 组合修复增加 `--scenario combined --combined-cycles 50 --gc policy`（可加
+`--busy`/`--rapid`），逐次检查设置输入/取消草稿重置和三类缓存节点身份；固定 7 MiB 三组各
+420/420 通过。`soft-keyboard-touch.test.ts` 另覆盖设置隐藏命中、外部配置快照及 App 重挂载。
+PocketJS 编译器普通 View/Text 路径的真实 Vapor/core 回归在
+`vendor/pocketjs/tests/vapor-primitives.test.ts`，与 Portal/frame/action 等测试一起用
+`bun test --conditions=browser` 从引擎目录执行。五张 native RGB565 前后回放零像素差异；
+产物及真机待验收范围见 [组合修复记录](../../../docs/aic-combined-oom-2026-10-26.md)。

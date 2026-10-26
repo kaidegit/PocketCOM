@@ -39,7 +39,8 @@ import { connectionPanelOpen, connectionDrawerOpen, setViewport } from ${JSON.st
 import { sendCollapsed } from ${JSON.stringify(join(root, "app/session.ts"))};
 import { setLocale } from ${JSON.stringify(join(root, "app/i18n.ts"))};
 import { themeMode } from ${JSON.stringify(join(root, "app/theme.ts"))};
-import { closeSettingsModal } from ${JSON.stringify(join(root, "app/settings-modal.tsx"))};
+import { closeSettingsModal, openSettingsModal } from ${JSON.stringify(join(root, "app/settings-modal.tsx"))};
+import { setHistoryLines } from ${JSON.stringify(join(root, "app/session.ts"))};
 setViewport(480,272);
 globalThis.dispose = mount(App);
 const nodes = () => { const all=[]; const visit=n=>{all.push(n);n.children.forEach(visit)};visit(rootMirror);return all; };
@@ -56,6 +57,9 @@ globalThis.collapse = () => { sendCollapsed.value = !sendCollapsed.value; };
 globalThis.presentation = (w,language,mode) => { setViewport(w,272);setLocale(language);themeMode.value=mode; };
 globalThis.nodeStyle = id => nodes().find(n=>n.id===id)?.domAttrs?.style;
 globalThis.prepareRemount = () => { closeSettingsModal();connectionPanelOpen.value=false; };
+globalThis.settingsClose = closeSettingsModal;
+globalThis.settingsShow = openSettingsModal;
+globalThis.history = setHistoryLines;
 globalThis.remount = () => { globalThis.dispose();globalThis.dispose=mount(App); };
 `);
       const build = await Bun.build({
@@ -90,6 +94,7 @@ globalThis.remount = () => { globalThis.dispose();globalThis.dispose=mount(App);
         presentation(w: number, language: string, mode: string): void;
         nodeStyle(id: number): { insetL: number; width: number; bgColor: string };
         prepareRemount(): void; remount(): void;
+        settingsClose(): void; settingsShow(): void; history(lines: number): void;
       };
       runInNewContext(await build.outputs[0]!.text(), guest);
       const frame = (x?: number, y?: number, hit?: number, buttons = 0) => {
@@ -255,6 +260,20 @@ globalThis.remount = () => { globalThis.dispose();globalThis.dispose=mount(App);
           tap(...point(button("收起").id));
           expect(guest.state().open).toBe(false);
         }
+        // Cached settings fields must leave hit testing while hidden, retain
+        // their node identity, and resnapshot both external changes and canceled drafts.
+        guest.settingsClose(); frame(); frame();
+        expect(guest.state().active).toBe(false);
+        expect(guest.ancestors(wasm.ops.hitTestBounds!(sx, sy))).not.toContain(settingsField.id);
+        guest.history(4321); guest.settingsShow(); frame(); frame();
+        expect(guest.inspect().find(n => n.id === settingsField.id)!.text).toBe("4321");
+        if (enabled) {
+          tap(...point(settingsField.id)); tap(...point(settingsField.id));
+          tap(...point(button("1").id));
+          expect(guest.editorView().value).toBe("43211");
+        }
+        guest.settingsClose(); frame(); guest.settingsShow(); frame(); frame();
+        expect(guest.inspect().find(n => n.id === settingsField.id)!.text).toBe("4321");
         // Remove the whole app with the keyboard open; renderer-owned key
         // handlers must disappear, then a fresh mount must accept real taps.
         if (enabled) {

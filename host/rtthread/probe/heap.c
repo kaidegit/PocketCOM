@@ -53,6 +53,8 @@ probe_heap_stats_t probe_heap_stats(void) {
   return out;
 }
 
+probe_heap_stats_t probe_heap_usage(void) { return stats; }
+
 int probe_heap_check(void) {
   return heap ? tlsf_check(heap) || tlsf_check_pool(tlsf_get_pool(heap)) : -1;
 }

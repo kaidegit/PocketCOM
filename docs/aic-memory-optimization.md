@@ -388,7 +388,13 @@ SW需求  = guest峰值 + 全部任务栈 + WiFi/lwIP/驱动运行缓冲 + 池�
 
 ### 9.3 GC 只作为辅助
 
-当前 AIC 使用约 3 MiB 的 GC threshold，无 damage 的空闲帧按约 2 秒间隔触发 GC。持续流量会减少这些空闲机会。可测试页面卸载/批次结束等安全边界的回收策略，同时记录 `turn_max`。
+当前 AIC 使用约 3 MiB 的 QuickJS 初始 GC threshold。2026-10-25 在原有约 2 秒空闲 GC 上
+增加挂载后/首帧前回收及帧末压力回收：caps 增长 128 KiB，系统余量 ≤1 MiB 时降为 32 KiB，
+低余量持续重绘也最多等 2 秒。回收后重测基线，额外记录 `gc/gc_max`，不把 GC 停顿漏在
+`turn_max` 之外。LP64 7 MiB 忙帧长测/快速组通过，当时组合面板仍失败，见
+[压力 GC 记录](aic-gc-pressure-2026-10-25.md)。2026-10-26 进一步降低普通 View/Text 的组件/
+属性代理开销、同作用域批量更新并复用设置弹窗后，固定 7 MiB 首次组合和三组 50 轮均零分配
+失败，见 [组合修复记录](aic-combined-oom-2026-10-26.md)。堆/配额未变，真机内存与 GC 停顿待验收。
 
 [QuickJS-NG 内部机制文档](https://quickjs-ng.github.io/quickjs-ng/quickjs/developer-guide/internals/)说明其引用计数与循环回收机制。仍被历史、闭包、订阅或缓存持有的对象不会因强制 GC 消失；活跃编译状态和新旧 realloc 块也不是可回收的垃圾。频繁 GC 不能替代容量限制，还会拖慢触摸与 IO。
 

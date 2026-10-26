@@ -50,6 +50,9 @@ npm run probe:aic -- --turns 240 --tap 60,16@5 --sample 60 --tap 238,22@65 --col
 `--tap X,Y@TURN` 在指定 turn 按下、下一 turn 释放，坐标限当前契约视口，tap 必须早于末帧；
 `--sample TURN` 输出 S6-turnN，`--collect TURN` 显式 guest GC 后输出 S7-gcN，二者不超过末帧。
 显式 GC 仅观察存活集，不模拟板端空闲 GC 时序，不改变固件。反复创建子树还须做不额外 GC 的快速操作测试。
+`--aic-gc` 使用与固件同源的帧边界压力回收，`--aic-gc-idle` 使用旧版 2 秒空闲回收作对照。
+按契约帧率推进虚拟时钟，以 raster revision 未变化近似空闲；不模拟真实绘制/GC 耗时。
+默认仍无额外回收；两种策略互斥，也不能与手动 `--collect` 混用。固件增加 `S5-gc` 和 `gc/gc_max` 观测。
 框架输入记录环保留 36,000 帧，触摸页按需分配；交互后增长不能直接认作泄漏，要设空白触摸对照并跨回卷检查。
 第 2 步的快速开关与 48,000 turns 方法、原始参数位置见 [连接配置记录](../../../docs/aic-narrow-panel-step2.md)。
 交互实验必须逐轮验证实际状态/命中，不能把 `--tap` 已发送或 `frames=N/0` 当作点击成功。
@@ -115,6 +118,29 @@ docs/aic-memory-optimization.md §2.1.3（精简页）与 §2.1.4（完整 UI �
 相同总空闲量仍可能因碎片分配失败。原 malloc 的“caps_peak + ~0.45 MiB”只可回看历史，不能估算 TLSF 连续块断点。
 板端系统线程/WiFi 不在离板池内，测试时可显式缩小 `--heap` 留预算，但这不生成真实系统分配序列。
 板上验收门槛见内存优化方案 §11.2；本次实现/前后包结果见 [发送框及 TLSF 记录](../../../docs/aic-probe-tlsf-2026-10-25.md)。
+
+## 帧边界压力回收与交互压力测试
+
+```sh
+npm run package:aic
+python3 tools/aic-memory-stress.py --gc compare --tag normal-7m
+python3 tools/aic-memory-stress.py --busy --gc compare --tag busy-7m
+python3 tools/aic-memory-stress.py --busy --rapid --gc compare --tag busy-rapid-7m
+python3 tools/aic-memory-stress.py --scenario combined --gc policy --tag combined-7m
+python3 tools/aic-memory-stress.py --scenario combined --combined-cycles 50 --busy --gc policy --tag combined-repeat-7m
+```
+
+工具自动构建探针，再为同一实际包编译诊断 harness；三组均逐次验证 400 次触摸状态，折叠还检查节点复用。
+`--busy` 只令调度器看不到空闲帧，不制造真实 IO/damage；`--gc compare` 比较 idle/policy，候选失败非零退出。
+`--scenario combined` 检查发送键盘→抽屉→设置编辑的首次组合（20 次状态检查）；
+`--combined-cycles 50` 再做 50 轮（420 次检查），覆盖输入/退格、取消草稿重置及面板节点复用；
+范围 0–50，加 `--rapid` 做快速操作。2026-10-26 普通 View/Text 原生节点转换与设置复用后，
+固定 7 MiB 正常/无空闲/快速三组通过；旧包仍复现失败，见 [组合修复记录](../../../docs/aic-combined-oom-2026-10-26.md)。
+没有增大板端堆/配额；LP64/busy 的结果仍不替代真机内存和停顿验收。
+日志、argv、源码和 report 在 `.pocket/aic/memory-stress/<tag>/`。策略测试
+`bun test test/host/rtthread/gc-policy.test.ts` 覆盖阈值/滞回/忙帧/时钟回卷。
+压力 GC 的独立历史结果见 [压力 GC 记录](../../../docs/aic-gc-pressure-2026-10-25.md)；
+当前组合修复产物在 `dist/aic/combined-oom-fix/`，交付及真机待验收项见组合修复记录。
 
 
 ## 典型工作流（共享 UI / 编译期裁剪迭代）

@@ -4,7 +4,9 @@
 // dist/aic/pocketcom-aic.pocket] — e.g. --heap 7340032 to emulate the board's
 // unified heap, --turns 600 for a longer soak. --tap X,Y@TURN injects a
 // touch, --sample TURN observes memory, --collect TURN explicitly runs GC
-// for off-device live-set experiments (not board idle-GC timing).
+// for off-device live-set experiments. --aic-gc uses the firmware's shared
+// frame-boundary policy with virtual contract time; --aic-gc-idle compares
+// the previous idle-only policy. Neither simulates board rendering/system IO.
 //
 // Prerequisites: the AIC package + contract header (npm run package:aic), cc,
 // cargo. Objects cache in .pocket/aic/probe-host/ by mtime; repeat runs only
@@ -51,6 +53,7 @@ function requireFile(path: string, hint: string) {
 
 async function compile(source: string, object: string, extra: string[] = []) {
   const dependencies = [source, `${PROBE}/heap.h`, `${TLSF}/include/drv_bare/tlsf.h`,
+    `${HOST}/port/pocketjs_gc.h`,
     `${GENERATED}/pocketjs_aic_contract.h`, `${HOST}/port/esp_compat/esp_heap_caps.h`];
   const sourceTime = Math.max(...dependencies.map(path => statSync(path).mtimeMs));
   const signature = JSON.stringify([...INCLUDES, ...extra]);

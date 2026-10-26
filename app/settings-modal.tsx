@@ -7,7 +7,7 @@ import { hasAppFeature } from "@pocketcom/features";
 // 引擎怪癖（AGENTS.md）：Portal host 固定 480×272 → 遮罩按 viewportSize 自撑；
 // 内容 absolute 定位（深层禁流式堆叠）；组件不返回 null（空态 0 尺寸占位，
 // 条件子节点放表达式）。
-import { ref } from "vue";
+import { onScopeDispose, ref, watch } from "vue";
 import { Portal, Text, View } from "@pocketjs/framework/components";
 import {
   Btn,
@@ -80,6 +80,8 @@ export function openSettingsModal(): void {
   if (hasAppFeature("ui.theme-switch")) draftTheme.value = themeMode.value;
   if (hasAppFeature("ui.font-size-switch")) draftFontSize.value = fontSize.value;
   modalScroll.value = 0;
+  historyField?.setText(String(historyLines.value));
+  scrollField?.setText(String(scrollbackLines.value));
   settingsOpenRef.value = true;
 }
 
@@ -87,8 +89,6 @@ export function closeSettingsModal(): void {
   closePopup(); // 收可能开着的下拉
   settingsOpenRef.value = false;
   modalScroll.value = 0;
-  historyField = undefined;
-  scrollField = undefined;
   // 同步清除活跃域，不等待响应式卸载，避免本 tick 后续输入进入正在关闭的弹窗。
   setActiveField(null);
 }
@@ -153,13 +153,13 @@ const ctlAnchor = (i: number): PopupAnchor => ({
   w: ctlW(),
   h: CTL_H,
 });
-const historyFieldRegion = (): SelRect => ({
+const historyFieldRegion = (): SelRect | null => !settingsOpenRef.value ? null : ({
   x: ctlX(),
   y: frame().y + modalRowY(3) + CTL_TOP_OFF - modalScroll.value,
   w: ctlW(),
   h: CTL_H,
 });
-const scrollFieldRegion = (): SelRect => ({
+const scrollFieldRegion = (): SelRect | null => !settingsOpenRef.value ? null : ({
   x: ctlX(),
   y: frame().y + modalRowY(4) + CTL_TOP_OFF - modalScroll.value,
   w: ctlW(),
@@ -171,10 +171,13 @@ const scrollFieldRegion = (): SelRect => ({
 // ---------------------------------------------------------------------------
 
 export function SettingsModal() {
+  const mounted = ref(settingsOpenRef.value);
+  watch(settingsOpenRef, open => { if (open) mounted.value = true; }, { flush: "sync" });
   return (
     <View style={{ width: 0, height: 0 }}>
-      {settingsOpenRef.value ? (
+      {mounted.value ? (
         <Portal>
+          <View class="absolute" style={{ insetL: settingsOpenRef.value ? 0 : viewportSize.value.w, insetT: 0, width: viewportSize.value.w, height: viewportSize.value.h }}>
           {/* 遮罩：半透明变暗（msgbox 观感）+ 整屏命中（点击丢弃草稿）。
               Portal host 固定 480×272，必须按实时视口自撑宽高（同 PopupLayer）。 */}
           <View
@@ -191,6 +194,7 @@ export function SettingsModal() {
             onPress={closeSettingsModal}
           />
           <SettingsBox />
+          </View>
         </Portal>
       ) : null}
     </View>
@@ -198,6 +202,7 @@ export function SettingsModal() {
 }
 
 function SettingsBox() {
+  onScopeDispose(() => { historyField = undefined; scrollField = undefined; });
   const inner = (): number => frame().w - MODAL_PAD * 2;
   const halfW = (): number => Math.floor((inner() - BTN_GAP) / 2);
   return (

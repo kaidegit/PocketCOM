@@ -17,7 +17,7 @@
  * iterating on the board assembly — board numbers stay the acceptance.
  *
  * Usage: probe <package.pocket> [--heap N] [--limit N] [--turns N]
- *              [--tap X,Y@TURN] [--sample TURN] [--collect TURN]
+ *              [--tap X,Y@TURN] [--sample TURN] [--collect TURN] [--aic-gc]
  *   --heap N   fixed contiguous TLSF arena size (default 7 MiB), no growth
  *              or malloc fallback; failures include fragmentation
  *   --limit N  QuickJS quota for JS_SetMemoryLimit (default 5 MiB)
@@ -25,6 +25,8 @@
  *   --tap     one touch-down at TURN, released on the following turn
  *   --sample  print an additional S6-turnN memory sample after TURN
  *   --collect run guest GC after TURN and print S7-gcN (explicit experiment)
+ *   --aic-gc  firmware frame-boundary policy, virtual time at contract tick Hz
+ *   --aic-gc-idle  old idle-only policy for comparison (raster revision idle)
  */
 #include "pocketjs/guest.h"
 #include "pocketjs/guest_quickjs.h"
@@ -33,6 +35,7 @@
 #include "pocketjs/ui_qjs.h"
 
 #include "heap.h"
+#include "pocketjs_gc.h"
 
 #include <errno.h>
 #include <inttypes.h>
@@ -137,13 +140,22 @@ int main(int argc, char **argv) {
   size_t caps_budget = PROBE_HEAP_DEFAULT;
   size_t heap_limit = 5U * 1024U * 1024U;
   long turns = 120;
+  int aic_gc = 0; /* 0 = none, 1 = firmware, 2 = old idle-only policy */
+  size_t gc_count = 0;
   size_t tap_count = 0U;
   size_t sample_count = 0U;
   size_t collect_count = 0U;
 
   for (int index = 1; index < argc; index++) {
     const char *argument = argv[index];
-    if (strcmp(argument, "--heap") == 0 && index + 1 < argc) {
+    if (strcmp(argument, "--aic-gc") == 0 || strcmp(argument, "--aic-gc-idle") == 0) {
+      const int mode = strcmp(argument, "--aic-gc") == 0 ? 1 : 2;
+      if (aic_gc && aic_gc != mode) {
+        fprintf(stderr, "probe: --aic-gc and --aic-gc-idle are mutually exclusive\n");
+        return 2;
+      }
+      aic_gc = mode;
+    } else if (strcmp(argument, "--heap") == 0 && index + 1 < argc) {
       caps_budget = parse_size(argv[++index]);
     } else if (strcmp(argument, "--limit") == 0 && index + 1 < argc) {
       heap_limit = parse_size(argv[++index]);
@@ -187,7 +199,12 @@ int main(int argc, char **argv) {
   if (package_path == NULL) {
     fprintf(stderr,
             "usage: probe <package.pocket> [--heap N] [--limit N] "
-            "[--turns N] [--tap X,Y@TURN] [--sample TURN] [--collect TURN]\n");
+            "[--turns N] [--tap X,Y@TURN] [--sample TURN] [--collect TURN] "
+            "[--aic-gc | --aic-gc-idle]\n");
+    return 2;
+  }
+  if (aic_gc && collect_count) {
+    fprintf(stderr, "probe: --collect cannot be combined with an AIC GC policy\n");
     return 2;
   }
   for (size_t i = 0; i < tap_count; i++) {
@@ -290,6 +307,15 @@ int main(int argc, char **argv) {
                                    POCKETJS_AIC_CONTRACT_TARGET_ID,
                                    eval_stage_cb, NULL));
 
+  pocketjs_aic_gc_t gc = {0};
+  if (aic_gc == 1) {
+    pocketjs_guest_run_gc(guest);
+    gc_count++;
+    sample("S5-gc");
+  }
+  if (aic_gc) pocketjs_aic_gc_collected(&gc, 0U, probe_heap_usage().caps_live);
+  uint64_t raster_revision = UINT64_MAX;
+
   /* Idle turns: no renderer/targets here (the firmware's S5 renderer adds
    * a small, known delta), just the guest frame loop with empty input. */
   for (long turn = 1; turn <= turns; turn++) {
@@ -310,6 +336,21 @@ int main(int argc, char **argv) {
     memset(&frame, 0, sizeof(frame));
     frame.struct_size = sizeof(frame);
     CHECK(pocketjs_ui_turn(binding, &input, &frame));
+    if (aic_gc) {
+      const uint32_t tick = (uint32_t)((uint64_t)turn * 1000U / POCKETJS_AIC_CONTRACT_TICK_HZ);
+      const bool idle = frame.raster_revision == raster_revision;
+      const probe_heap_stats_t heap = probe_heap_usage();
+      const size_t available = heap.total > heap.used ? heap.total - heap.used : 0U;
+      const bool due = aic_gc == 1
+        ? pocketjs_aic_gc_due(&gc, tick, 1000U, heap.caps_live, available, idle)
+        : idle && (uint32_t)(tick - gc.tick) >= 2000U;
+      if (due) {
+        pocketjs_guest_run_gc(guest);
+        gc_count++;
+        pocketjs_aic_gc_collected(&gc, tick, probe_heap_usage().caps_live);
+      }
+    }
+    raster_revision = frame.raster_revision;
     if (turn == 1) {
       sample("S5-frame1");
     } else if (turn == turns) {
@@ -334,8 +375,9 @@ int main(int argc, char **argv) {
   const probe_heap_stats_t final_heap = probe_heap_stats();
   probe_heap_print_fails();
   printf("[PJS-PROBE] done turns=%ld caps_live=%zu caps_peak=%zu "
-         "caps_fails=%zu\n",
-         turns, final_heap.caps_live, final_heap.caps_peak, final_heap.caps_fails);
+         "caps_fails=%zu aic_gc=%d gc_count=%zu\n",
+         turns, final_heap.caps_live, final_heap.caps_peak, final_heap.caps_fails,
+         aic_gc, gc_count);
 
   pocketjs_ui_qjs_destroy(binding);
   pocketjs_guest_destroy(guest);
