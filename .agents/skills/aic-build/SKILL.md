@@ -124,6 +124,11 @@ PSRAM 8 MiB      CMA 1 MiB（.data/.bss + 双 RGB565 framebuffer 522,240 B）
 - 2026-10-24 起固件含 PocketCOM `com.*` 串口桥（fork `hosts/aic/port/pocketjs_com.c`）：仅
   uart1（PA.2/PA.3），op 语义与桌面一致、RX 走 tick poll；`POCKETJS_COM=0` 编译关闭。
   详见 host/rtthread README 的 "com 串口桥" 与 "UART 引脚" 小节。
+- 2026-10-26 修复 UART1 计数先变、接收文字延后显示：当前固件未启用 RTC，QuickJS 未检查
+  `gettimeofday()` 失败，会话泵改用 `virtualNow() × 1000` 驱动合流/重连，消息时间戳来源保留。真实 Vue Vapor/core WASM 的
+  `test/app/serial-receive-clock.test.ts` 覆盖 AIC/桌面配置与冻结/回拨时钟；固件在
+  `dist/aic/uart-receive-delay-fix/`，真机显示延迟待用户烧录复验，见
+  [排查记录](../../../docs/aic-uart-receive-delay-2026-10-26.md)。
 - WiFi（RTL8189FTV，2026-10-11 点亮至 AP 扫描）：SDIO 接 SDMC0（4-bit @40MHz）+ third-party
   lwIP（netif `WL0`，`AIC_WLAN_REALTEK` 配置链）；驱动 `.bss` ≈259 KiB 进 PSRAM、运行缓冲吃统一堆，
   恢复收发功能前必须补 WiFi 开/关、连 AP/断开状态的堆基线测量。模组 EN 由载板保证，固件不做电源控制；

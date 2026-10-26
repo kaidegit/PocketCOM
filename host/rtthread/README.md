@@ -81,6 +81,11 @@ fork 侧）。op 语义与桌面 `host/macos` 对齐：
 - **真机验收待补**：烧录后连接 uart1 的收发、波特率切换、与 console（uart0）共存互不干扰
   均需用户确认；此前任何板端内存数据都不覆盖本桥的运行态。
 
+2026-10-26 用户反馈 UART1 TX/RX 短接发送 `aaa` 后两端计数立即各为 3 B，接收文字延后显示。
+当前产品未启用 RTC，`gettimeofday()` 返回失败且 QuickJS 未检查返回值，`Date.now()` 不可靠；
+共享 App 会话泵已改用 `virtualNow() × 1000` 驱动静默超时/重连，消息日历时间戳来源保留。冻结/回拨时钟的真实
+Vue Vapor/core 回归通过，修复后真机延迟待复验，见 [排查记录](../../docs/aic-uart-receive-delay-2026-10-26.md)。
+
 ## 初始化与更新
 
 ```sh

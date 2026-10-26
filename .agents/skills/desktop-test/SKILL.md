@@ -108,6 +108,12 @@ PocketJS headless Bun host（byte-exact PNG golden）待落地；`--screenshot` 
 
 ## 共享窄屏连接配置回归
 
+`test/app/serial-receive-clock.test.ts` 使用真实 Vue Vapor/core WASM 和模拟 UART1 原始回环事件，
+覆盖 AIC/桌面两种 profile：RTC 冻结时 TX/RX 计数到接收文字的后续帧更新、RTC 回拨、
+日志日历时间戳保留，以及 300 baud 仍按静默阈值合帧。会话泵必须传框架帧时钟毫秒值，
+不能传未启用 RTC 的 AIC 上不可靠的 `Date.now()`。缺少 WASM 时显式跳过；验收前须先构建再运行，
+不接受跳过。根因与固件见 [接收延迟记录](../../../docs/aic-uart-receive-delay-2026-10-26.md)。
+
 `test/app/workspace-layout.test.ts` 验证宽窄屏工作区几何、非负边界及回到宽屏关闭抽屉；
 `test/app/wheel.test.ts` 验证面板卸载时注销滚轮回调、旧作用域清理不覆盖新订阅。
 第 2 步使用同一共享 App 的 480×272 桌面实机 e2e 验证抽屉/下拉/翻页/设置、未提交参数与发送草稿保留、

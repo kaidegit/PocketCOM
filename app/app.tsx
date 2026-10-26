@@ -9,6 +9,7 @@ import { ref, watch } from "vue";
 import { Portal, Text, View } from "@pocketjs/framework/components";
 import { resizeViewport } from "@pocketjs/framework";
 import { onFrame } from "@pocketjs/framework/lifecycle";
+import { virtualNow } from "@pocketjs/framework/clock";
 import { focusNode, hitFocusable } from "@pocketjs/framework/input";
 import { connectSvc, type HostEvent } from "./svc";
 import { activeField, setActiveField } from "./fields";
@@ -286,7 +287,9 @@ export default () => {
         focusNode(hitFocusable(lastMouse.x, lastMouse.y));
       }
     }
-    pumpSession(Date.now());
+    // AIC has no reliable wall clock without RTC. Silence/reconnect deadlines
+    // follow frame time; MessageBus keeps its calendar timestamp source.
+    pumpSession(virtualNow() * 1000);
     pumpTimedSend();
   });
 

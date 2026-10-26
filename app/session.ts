@@ -902,6 +902,7 @@ let lastTermVersion = 0;
  * 每帧：drain com 事件批（appearance → 主题，其余 → 会话）→ 计数同步 →
  * LogView 同步（暂停时不同步；恢复后从总线环形缓冲自然追上，SPEC §3.3）→
  * 终端模型版本/应答泵（DSR/DA 应答写回连接，SPEC §3.4）。
+ * nowMs 由 App 注入框架帧时钟毫秒值；日历时间只用于消息时间戳。
  */
 export function pumpSession(nowMs: number): void {
   if (com && session) {
