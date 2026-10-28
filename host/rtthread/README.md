@@ -249,6 +249,26 @@ npm run probe:aic -- --turns 240 --tap 60,16@5 --sample 60 --tap 238,22@65 --col
 
 前置：`npm run package:aic`（探针读 `.pocket` 包与生成的契约头）、cc、cargo、已初始化的 `vendor/luban-lite`。直接编译板端同一份 `drv_bare/tlsf_heap/tlsf.c`，默认 7,340,032 bytes 固定池；`--heap` 调整池大小，禁止零值/扩池/malloc 回退。包缓冲模拟 XIP 在池外，其余 guest/Rust 分配走同一池。对象缓存在 `.pocket/aic/probe-host/`，追踪包装头/契约头和编译参数变化。新增 `sys/sys_max`、`walk_free/walk_maxfree/walk_frags` 及失败瞬间的固定 8 条失败环；caps/js/guest/rloc 含义保留。64 位指针与 TLSF 块布局不同于 RV32，且不含系统线程/WiFi 分配和 XIP 时延，仍不能替代板端验收。历史 malloc 数据不与新池的碎片断点直接换算。`probe:features` 显式用两组相同的固定 16 MiB 池，报告保存 allocator/arenaBytes。测试、发送框复测和产物见 [2026-10-25 记录](../../docs/aic-probe-tlsf-2026-10-25.md)。
 
+## 低内存性能优化与分段计时
+
+2026-10-26 减少原生节点兼容对象/slot临时分配、GE暂存面重复清零，以及无damage帧的
+整面cache维护和PAN；保留固定虚拟tick、vsync与双缓冲target历史。
+每秒 `[PJS-PERF]` 打印实际窗口及UI/核心/光栅/显示各阶段最大微秒数、GE累计微秒数，
+使用88 B固定计数，不建trace环。FPS按实际窗口归一化，修正长停顿后积压窗口的假低值。
+`turn_max` 包含整个UI turn（命中/JS/core tick/core draw），不是纯JS；GE/raster/display另计。
+LP64同条件固定7 MiB组合峰值减少约187 KiB，像素和交互回归通过。真机120帧系统占用减少约63 KiB；首次配置/键盘的JS阶段仍分别约1860/684ms，内存收益已确认，首开卡顿尚未解决。
+固件 `dist/aic/perf-low-memory/`，完整数据与原操作复测顺序见
+[低内存性能记录](../../docs/aic-perf-low-memory-2026-10-26.md)。
+
+## 时钟与缓存核查
+
+2026-10-26 核查 CPU/总线/GE/DE/XIP/PSRAM 的配置、分频与缓存初始化，记录见
+[时钟与缓存核查](../../docs/aic-clock-cache-audit-2026-10-26.md)。新增只读 `pjs_hw`，
+启动首帧前自动输出 `[PJS-HW]`，包含时钟与 gate、QSPI XIP SCK、MHCR/MHINT 与 SYSMAP。
+沿用 POCKETJS_DIAG，不修改硬件配置。用户读回确认 CPU396/GE147/DE98 MHz、MHCR=0x103f。SYSMAP 初版打印位域错误已修正：
+E907 SO/C/B 在 bit4/3/2，PSRAM/FLASH raw attr=0x0c 为可缓存/可缓冲；
+诊断固件 `dist/aic/clock-cache-audit/`。
+
 ## GE 2D 加速（feat/aic-gpu 分支，2026-10-24）
 
 fork `hosts/aic/port/pocketjs_ge.c` 把 RGB565 渲染器的 accelerator 表接到
@@ -475,3 +495,37 @@ Puya PY25Q128HA（`XIP flash ID: 0x852018`），补 XIP 表项后精简页全绿
 键盘 164px + 状态栏 28px；与原输入框共用文本/光标，点击预览可定位光标，长行/多行跟随，
 收起直接返回，发送仍通过原按钮。键帽文字水平/垂直居中，交付与真实字体回放见
 [临时编辑面板](../../docs/aic-keyboard-editor-2026-10-25.md)。
+
+2026-10-26 临时TS创建诊断固件 `dist/aic/ts-create-perf/` 输出 `[PJS-TS]`，
+使用宿主单调微秒时钟，组件/原语/样式/Vue flush/HostOps分开采样。inclusive不可相加；
+console在span结束后输出，但仍计入C层JS总时间。普通离板probe没有诊断时钟时不会启用
+此收集器；短测使用带时钟的独立native harness，不能把普通probe通过当作诊断已启用。
+正常桌面入口不安装，产品堆/配额未变，当前真机结果待补。口径与删除清单见
+[TS诊断记录](../../docs/aic-ts-create-perf-2026-10-26.md)。
+
+2026-10-27 inline style批量提交：固件 `dist/aic/style-batch/`；在package:aic之后运行
+`bun tools/aic-prop-batch-test.ts` 验证实际QuickJS绑定（依赖离板probe原生构建前置）。
+框架 `tests/style-batch.test.ts` 对照scalar/batch编码、顺序、变化项与错误前提交；
+触摸测试的HostOps观察器必须同时记录setProp和setPropBatch，不能因漏采batch判为没滚动。
+属性调用次数减少不等于真机提速比例，临时TS日志仍有开销；内存/像素/压力边界见
+[本轮记录](../../docs/aic-style-batch-2026-10-27.md)。
+
+Inline style批量版真机已回传：配置属性HostOp254→82、键盘414→54；
+带探针首开TS帧3055→2562ms、1611→1127ms，frame120系统4475968 B、caps_fails=0。
+这是单次带插桩观测，减少HostOp也减少了计时开销，不能直接宣称产品净提速16%/30%；
+完整记录见 [样式批量提交](../../docs/aic-style-batch-2026-10-27.md)。
+
+2026-10-27 后续性能复测已撤除tree/primitive/HostOps密集埋点，不再包装ui.*；
+仅保留组件/键盘effect/Vue flush/frame，启动标识 `mode=coarse props=scalar/batch`。
+对照固件在dist/aic/coarse-perf-scalar，正常batch在dist/aic/coarse-perf；临时控制入口随
+产物保存，工作区与默认产物恢复batch，不新增产品feature开关。两版各重启后用同一序列，
+比较同一组件/TS frame；仍有粗粒度探针开销，不接受旧密集版self作为直接净收益基线。
+原生probe无诊断时钟不会启用收集器，应另检实际包带时钟路径。见
+[粗粒度复测记录](../../docs/aic-coarse-perf-2026-10-27.md)。
+
+后续真机同口径A/B已否定自动style合批的净收益：本组配置/键盘慢18%–21%，已恢复
+直接逐属性setProp，未删除可选C batch接口。当前固件dist/aic/scalar-style；启动行
+`mode=coarse inline=scalar batch_api=1`，不能再由接口存在判断inline走法。
+框架回归改名为tests/inline-style.test.ts，验证即便宿主支持batch，inline仍即时直接写入，
+编码/差量/错误前提交一致；C接口集成测试保留。A/B档案不覆盖当前默认固件，见
+[最新结论](../../docs/aic-coarse-perf-2026-10-27.md)。

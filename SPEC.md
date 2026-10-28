@@ -264,6 +264,10 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 - 板端固件 XIP 运行：`.text/.rodata`（含内联包）链接进 SPI NOR 的 0x60000000 XIP 窗口原地执行，仅 `.data/.bss` 由 bootloader 拷入/清零 PSRAM；分区表去掉未使用的 `data` 分区，QSPI0 运行期归 XIP 缓存，OS 侧不挂 spinor 设备（无 FAL/SFUD/userid 运行时 flash 访问）。
 - 节点表示优化采用 PocketJS 共享的 DOM 兼容接口原型：访问器与方法使用接收者，children、属性缓存和可变 facade 容器按节点独立；保留克隆、原生根、retain/release、sweep、焦点与事件生命周期。2026-10-23 已完成本地 A/B、桌面回归及用户真机启动/120 帧零错误验证，用户确认画面和触摸下拉正常；本步不改变功能、容量或设备桥语义，记录见 `docs/aic-node-prototype-step1.md`。
 - PSRAM 8 MiB 统一堆：底部约 1 MiB 为 CMA 区（`.data/.bss` + 双 RGB565 framebuffer），其余约 7 MiB 为 RT-Thread 系统堆，算法为 TLSF（SDK `RT_USING_USERHEAP` + `bsp/artinchip/drv/mem/rt_tlsf_heap.c`），QuickJS/Rust guest 与系统线程共用，不再划分 PocketJS 私有池；guest JS 配额 5 MiB 为软上限。构建报告实际 ELF/map 的包大小、XIP/PSRAM 段拆分、CMA/SW 边界、framebuffer 与统一堆预算（guest 配额 + 系统预留）及 OS 分区占用，并校验 ITS XIP 段地址与 `XIP_FW_OFFSET = os 分区偏移 + 0x800` 一致；超限失败，不自动调整分区或提高配额，不自动烧录。
+- 共享原生节点的 DOM 兼容 `style` / `classList` 按首次访问创建且逐节点独立；Vue Vapor 原语挂载复用文本创建入口，减少无子节点工作和临时闭包，不预建隐藏面板以换取首开速度。
+- AIC 无 damage 时可提交 standby target 状态并跳过 framebuffer clean/PAN，保留 vsync、输入及固定虚拟 tick；出现 damage 后仍按双缓冲 target 的各自历史渲染。GE A8 转换只清行尾 padding，有效像素完整覆盖后保持相同缓存维护和失败回退。
+- AIC FPS 按完整实际统计窗口归一化，长停顿后从当前时刻重开窗口，不补报积压窗口。既有诊断开关内使用 88 B 固定计数器打印 UI hit/JS/core tick/core draw、prepare/raster/present/vsync 和 GE 转换/等待/写回；不增加 trace 环、堆配额、暂存面或全量节点缓存。原 `turn_max` 包含整个 UI turn，不得表述为纯 JS 耗时。
+- AIC 的既有宿主诊断开关内提供只读 `pjs_hw`，首帧前自动采样时钟分频/gate、QSPI XIP SCK、CPU 缓存 CSR 和 SYSMAP 属性；不修改时钟、缓存或内存属性，不访问 guest JS。配置推算与板上读回/测量必须分别记录。
 - AIC 在挂载完成后、首帧前回收一次循环垃圾；之后只在完整帧结束的安全边界回收：guest+Rust 占用自上次回收增长 128 KiB 时触发，系统堆余量 ≤1 MiB 时增长门槛降至 32 KiB。保留 2 秒空闲回收，低余量下即使持续重绘也最多等 2 秒。每次回收后重测基线，避免不可回收的常驻对象导致逐帧 GC；统计 GC 次数和最大耗时。不得在分配器/宿主回调中重入 JS 回收，不改变堆/JS 配额或产品功能值。
 - 字体 UI 使用 MiSans，mono 使用 JetBrains Mono；显式烘焙中英文语言包字符，未知字形遵守 §5.4。AIC 包独立压缩标识符与空白（不折叠表达式、不改宿主属性名、不再套一层 IIFE），降低 QuickJS 编译峰值；桌面构建不变。未来桥接仍由产品宿主实现，设备事件仅在 tick 边界进入 JS，core 保持纯 TS。
 - AIC GE 在同步 normal 模式下加速不透明填充、1:1 PSM5650 搬运和 A8 遮罩混合。A8 先在 CPU 将覆盖率与全局 alpha 合成为 ARGB8888，GE 混合到私有 RGB565 暂存面，成功后才写回；失败时原目标保持不变，由渲染器软件重放。暂存区按 SDK 示例从 MEM_CMA 首次使用分配并复用，源和目标行 stride 均按 8 字节对齐（共用 4 像素对齐 pitch），上限按补齐后的 8192 像素计算、49152 字节加最多 63 字节首地址对齐；超限、分配失败或不支持的几何保留 CPU 路径。不改变产品堆或 JS 配额；硬件混合舍入、真机峰值和性能收益需实测。
@@ -414,3 +418,17 @@ M0 桌面宿主调研已完成（2026-09-04），#1/#3 已关闭：
 - 本项目文档导航：`docs/e2e.md`（脚本化 UI 验证）、`docs/coords.md`（控件坐标速查）、`docs/mcp.md`（MCP 服务手册）、`docs/aic-memory-optimization.md`（D12x 内存优化方案）、`docs/rtthread-d12x.md`（移植预研）、`docs/performance/`（性能基准原始数据）。
 - COMTool 调研要点：连接/插件/装配三层解耦、帧合流公式、终端基于 pyte 的 headless 模型（本项目以纯 TS 重写等价物）。
 - umeko_serial_mcp 调研要点：6 个 tool 的划分、来源标签（LLM/HARDWARE/USER_OVERRIDE/SYSTEM）、UI 发送回灌 agent 读缓冲；缺陷清单见 §1.1/§3.5/§6。
+
+<!-- Temporary board diagnosis, not a product feature switch. -->
+AIC诊断构建可向共享TS提供单调微秒时钟，用于临时组件创建、响应更新与HostOps嵌套计时；
+仅AIC诊断入口安装收集器，日志必须说明inclusive/self口径及打印/探针开销，不能把带埋点的
+整体耗时作为加速验收。诊断开销允许临时增加，产品堆/配额保持原值；定位后删除诊断再复测。
+
+AIC QuickJS宿主补齐既有可选 `HostOps.setPropBatch(ArrayBuffer)`：小端Float64三元组
+`[nodeId,propId,value]`按序同步执行，与逐次setProp一致；尾部不足24字节的记录忽略。
+共享渲染器的inline style保持逐属性即时写入，不因batch接口存在自动创建打包数组。
+2026-10-27粗粒度真机A/B未显示自动合批收益，撤回该自动路径；可选batch接口保留供显式批次使用。
+
+2026-10-27 AIC性能复测改为粗粒度TS诊断：仅保留组件、键盘分组effect、Vue flush与
+整帧计时，撤除原语/属性/HostOps埋点且不包装ui.*。用于同口径scalar/batch对照，
+保留计时仍有开销，不等同于无诊断产品性能验收。

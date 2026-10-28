@@ -1,3 +1,4 @@
+import { perfBegin, perfEnd } from "./perf";
 import { hasAppFeature } from "@pocketcom/features";
 // app/panel.tsx — 左侧连接配置面板（SPEC §3.1/§3.2），M2 重写版。
 // 布局：头部（固定）+ 内容滚动区（absolute 布局表，每块 insetT 显式定位，
@@ -204,6 +205,8 @@ const layoutInfo = computed(() => {
 });
 
 export function LeftPanel(props: { onClose?: () => void } = {}) {
+  const __tsPerf1=perfBegin("create.LeftPanel");
+  try {
   let customBaudField: TextFieldHandle | undefined;
   /** 文本字段句柄注册表：打开连接前把未提交的输入 flush 进 session 仓库。 */
   const fieldHandles = new Map<string, TextFieldHandle>();
@@ -643,6 +646,8 @@ export function LeftPanel(props: { onClose?: () => void } = {}) {
       </View>
     </View>
   );
+
+  } finally { perfEnd(__tsPerf1); }
 }
 
 /** 串口参数块（port/baud/pairs/signals），布局 id 与主布局表一致。 */
@@ -654,6 +659,8 @@ function SerialBlocks(props: {
   setCustomBaudField: (h: TextFieldHandle | undefined) => void;
   readCustomBaud: () => string;
 }) {
+  const __tsPerf2=perfBegin("create.SerialBlocks");
+  try {
   const effectiveBaud = (): string => {
     if (props.customBaudVisible.value) {
       return props.readCustomBaud() || props.customBaud.value;
@@ -836,6 +843,8 @@ function SerialBlocks(props: {
       </View>
     </View>
   );
+
+  } finally { perfEnd(__tsPerf2); }
 }
 
 /** 通用字段块：label + 控件区。以表达式调用内联（Vue JSX 的组件 children
@@ -889,6 +898,8 @@ function applySignals(): void {
 }
 
 function FieldLabel(props: { text: () => string }) {
+  const __tsPerf3=perfBegin("create.FieldLabel");
+  try {
   return (
     <Text
       class="absolute text-xs"
@@ -897,6 +908,8 @@ function FieldLabel(props: { text: () => string }) {
       {props.text()}
     </Text>
   );
+
+  } finally { perfEnd(__tsPerf3); }
 }
 
 function transportOptions() {

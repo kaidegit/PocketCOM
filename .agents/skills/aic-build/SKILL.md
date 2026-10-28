@@ -198,3 +198,53 @@ A8 修正版后续用户回传已确认黑屏恢复、首次 fill/A8 rc=0、首�
 frame120 caps_fails=0，CMA 增加 49240 B、余额 177852 B；触摸后系统峰值 5589620 B。
 仍有首次触摸 turn_max=1763 ms 与重绘 fps=1 样本；turn_max 不含 GE 绘制等待，
 不能由该值或 ge_blend 计数宣称加速。首帧恢复已验收，性能/长时范围见同一 GE A8 记录。
+
+2026-10-26 时钟/缓存核查新增只读 `pjs_hw`，首帧前自动 `[PJS-HW]` 输出；沿用 POCKETJS_DIAG。
+采集时钟分频/gate、QSPI CCFG/XIP SCK/BTR、MHCR/MHINT、SYSMAP，不能用 Kconfig 请求值
+代替寄存器解算，更不能把解算值当仪器测量。CPU 396 MHz、GE 147 MHz、DE 98 MHz 是
+当前配置推算；PSRAM/XIP 继承启动配置，须补板上日志。诊断固件 dist/aic/clock-cache-audit/，
+完整依据见 [核查记录](../../../docs/aic-clock-cache-audit-2026-10-26.md)。
+
+用户后续读回确认 CPU396、GE147、DE98 MHz、MHCR=0x103f、MHINT=0x8。
+注意 SDK core_rv32.h 的 SYSMAP B/C/SO 位定义与 E907 手册图4.1 不符：硬件 SO/C/B
+为 bit4/3/2；0x0c 是可缓存/可缓冲，0x10 是强序外设。旧 pjs_hw 的属性标签错误，
+已在诊断层修正并补实际 raw 值回归，不改寄存器；修正版 dist/aic/clock-cache-decode-fix/。
+PLL_FRA2/pixel 实际636/9.9375 MHz，UART实际53.454545 MHz（波特率表），详见核查记录。
+
+2026-10-26 低内存性能轮：固件 dist/aic/perf-low-memory/。原生DOM容器按需、slot省临时分配，
+GE仅清行尾padding；无damage保留target commit/vsync，跳过整面cache清理/PAN，不扩大缓冲。
+诊断PJS-PERF使用88 B固定计数；ui/frame为各阶段窗口内最大us，ge为窗口累计us，
+阶段嵌套且最大值可来自不同帧，不能相加。FPS按实际window归一化，不补报旧积压窗口。
+turn_max包含整个pocketjs_ui_turn（命中/JS/core tick/core draw），不是纯JS；
+后续RGB565/GE/PAN/vsync与帧末显式GC另计。真机沿用户原序列，每步停2–3秒，再开一次
+面板/键盘区分首次与复用；并记录堆/CMA峰值和失败。测试/静态报告不替代真机，见
+[本轮记录](../../../docs/aic-perf-low-memory-2026-10-26.md)。
+
+2026-10-26 临时TS创建诊断固件 `dist/aic/ts-create-perf/` 输出 `[PJS-TS]`，
+使用宿主单调微秒时钟，组件/原语/样式/Vue flush/HostOps分开采样。inclusive不可相加；
+console在span结束后输出，但仍计入C层JS总时间。普通离板probe没有诊断时钟时不会启用
+此收集器；短测使用带时钟的独立native harness，不能把普通probe通过当作诊断已启用。
+正常桌面入口不安装，产品堆/配额未变，当前真机结果待补。口径与删除清单见
+[TS诊断记录](../../../docs/aic-ts-create-perf-2026-10-26.md)。
+
+2026-10-27 inline style批量提交：固件 `dist/aic/style-batch/`；在package:aic之后运行
+`bun tools/aic-prop-batch-test.ts` 验证实际QuickJS绑定（依赖离板probe原生构建前置）。
+框架 `tests/style-batch.test.ts` 对照scalar/batch编码、顺序、变化项与错误前提交；
+触摸测试的HostOps观察器必须同时记录setProp和setPropBatch，不能因漏采batch判为没滚动。
+属性调用次数减少不等于真机提速比例，临时TS日志仍有开销；内存/像素/压力边界见
+[本轮记录](../../../docs/aic-style-batch-2026-10-27.md)。
+
+2026-10-27 后续性能复测已撤除tree/primitive/HostOps密集埋点，不再包装ui.*；
+仅保留组件/键盘effect/Vue flush/frame，启动标识 `mode=coarse props=scalar/batch`。
+对照固件在dist/aic/coarse-perf-scalar，正常batch在dist/aic/coarse-perf；临时控制入口随
+产物保存，工作区与默认产物恢复batch，不新增产品feature开关。两版各重启后用同一序列，
+比较同一组件/TS frame；仍有粗粒度探针开销，不接受旧密集版self作为直接净收益基线。
+原生probe无诊断时钟不会启用收集器，应另检实际包带时钟路径。见
+[粗粒度复测记录](../../../docs/aic-coarse-perf-2026-10-27.md)。
+
+后续真机同口径A/B已否定自动style合批的净收益：本组配置/键盘慢18%–21%，已恢复
+直接逐属性setProp，未删除可选C batch接口。当前固件dist/aic/scalar-style；启动行
+`mode=coarse inline=scalar batch_api=1`，不能再由接口存在判断inline走法。
+框架回归改名为tests/inline-style.test.ts，验证即便宿主支持batch，inline仍即时直接写入，
+编码/差量/错误前提交一致；C接口集成测试保留。A/B档案不覆盖当前默认固件，见
+[最新结论](../../../docs/aic-coarse-perf-2026-10-27.md)。

@@ -1,3 +1,4 @@
+import { perfBegin, perfEnd } from "./perf";
 // A view onto the existing active field, not another TextField or draft.
 import { computed, onScopeDispose } from "vue";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/components";
@@ -16,6 +17,8 @@ export function keyboardEditorMouse(x: number, y: number, down: boolean): void {
 }
 
 export function KeyboardEditor(props: { width: () => number; top: () => number; opened: () => boolean }) {
+  const __tsPerf1=perfBegin("create.KeyboardEditor");
+  try {
   let node: NodeMirror | null = null;
   const field = () => activeField.value?.editor;
   const font = () => field()?.monoSize ?? 14;
@@ -42,4 +45,6 @@ export function KeyboardEditor(props: { width: () => number; top: () => number; 
       <View class="absolute" debugName="keyboardEditorCaret" style={{ insetL: EDITOR_PAD + 1 + window.value.caretX, insetT: 9 + window.value.caretRow * lineH(), width: 2, height: lineH() - 6, bgColor: theme.value.accent }} />
     </View>
   </View>;
+
+  } finally { perfEnd(__tsPerf1); }
 }

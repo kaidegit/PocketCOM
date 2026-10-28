@@ -1,3 +1,4 @@
+import { perfBegin, perfEnd } from "./perf";
 import { hasAppFeature } from "@pocketcom/features";
 // app/widgets.tsx — PocketCOM 基础控件集（重写版）。
 // 约束（AGENTS.md）：直接返回 JSX 的函数组件；无 DOM/无运行时 CSS；
@@ -68,6 +69,8 @@ export function Hairline() {
 // ---------------------------------------------------------------------------
 
 export function Scrollbar(props: { scroll: () => number; total: () => number; viewH: () => number }) {
+  const __tsPerf1=perfBegin("create.Scrollbar");
+  try {
   // 不用渲染期响应式：三个 props getter 读的多半是非响应式源（logView.rows、
   // terminal.totalLines），条件读取还会漏注册依赖（2026-09 实测：show 首帧
   // 为 false 时 top() 不执行 → scroll 依赖丢失 → 滚动条保持 0 宽永不出现）。
@@ -98,6 +101,8 @@ export function Scrollbar(props: { scroll: () => number; total: () => number; vi
       style={{ width: w.value, insetR: 3, insetT: t.value, height: h.value, bgColor: theme.value.scrollbar }}
     />
   );
+
+  } finally { perfEnd(__tsPerf1); }
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +117,8 @@ export function Btn(props: {
   width?: number;
   height?: number;
 }) {
+  const __tsPerf2=perfBegin("create.Btn");
+  try {
   const disabled = () => props.disabled?.() ?? false;
   const accent = () => (typeof props.accent === "function" ? props.accent() : (props.accent ?? false));
   return (
@@ -140,6 +147,8 @@ export function Btn(props: {
       </Text>
     </View>
   );
+
+  } finally { perfEnd(__tsPerf2); }
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +161,8 @@ export function CheckRow(props: {
   onToggle: () => void;
   disabled?: () => boolean;
 }) {
+  const __tsPerf3=perfBegin("create.CheckRow");
+  try {
   const disabled = () => props.disabled?.() ?? false;
   return (
     <View
@@ -194,6 +205,8 @@ export function CheckRow(props: {
       </Text>
     </View>
   );
+
+  } finally { perfEnd(__tsPerf3); }
 }
 
 // ---------------------------------------------------------------------------
@@ -212,6 +225,8 @@ export function SegCtrl(props: {
   onPick: (v: string) => void;
   height?: number;
 }) {
+  const __tsPerf4=perfBegin("create.SegCtrl");
+  try {
   const h = () => props.height ?? CTL_H;
   return (
     <View
@@ -247,6 +262,8 @@ export function SegCtrl(props: {
       })}
     </View>
   );
+
+  } finally { perfEnd(__tsPerf4); }
 }
 
 // ---------------------------------------------------------------------------
@@ -430,6 +447,8 @@ export function Select(props: {
   /** 控制框的屏幕绝对坐标（弹层定位用） */
   anchor: () => PopupAnchor;
 }) {
+  const __tsPerf5=perfBegin("create.Select");
+  try {
   const id = nextSelectId++;
   const disabled = () => props.disabled?.() ?? false;
   const open = () => popup.value?.id === id;
@@ -480,6 +499,8 @@ export function Select(props: {
       </Text>
     </View>
   );
+
+  } finally { perfEnd(__tsPerf5); }
 }
 
 // ---------------------------------------------------------------------------
@@ -578,6 +599,8 @@ export function TextField(props: {
   /** 控件根盒的屏幕绝对矩形（拖动选区命中区；缺省不参与鼠标选区） */
   selRegion?: () => SelRect | null;
 }) {
+  const __tsPerf6=perfBegin("create.TextField");
+  try {
   const text = ref(props.initial ?? "");
   const caret = ref((props.initial ?? "").length);
   /** 拖动选区两端（text 字符索引；相等 = 无选区）。 */
@@ -1012,4 +1035,6 @@ export function TextField(props: {
       </View>
     </View>
   );
+
+  } finally { perfEnd(__tsPerf6); }
 }

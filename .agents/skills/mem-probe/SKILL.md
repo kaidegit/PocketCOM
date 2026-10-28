@@ -166,3 +166,38 @@ python3 tools/aic-memory-stress.py --scenario combined --combined-cycles 50 --bu
 软键盘模块的移除；QuickJS 入口断言关闭后的语言/主题/字号固定值和系统主题状态不分配。
 本实验没有聚焦输入域、展开软键盘、打开设置、收发历史或终端网格；反映编译代码、资源及空闲状态
 的差值，交互时分配的额外状态不在此读数内。正式 AIC 入口与真机验收边界保持原约定。
+
+2026-10-26 原生节点DOM容器按需/slot减少临时分配：同一7 MiB池、GC策略和10轮组合，
+系统峰值6621664→6429928 B（-191736 B），忙帧/快速各50轮420/420无分配失败。
+代码变更同时影响共享桌面路径；统计窗口与GE/PAN优化不由内存探针模拟。报告身份、
+像素对照、计时口径和板端待验收边界见
+[低内存性能轮](../../../docs/aic-perf-low-memory-2026-10-26.md)。
+
+2026-10-26 临时TS创建诊断固件 `dist/aic/ts-create-perf/` 输出 `[PJS-TS]`，
+使用宿主单调微秒时钟，组件/原语/样式/Vue flush/HostOps分开采样。inclusive不可相加；
+console在span结束后输出，但仍计入C层JS总时间。普通离板probe没有诊断时钟时不会启用
+此收集器；短测使用带时钟的独立native harness，不能把普通probe通过当作诊断已启用。
+正常桌面入口不安装，产品堆/配额未变，当前真机结果待补。口径与删除清单见
+[TS诊断记录](../../../docs/aic-ts-create-perf-2026-10-26.md)。
+
+2026-10-27 inline style批量提交：固件 `dist/aic/style-batch/`；在package:aic之后运行
+`bun tools/aic-prop-batch-test.ts` 验证实际QuickJS绑定（依赖离板probe原生构建前置）。
+框架 `tests/style-batch.test.ts` 对照scalar/batch编码、顺序、变化项与错误前提交；
+触摸测试的HostOps观察器必须同时记录setProp和setPropBatch，不能因漏采batch判为没滚动。
+属性调用次数减少不等于真机提速比例，临时TS日志仍有开销；内存/像素/压力边界见
+[本轮记录](../../../docs/aic-style-batch-2026-10-27.md)。
+
+2026-10-27 后续性能复测已撤除tree/primitive/HostOps密集埋点，不再包装ui.*；
+仅保留组件/键盘effect/Vue flush/frame，启动标识 `mode=coarse props=scalar/batch`。
+对照固件在dist/aic/coarse-perf-scalar，正常batch在dist/aic/coarse-perf；临时控制入口随
+产物保存，工作区与默认产物恢复batch，不新增产品feature开关。两版各重启后用同一序列，
+比较同一组件/TS frame；仍有粗粒度探针开销，不接受旧密集版self作为直接净收益基线。
+原生probe无诊断时钟不会启用收集器，应另检实际包带时钟路径。见
+[粗粒度复测记录](../../../docs/aic-coarse-perf-2026-10-27.md)。
+
+后续真机同口径A/B已否定自动style合批的净收益：本组配置/键盘慢18%–21%，已恢复
+直接逐属性setProp，未删除可选C batch接口。当前固件dist/aic/scalar-style；启动行
+`mode=coarse inline=scalar batch_api=1`，不能再由接口存在判断inline走法。
+框架回归改名为tests/inline-style.test.ts，验证即便宿主支持batch，inline仍即时直接写入，
+编码/差量/错误前提交一致；C接口集成测试保留。A/B档案不覆盖当前默认固件，见
+[最新结论](../../../docs/aic-coarse-perf-2026-10-27.md)。

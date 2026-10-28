@@ -1,3 +1,4 @@
+import { perfBegin, perfEnd } from "./perf";
 // ASCII keyboard shares the active text field protocol; keys retain field focus.
 import { hasAppFeature } from "@pocketcom/features";
 import { onScopeDispose, ref, shallowRef, watch, watchEffect } from "vue";
@@ -48,6 +49,8 @@ const SHIFTED_ROWS = ["!@#$%^&*()", "QWERTYUIOP", "ASDFGHJKL:", 'ZXCVBNM<>?'];
  * update geometry/theme and labels. Renderer nodes retain ordinary input and
  * tree cleanup semantics, including when the component is unmounted. */
 function KeyboardKeys() {
+  const __tsPerf1=perfBegin("create.KeyboardKeys");
+  try {
   const host = shallowRef<NodeMirror | null>(null);
   const keys: NodeMirror[] = [];
   const actions = ["shift", "space", "Backspace", "Enter", "close"];
@@ -55,6 +58,8 @@ function KeyboardKeys() {
     ? (shifted.value ? SHIFTED_ROWS : ROWS)[Math.floor(i / 10)]![i % 10]!
     : actions[i - 40]!;
   watchEffect(() => {
+  const __tsPerf2=perfBegin("effect.KeyboardKeys.1");
+  try {
     const parent = host.value;
     if (!parent) return;
     if (keys.length === 0) {
@@ -80,14 +85,20 @@ function KeyboardKeys() {
         lineHeight: 28, textAlign: 1, bgColor: colors.btnBg, textColor: colors.fg,
       }, key.domAttrs?.style);
     }
-  });
+
+  } finally { perfEnd(__tsPerf2); }
+});
   watchEffect(() => {
+  const __tsPerf3=perfBegin("effect.KeyboardKeys.2");
+  try {
     if (!host.value) return;
     for (let i = 0; i < keys.length; i++) {
       const label = i < 40 ? value(i) : t(`keyboard.${actions[i - 40]}`);
       if (keys[i]!.text !== label) replaceText(keys[i]!, label);
     }
-  });
+
+  } finally { perfEnd(__tsPerf3); }
+});
   onScopeDispose(() => {
     for (const key of keys) if (key.parent) detachNode(key.parent, key);
     keys.length = 0;
@@ -95,9 +106,13 @@ function KeyboardKeys() {
   // The full class literal is also compiled for the manually-created keys.
   return <View class="absolute rounded-md text-xs" nodeRef={(n: NodeMirror | null) => { host.value = n; }}
     style={{ insetL: 0, insetT: EDITOR_H, width: viewportSize.value.w, height: KEYBOARD_H }} />;
+
+  } finally { perfEnd(__tsPerf1); }
 }
 
 export function SoftKeyboard() {
+  const __tsPerf4=perfBegin("create.SoftKeyboard");
+  try {
   const mounted = ref(false);
   let node: NodeMirror | null = null;
   let raised = false;
@@ -116,4 +131,6 @@ export function SoftKeyboard() {
       <KeyboardKeys />
     </View>
   </Portal> : null}</View>;
+
+  } finally { perfEnd(__tsPerf4); }
 }

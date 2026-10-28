@@ -76,6 +76,14 @@ globalThis.textAncestors = text => {
       if (prop === PROP.translateY) translations.set(id, value);
       setProp(id, prop, value);
     };
+    const setPropBatch = wasm.ops.setPropBatch;
+    if (setPropBatch) wasm.ops.setPropBatch = buffer => {
+      const values = new Float64Array(buffer);
+      for (let i = 0; i + 2 < values.length; i += 3) {
+        if (values[i + 1] === PROP.translateY) translations.set(values[i]!, values[i + 2]!);
+      }
+      setPropBatch(buffer);
+    };
     const guest = { ui: wasm.ops, console, TextEncoder, com: { serialList: () => "[]", serialOpen: () => '{"handle":1}', write: () => true, setSignals: () => true, close: () => true, poll: () => null } } as unknown as {
       frame: (buttons: number, analog?: number, touches?: number[], hits?: number[]) => void;
       dispose(): void;
