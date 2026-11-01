@@ -74,7 +74,7 @@ tools/package-macos.sh   # 产出 dist/PocketCOM.app 与 dist/PocketCOM-<版本>
 ## AIC + RT-Thread
 
 ```sh
-git submodule update --init --depth 1 vendor/luban-lite  # 需访问局域网 Gitea
+git submodule update --init --depth 1 vendor/luban-lite  # 需访问 GitHub
 npm run check:aic
 npm run package:aic
 RTT_EXEC_PATH=/path/to/riscv-none-elf/bin npm run build:aic

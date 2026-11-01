@@ -10,7 +10,7 @@ description: AIC（D12x + RT-Thread）板端构建——check:aic/package:aic/bu
 桌面前置（见 skill `desktop-build`）之外，板端还需要：
 
 ```sh
-git submodule update --init --depth 1 vendor/luban-lite   # 需访问局域网 Gitea（192.168.0.20）
+git submodule update --init --depth 1 vendor/luban-lite   # 需访问 GitHub
 ```
 
 - 工具链：upstream `riscv-none-elf-gcc`（脚本遵循 SDK 的 `RTT_EXEC_PATH`，不自动下载）。**本机已装**：

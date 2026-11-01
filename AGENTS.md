@@ -101,7 +101,7 @@ host/macos/     # macOS 宿主：串口/TCP/UDP/WS 原生 IO、设置持久化+�
 host/rtthread/  # AIC/RT-Thread 产品接入：manifest/profile、构建编排与内存报告（详见下文"AIC port"）
 assets/i18n/    # 语言包；assets/fonts/ MiSans + JetBrains Mono（构建期烘焙字形）
 vendor/pocketjs # kaidegit/pocketjs fork（submodule，feat/aic；桌面引擎与 AIC 宿主）
-vendor/luban-lite # 局域网 yekai/luban-lite SDK（submodule，feat/pocketjs；RT-Thread/驱动/镜像）
+vendor/luban-lite # GitHub kaidegit/luban-lite-m SDK（submodule，feat/pocketjs；RT-Thread/驱动/镜像）
 docs/           # 调研、移植、脚本化 UI 验证与性能文档
 SPEC.md         # 功能规格（权威）
 ```

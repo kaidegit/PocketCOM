@@ -256,7 +256,7 @@ PocketJS 内核不含串口/raw socket/WebSocket（§2.2），按官方"product-
 ### 4.4 AIC + RT-Thread 接入
 
 - PocketCOM 负责产品源码、板端 manifest/host profile、启动入口和构建编排；PocketJS fork 的 `hosts/aic` 负责 QuickJS、触摸、RGB565 渲染和帧循环；luban-lite SDK 负责 RT-Thread、MPP、硬件驱动、链接与镜像打包。
-- `vendor/pocketjs` 跟踪 `kaidegit/pocketjs` 的 `feat/aic`，`vendor/luban-lite` 跟踪局域网 Gitea `yekai/luban-lite` 的 `feat/pocketjs`。显式 `git submodule update --remote` 更新分支；构建不拉取更新。父仓库 gitlink 仍按 Git 机制记录提交。
+- `vendor/pocketjs` 跟踪 `kaidegit/pocketjs` 的 `feat/aic`，`vendor/luban-lite` 跟踪 GitHub `kaidegit/luban-lite-m` 的 `feat/pocketjs`。显式 `git submodule update --remote` 更新分支；构建不拉取更新。父仓库 gitlink 仍按 Git 机制记录提交。
 - `host/rtthread/` 放产品配置与接入文档；复用 SDK 的 `application/rt-thread/pocketjs` 和 `d12x_demo68-nor_rt-thread_pocketjs_defconfig`，不复制通用宿主。板级显示时序在 SDK 的产品 defconfig 中维护，修正时保留为 SDK submodule 改动，不在应用层绕过。
 - 板端 Vue Vapor 应用使用 480×272、native presentation、density 1、60Hz，mount 前初始化视口。2026-10-23 起为新一轮真机内存 perf，`app/main.aic.tsx` 挂载共享 `app/app.tsx`（包含 session/连接面板/收发区/设置弹窗），按 `pocket.features.json` 的 `aic-diagnostic` profile 编译裁剪，不另设功能开关。保留 `app/aic.tsx` 精简页作历史诊断基线。此前未裁剪完整 UI 与 JSON 裁剪后的优化前版本曾挂载 OOM（见 docs/aic-memory-perf-2026-10-23.md）；节点共享原型优化后，本轮真机挂载/首帧/120 帧短时空闲通过，分配失败为 0，用户确认画面和触摸下拉正常（见 docs/aic-node-prototype-step1.md）。长时、业务负载与 WiFi 组合场景仍待验收；此结果不代表设备 IO 桥已实现；宿主无 `com.*` 时按共享 App 现有能力探测降级。保持现有内存配额和容量，以便比较；紧凑布局与板端设备桥仍按共享 UI 路线推进。
 - **板端 WiFi（2026-10-11 点亮，验证至 AP 扫描）**：RTL8189FTV（SDIO 接 SDMC0，4-bit @40MHz）+ third-party lwIP（netif `WL0`，`AIC_WLAN_REALTEK`/`AIC_USING_RTL8189_WLAN0` 配置链，非 RT-Thread wlan 框架/内核 lwIP）。驱动 `.bss` ≈259 KiB 静态落在 PSRAM，运行时收发缓冲吃统一堆；恢复网络功能前必须补 WiFi 开/关、连 AP/断开状态下的堆基线与峰值测量。模组 EN 与 SoC 断开（载板保证使能），固件不做电源控制；PM 睡眠驱动未编入。

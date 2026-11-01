@@ -94,7 +94,7 @@ git submodule update --init --depth 1 vendor/pocketjs
 npm ci
 (cd vendor/pocketjs && bun install --frozen-lockfile)
 
-# 板端还需要局域网 SDK，在能访问 192.168.0.20 的环境执行
+# 板端还需要 SDK，在能访问 GitHub 的环境执行
 git submodule update --init --depth 1 vendor/luban-lite
 
 # 浅克隆默认可能只 fetch 默认分支，先让 remote 能获取目标分支
